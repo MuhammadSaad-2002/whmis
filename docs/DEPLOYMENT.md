@@ -17,50 +17,53 @@ Production is `whmis.vwisdomtechnologies.com`. Required PHP extensions:
 
 ---
 
-## One-time server setup (cPanel UI)
+## One-time server setup — NO terminal required (cPanel UI only)
 
-### 1. Database
-`vwisdomo_whmis` (DB + user) already exist. In **MySQL Databases**, confirm the
-user `vwisdomo_whmis` is attached to the DB `vwisdomo_whmis` with **ALL PRIVILEGES**.
+The database is imported via phpMyAdmin and `APP_KEY` is set by hand, so none of
+the `php artisan` commands need to be run on the server.
+
+### 1. Import the database (phpMyAdmin)
+The DB + user `vwisdomo_whmis` already exist. In **MySQL Databases**, confirm the
+user is attached to the DB with **ALL PRIVILEGES**. Then:
+- Download **`database/production-seed.sql`** from the repo (GitHub → the file →
+  "Download raw", or grab it from the clone after step 2).
+- **phpMyAdmin** → select the `vwisdomo_whmis` database → **Import** → choose that
+  file → **Go**. This creates all tables and the baseline data (5 roles, all
+  permissions, the `admin@whmis.local` user, the default warehouse, number series).
+  It contains **no** sample/test records.
 
 ### 2. Clone the repo — Git Version Control → Create
-- **Clone URL**: for a private repo, authenticate with a PAT in the URL:
-  `https://<PAT>@github.com/MuhammadSaad-2002/whmis.git` (or add an SSH deploy key).
+- **Clone URL** (private repo): `https://<PAT>@github.com/MuhammadSaad-2002/whmis.git`
+  (or add an SSH deploy key).
 - **Repository Path**: `whmis` → clones to `/home/vwisdomo/whmis` (vendor + build come with it).
 
 ### 3. Document root
 **Domains → whmis.vwisdomtechnologies.com → Document Root** → set to
 `/home/vwisdomo/whmis/public`.
 
-### 4. Create the production `.env`
-Create `/home/vwisdomo/whmis/.env` (File Manager or Terminal) from
-`.env.production.example`, filling `DB_PASSWORD`. Leave `APP_KEY` blank — the next
-step generates it.
+### 4. Create the production `.env` (File Manager — no terminal)
+Create `/home/vwisdomo/whmis/.env` from `.env.production.example`, and paste a
+real `APP_KEY` (a `base64:…` value) and the DB password. Because there is no
+`config:cache` step, the app reads this `.env` live — no artisan needed.
+`storage/` and `bootstrap/cache/` are writable by default on cPanel (the PHP
+process runs as the account user); if you hit a write error, set them to `775`
+via File Manager → Permissions.
 
-### 5. Initialize (cPanel Terminal — vendor is present, so no composer)
-```bash
-cd /home/vwisdomo/whmis
-php artisan key:generate            # writes APP_KEY into .env
-php artisan migrate --force
-php artisan db:seed --force         # roles, admin user, default warehouse, number series (ONE TIME)
-php artisan storage:link
-php artisan config:cache && php artisan route:cache && php artisan view:cache
-```
-Ensure `storage/` and `bootstrap/cache/` are writable (`chmod -R 775`).
-
-If `php` isn't 8.2+, use the account's selected binary, e.g.
-`/opt/cpanel/ea-php82/root/usr/bin/php`, and update the same path in `.cpanel.yml`.
-
-### 6. Scheduler cron
+### 5. Scheduler cron
 cPanel → **Cron Jobs**, every minute:
 ```
 * * * * * /usr/local/bin/php /home/vwisdomo/whmis/artisan schedule:run >/dev/null 2>&1
 ```
 This drives `whmis:check-alerts` (low stock / expiry / overdue notifications).
+(Optional — the app works without it; only the automated alerts need it.)
 
-### 7. First login
+### 6. First login
 Open `https://whmis.vwisdomtechnologies.com/login` → `admin@whmis.local` /
 `password` → **change the password immediately** (user menu → Settings → Password).
+
+> **Troubleshooting a 500 on first load:** set `APP_DEBUG=true` in `.env` to see
+> the real error, fix it, then set it back to `false`. Common causes: wrong
+> `APP_KEY` format, DB credentials, or `storage/` not writable.
 
 ---
 
