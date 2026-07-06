@@ -1,0 +1,16 @@
+---
+# cPanel Git™ Version Control deployment.
+# Runs from the repository root after each "Deploy HEAD Commit".
+# vendor/ and public/build are committed, so no Composer/Node is needed here.
+#
+# NOTE: adjust the PHP binary path to the version selected for the account if
+# /usr/local/bin/php is not 8.2+ (e.g. /opt/cpanel/ea-php82/root/usr/bin/php).
+deployment:
+  tasks:
+    - /usr/local/bin/php artisan down || true
+    - /usr/local/bin/php artisan migrate --force
+    - /usr/local/bin/php artisan config:cache
+    - /usr/local/bin/php artisan route:cache
+    - /usr/local/bin/php artisan view:cache
+    - /usr/local/bin/php artisan storage:link || true
+    - /usr/local/bin/php artisan up

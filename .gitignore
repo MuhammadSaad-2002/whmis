@@ -1,0 +1,27 @@
+.DS_Store
+.env
+.env.backup
+.env.production
+.phpactor.json
+.phpunit.result.cache
+/.fleet
+/.idea
+/.nova
+/.phpunit.cache
+/.vscode
+/.zed
+/bootstrap/ssr
+/node_modules
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+auth.json
+Homestead.json
+Homestead.yaml
+npm-debug.log
+yarn-error.log
+
+# Deployment: vendor/ and public/build ARE committed so the cPanel host
+# needs neither Composer nor Node. Production secrets stay out of Git via
+# the .env / .env.* lines above.
