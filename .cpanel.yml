@@ -4,14 +4,18 @@
 # in cPanel — no terminal needed. vendor/ and public/build are committed, so
 # there is no Composer/Node step here.
 #
-# First deploy needs nothing from this file: the database is imported via
-# phpMyAdmin and APP_KEY is set in .env by hand. These tasks only keep FUTURE
-# code updates in sync (apply new migrations, clear stale caches). They are
-# tolerant (|| true) so a deploy never hard-fails on a permissions/PHP-path quirk.
+# `artisan up` runs FIRST and unconditionally so a deploy always brings the app
+# OUT of maintenance mode — it can never get stuck showing 503 again. We never
+# run `artisan down`, so the site stays live throughout.
+#
+# The remaining tasks keep future code updates in sync (apply new migrations,
+# clear stale caches). All tasks are tolerant (|| true) so a deploy never
+# hard-fails on a permissions or PHP-path quirk.
 #
 # If /usr/local/bin/php is not PHP 8.2+, change it to the account's selected
 # binary, e.g. /opt/cpanel/ea-php82/root/usr/bin/php.
 deployment:
   tasks:
+    - /usr/local/bin/php artisan up || true
     - /usr/local/bin/php artisan migrate --force || true
     - /usr/local/bin/php artisan optimize:clear || true
