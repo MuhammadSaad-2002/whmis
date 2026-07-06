@@ -8,14 +8,11 @@
 # OUT of maintenance mode — it can never get stuck showing 503 again. We never
 # run `artisan down`, so the site stays live throughout.
 #
-# The remaining tasks keep future code updates in sync (apply new migrations,
-# clear stale caches). All tasks are tolerant (|| true) so a deploy never
-# hard-fails on a permissions or PHP-path quirk.
-#
-# If /usr/local/bin/php is not PHP 8.2+, change it to the account's selected
-# binary, e.g. /opt/cpanel/ea-php82/root/usr/bin/php.
+# PHP binary: this host runs CloudLinux alt-php 8.4, whose CLI is at
+# /opt/alt/php84/usr/bin/php. If that path ever changes, update it here.
+# All tasks are tolerant (|| true) so a deploy never hard-fails.
 deployment:
   tasks:
-    - /usr/local/bin/php artisan up || true
-    - /usr/local/bin/php artisan migrate --force || true
-    - /usr/local/bin/php artisan optimize:clear || true
+    - /opt/alt/php84/usr/bin/php artisan up || true
+    - /opt/alt/php84/usr/bin/php artisan migrate --force || true
+    - /opt/alt/php84/usr/bin/php artisan optimize:clear || true
