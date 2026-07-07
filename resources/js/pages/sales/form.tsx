@@ -371,6 +371,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                             value={header.customer_id}
                             onValueChange={(v) => setHeader((h) => ({ ...h, customer_id: v }))}
                             disabled={readonly}
+                            autoFocus={!readonly}
                             placeholder="Select customer"
                             searchPlaceholder="Search customer…"
                             emptyText="No customers found."

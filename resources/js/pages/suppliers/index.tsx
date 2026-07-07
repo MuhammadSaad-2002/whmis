@@ -15,6 +15,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { money } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
+import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { BookUser, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
@@ -56,6 +57,10 @@ export default function SuppliersIndex({ companies, filters }: Props) {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editing, setEditing] = useState<Company | null>(null);
     const [search, setSearch] = useState(filters.search ?? '');
+    const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
+        rowCount: companies.data.length,
+        onActivate: (i) => openEdit(companies.data[i]),
+    });
 
     const form = useForm(emptyForm);
 
@@ -132,6 +137,8 @@ export default function SuppliersIndex({ companies, filters }: Props) {
                     <div className="relative w-72">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
                         <Input
+                            ref={searchRef}
+                            onKeyDown={onSearchKeyDown}
                             placeholder="Search name, contact, phone…"
                             className="pl-8"
                             value={search}
@@ -175,8 +182,8 @@ export default function SuppliersIndex({ companies, filters }: Props) {
                                     </TableCell>
                                 </TableRow>
                             )}
-                            {companies.data.map((company) => (
-                                <TableRow key={company.id}>
+                            {companies.data.map((company, index) => (
+                                <TableRow key={company.id} {...rowProps(index)}>
                                     <TableCell className="font-medium">{company.name}</TableCell>
                                     <TableCell>
                                         <div className="text-sm">{company.contact_person || '—'}</div>

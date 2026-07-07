@@ -238,7 +238,7 @@ export default function PaymentsIndex({ payments, customers, companies, filters 
                                     form.setData('party_id', '');
                                 }}
                             >
-                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectTrigger autoFocus><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="customer">Customer (receipt)</SelectItem>
                                     <SelectItem value="company">Supplier (payment)</SelectItem>

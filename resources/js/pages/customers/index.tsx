@@ -16,6 +16,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { money } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
+import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { BookUser, Pencil, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
@@ -85,6 +86,10 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
     const [importOpen, setImportOpen] = useState(false);
     const [editing, setEditing] = useState<Customer | null>(null);
     const [search, setSearch] = useState(filters.search ?? '');
+    const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
+        rowCount: customers.data.length,
+        onActivate: (i) => openEdit(customers.data[i]),
+    });
 
     const form = useForm(emptyForm);
 
@@ -171,6 +176,8 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                     <div className="relative w-72">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
                         <Input
+                            ref={searchRef}
+                            onKeyDown={onSearchKeyDown}
                             placeholder="Search customer, owner, phone, city…"
                             className="pl-8"
                             value={search}
@@ -228,11 +235,11 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                                     </TableCell>
                                 </TableRow>
                             )}
-                            {customers.data.map((customer) => {
+                            {customers.data.map((customer, index) => {
                                 const balance = Number(customer.debit_sum ?? 0) - Number(customer.credit_sum ?? 0);
                                 const overLimit = Number(customer.credit_limit) > 0 && balance > Number(customer.credit_limit);
                                 return (
-                                    <TableRow key={customer.id}>
+                                    <TableRow key={customer.id} {...rowProps(index)}>
                                         <TableCell className="font-medium">{customer.name}</TableCell>
                                         <TableCell>
                                             <div className="text-sm">{customer.owner_name || customer.contact_person || '—'}</div>

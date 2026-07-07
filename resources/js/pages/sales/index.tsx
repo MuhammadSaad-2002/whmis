@@ -10,6 +10,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { money, shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
+import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { Head, Link, router } from '@inertiajs/react';
 import { Plus, Printer, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -39,6 +40,10 @@ const statusVariant = (status: string) =>
 export default function SalesIndex({ invoices, customers, filters }: Props) {
     const { can } = usePermissions();
     const [search, setSearch] = useState(filters.search ?? '');
+    const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
+        rowCount: invoices.data.length,
+        onActivate: (i) => router.visit(route('sales.edit', invoices.data[i].id)),
+    });
 
     useEffect(() => {
         const timeout = setTimeout(() => {
@@ -73,7 +78,7 @@ export default function SalesIndex({ invoices, customers, filters }: Props) {
                 <div className="flex flex-wrap gap-2">
                     <div className="relative w-64">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                        <Input placeholder="Invoice number…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
+                        <Input ref={searchRef} onKeyDown={onSearchKeyDown} placeholder="Invoice number…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
                     <Select value={filters.customer_id ?? 'all'} onValueChange={(v) => setFilter('customer_id', v === 'all' ? undefined : v)}>
                         <SelectTrigger className="w-48"><SelectValue placeholder="Customer" /></SelectTrigger>
@@ -128,8 +133,8 @@ export default function SalesIndex({ invoices, customers, filters }: Props) {
                                     </TableCell>
                                 </TableRow>
                             )}
-                            {invoices.data.map((invoice) => (
-                                <TableRow key={invoice.id}>
+                            {invoices.data.map((invoice, index) => (
+                                <TableRow key={invoice.id} {...rowProps(index)}>
                                     <TableCell>
                                         <Link href={route('sales.edit', invoice.id)} className="font-medium hover:underline">
                                             {invoice.invoice_number}

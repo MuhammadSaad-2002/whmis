@@ -5,7 +5,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { Check, ChevronsUpDown } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export interface SelectOption {
     value: string;
@@ -23,6 +23,7 @@ interface Props {
     disabled?: boolean;
     className?: string;
     id?: string;
+    autoFocus?: boolean;
 }
 
 /**
@@ -40,14 +41,21 @@ export function SearchableSelect({
     disabled,
     className,
     id,
+    autoFocus,
 }: Props) {
     const [open, setOpen] = useState(false);
+    const triggerRef = useRef<HTMLButtonElement>(null);
     const selected = options.find((o) => o.value === value);
+
+    useEffect(() => {
+        if (autoFocus) triggerRef.current?.focus();
+    }, [autoFocus]);
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
                 <Button
+                    ref={triggerRef}
                     id={id}
                     type="button"
                     variant="outline"

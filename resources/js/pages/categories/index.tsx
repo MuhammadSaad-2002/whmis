@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
+import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { Head, router, useForm } from '@inertiajs/react';
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
@@ -32,6 +33,10 @@ export default function CategoriesIndex({ categories, filters }: Props) {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editing, setEditing] = useState<Category | null>(null);
     const [search, setSearch] = useState(filters.search ?? '');
+    const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
+        rowCount: categories.data.length,
+        onActivate: (i) => openEdit(categories.data[i]),
+    });
 
     const form = useForm({ name: '', description: '' });
 
@@ -80,7 +85,7 @@ export default function CategoriesIndex({ categories, filters }: Props) {
 
                 <div className="relative w-72">
                     <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                    <Input placeholder="Search…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
+                    <Input ref={searchRef} onKeyDown={onSearchKeyDown} placeholder="Search…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
                 </div>
 
                 <div className="rounded-xl border">
@@ -101,8 +106,8 @@ export default function CategoriesIndex({ categories, filters }: Props) {
                                     </TableCell>
                                 </TableRow>
                             )}
-                            {categories.data.map((category) => (
-                                <TableRow key={category.id}>
+                            {categories.data.map((category, index) => (
+                                <TableRow key={category.id} {...rowProps(index)}>
                                     <TableCell className="font-medium">{category.name}</TableCell>
                                     <TableCell>{category.description || '—'}</TableCell>
                                     <TableCell className="text-right">{category.products_count}</TableCell>

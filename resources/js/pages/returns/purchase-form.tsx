@@ -114,7 +114,7 @@ export default function PurchaseReturnForm({ companies, warehouse }: Props) {
                                 setRows([]);
                             }}
                         >
-                            <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
+                            <SelectTrigger autoFocus><SelectValue placeholder="Select supplier" /></SelectTrigger>
                             <SelectContent>
                                 {companies.map((company) => (
                                     <SelectItem key={company.id} value={String(company.id)}>{company.name}</SelectItem>

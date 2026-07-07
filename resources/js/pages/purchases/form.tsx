@@ -334,7 +334,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                             onValueChange={(v) => setHeader((h) => ({ ...h, company_id: v }))}
                             disabled={readonly}
                         >
-                            <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
+                            <SelectTrigger autoFocus={!readonly}><SelectValue placeholder="Select supplier" /></SelectTrigger>
                             <SelectContent>
                                 {companies.map((company) => (
                                     <SelectItem key={company.id} value={String(company.id)}>{company.name}</SelectItem>

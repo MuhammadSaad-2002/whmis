@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { amount, money, qty } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
+import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { Head, Link, router } from '@inertiajs/react';
 import { History, Layers, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -38,6 +39,10 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Inventory', href: '/inventory' 
 
 export default function InventoryIndex({ products, companies, filters, totals }: Props) {
     const [search, setSearch] = useState(filters.search ?? '');
+    const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
+        rowCount: products.data.length,
+        onActivate: () => {}, // stock rows have no detail page
+    });
 
     useEffect(() => {
         const timeout = setTimeout(() => {
@@ -77,7 +82,7 @@ export default function InventoryIndex({ products, companies, filters, totals }:
                 <div className="flex flex-wrap items-center gap-2">
                     <div className="relative w-72">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                        <Input placeholder="Search product…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
+                        <Input ref={searchRef} onKeyDown={onSearchKeyDown} placeholder="Search product…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
                     <Select
                         value={filters.company_id ?? 'all'}
@@ -122,11 +127,11 @@ export default function InventoryIndex({ products, companies, filters, totals }:
                                     </TableCell>
                                 </TableRow>
                             )}
-                            {products.data.map((product) => {
+                            {products.data.map((product, index) => {
                                 const stock = Number(product.stock ?? 0);
                                 const low = Number(product.reorder_level) > 0 && stock <= Number(product.reorder_level);
                                 return (
-                                    <TableRow key={product.id}>
+                                    <TableRow key={product.id} {...rowProps(index)}>
                                         <TableCell>
                                             <div className="font-medium">{product.name}</div>
                                             <div className="text-xs text-muted-foreground">

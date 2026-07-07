@@ -15,6 +15,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { amount, dec2, money, qty } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
+import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { Head, router, useForm } from '@inertiajs/react';
 import { Pencil, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
@@ -74,6 +75,10 @@ export default function ProductsIndex({ products, companies, categories, filters
     const [importOpen, setImportOpen] = useState(false);
     const [editing, setEditing] = useState<Product | null>(null);
     const [search, setSearch] = useState(filters.search ?? '');
+    const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
+        rowCount: products.data.length,
+        onActivate: (i) => openEdit(products.data[i]),
+    });
 
     const form = useForm(emptyForm);
 
@@ -194,6 +199,8 @@ export default function ProductsIndex({ products, companies, categories, filters
                     <div className="relative w-72">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
                         <Input
+                            ref={searchRef}
+                            onKeyDown={onSearchKeyDown}
                             placeholder="Search name, generic, barcode…"
                             className="pl-8"
                             value={search}
@@ -252,11 +259,11 @@ export default function ProductsIndex({ products, companies, categories, filters
                                     </TableCell>
                                 </TableRow>
                             )}
-                            {products.data.map((product) => {
+                            {products.data.map((product, index) => {
                                 const stock = Number(product.stock ?? 0);
                                 const low = Number(product.reorder_level) > 0 && stock <= Number(product.reorder_level);
                                 return (
-                                    <TableRow key={product.id}>
+                                    <TableRow key={product.id} {...rowProps(index)}>
                                         <TableCell>
                                             <div className="font-medium">{product.name}</div>
                                             <div className="text-xs text-muted-foreground">

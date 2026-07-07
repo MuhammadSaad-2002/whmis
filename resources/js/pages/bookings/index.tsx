@@ -10,6 +10,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { money, shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
+import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { Head, Link, router } from '@inertiajs/react';
 import { ArrowRight, Check, Plus, Search, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -40,6 +41,10 @@ const statusVariant = (status: string) =>
 export default function BookingsIndex({ bookings, customers, filters }: Props) {
     const { can } = usePermissions();
     const [search, setSearch] = useState(filters.search ?? '');
+    const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
+        rowCount: bookings.data.length,
+        onActivate: (i) => router.visit(route('bookings.edit', bookings.data[i].id)),
+    });
 
     useEffect(() => {
         const timeout = setTimeout(() => {
@@ -74,7 +79,7 @@ export default function BookingsIndex({ bookings, customers, filters }: Props) {
                 <div className="flex flex-wrap gap-2">
                     <div className="relative w-64">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                        <Input placeholder="Booking number…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
+                        <Input ref={searchRef} onKeyDown={onSearchKeyDown} placeholder="Booking number…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
                     <Select value={filters.status ?? 'all'} onValueChange={(v) => setFilter('status', v === 'all' ? undefined : v)}>
                         <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
@@ -120,8 +125,8 @@ export default function BookingsIndex({ bookings, customers, filters }: Props) {
                                     </TableCell>
                                 </TableRow>
                             )}
-                            {bookings.data.map((booking) => (
-                                <TableRow key={booking.id}>
+                            {bookings.data.map((booking, index) => (
+                                <TableRow key={booking.id} {...rowProps(index)}>
                                     <TableCell>
                                         <Link href={route('bookings.edit', booking.id)} className="font-medium hover:underline">
                                             {booking.booking_number}

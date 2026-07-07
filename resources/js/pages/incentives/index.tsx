@@ -14,6 +14,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
+import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { Head, router, useForm } from '@inertiajs/react';
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
@@ -78,6 +79,10 @@ export default function IncentivesIndex({ rules, products, companies, customers,
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editing, setEditing] = useState<Rule | null>(null);
     const [search, setSearch] = useState(filters.search ?? '');
+    const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
+        rowCount: rules.data.length,
+        onActivate: (i) => openEdit(rules.data[i]),
+    });
 
     const form = useForm(emptyForm);
 
@@ -173,7 +178,7 @@ export default function IncentivesIndex({ rules, products, companies, customers,
                 <div className="flex flex-wrap gap-2">
                     <div className="relative w-64">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                        <Input placeholder="Search rules…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
+                        <Input ref={searchRef} onKeyDown={onSearchKeyDown} placeholder="Search rules…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
                     <Select
                         value={filters.rule_type ?? 'all'}
@@ -209,8 +214,8 @@ export default function IncentivesIndex({ rules, products, companies, customers,
                                     </TableCell>
                                 </TableRow>
                             )}
-                            {rules.data.map((rule) => (
-                                <TableRow key={rule.id}>
+                            {rules.data.map((rule, index) => (
+                                <TableRow key={rule.id} {...rowProps(index)}>
                                     <TableCell>
                                         <div className="font-medium">{rule.name}</div>
                                         <div className="text-xs text-muted-foreground">{RULE_TYPES[rule.rule_type] ?? rule.rule_type}</div>

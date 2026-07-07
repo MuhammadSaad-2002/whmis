@@ -6,6 +6,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { money, shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
+import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { Head, Link, router } from '@inertiajs/react';
 import { Plus, Search, Undo2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -29,6 +30,10 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Purchase Returns', href: '/retu
 export default function PurchaseReturnsIndex({ returns, filters }: Props) {
     const { can } = usePermissions();
     const [search, setSearch] = useState(filters.search ?? '');
+    const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
+        rowCount: returns.data.length,
+        onActivate: () => {}, // purchase returns have no detail page
+    });
 
     useEffect(() => {
         const timeout = setTimeout(() => {
@@ -65,7 +70,7 @@ export default function PurchaseReturnsIndex({ returns, filters }: Props) {
                 <div className="flex flex-wrap gap-2">
                     <div className="relative w-64">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                        <Input placeholder="Return number…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
+                        <Input ref={searchRef} onKeyDown={onSearchKeyDown} placeholder="Return number…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
                     <Input
                         type="date" className="w-40" value={filters.from ?? ''}
@@ -96,8 +101,8 @@ export default function PurchaseReturnsIndex({ returns, filters }: Props) {
                                     </TableCell>
                                 </TableRow>
                             )}
-                            {returns.data.map((row) => (
-                                <TableRow key={row.id}>
+                            {returns.data.map((row, index) => (
+                                <TableRow key={row.id} {...rowProps(index)}>
                                     <TableCell className="font-medium">{row.return_number}</TableCell>
                                     <TableCell>{row.company?.name}</TableCell>
                                     <TableCell>{shortDate(row.return_date)}</TableCell>
