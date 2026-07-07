@@ -193,7 +193,7 @@ class SalesInvoiceController extends Controller
             'notes' => ['nullable', 'string'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'exists:products,id'],
-            'items.*.batch_number' => ['nullable', 'string', 'max:100'],
+            'items.*.batch_id' => ['required', 'integer', 'exists:batches,id'],
             'items.*.applied_rule_id' => ['nullable', 'exists:incentive_rules,id'],
             'items.*.quantity' => ['required', 'numeric', 'min:1'],
             'items.*.bonus_quantity' => ['nullable', 'numeric', 'min:0'],
@@ -251,32 +251,25 @@ class SalesInvoiceController extends Controller
     }
 
     /**
-     * A manually typed batch number resolves to the matching in-stock batch
-     * (earliest expiry first, mirroring FIFO). Blank = auto FIFO at posting.
+     * The user selects a specific in-stock batch. Verify it belongs to this
+     * product + warehouse and still has stock before it is stored/consumed.
      */
-    private function resolveBatchId(SalesInvoice $invoice, array $item): ?int
+    private function resolveBatchId(SalesInvoice $invoice, array $item): int
     {
-        $batchNumber = trim((string) ($item['batch_number'] ?? ''));
-        if ($batchNumber === '') {
-            return null;
-        }
-
-        $batchId = \App\Models\Batch::query()
+        $batch = \App\Models\Batch::query()
+            ->where('id', $item['batch_id'])
             ->where('product_id', $item['product_id'])
             ->where('warehouse_id', $invoice->warehouse_id)
-            ->whereRaw('LOWER(batch_number) = ?', [mb_strtolower($batchNumber)])
             ->where('qty_available', '>', 0)
-            ->orderByRaw('expiry_date IS NULL, expiry_date ASC')
-            ->orderBy('id')
-            ->value('id');
+            ->first();
 
-        if (! $batchId) {
+        if (! $batch) {
             $product = \App\Models\Product::whereKey($item['product_id'])->value('name');
             throw new RuntimeException(
-                "Batch \"{$batchNumber}\" not found in stock for {$product}. Leave blank for Auto (FIFO) or check the batch number.",
+                "The selected batch is not in stock for {$product}. Pick another batch.",
             );
         }
 
-        return (int) $batchId;
+        return (int) $batch->id;
     }
 }

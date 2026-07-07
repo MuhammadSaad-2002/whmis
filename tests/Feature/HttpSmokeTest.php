@@ -87,6 +87,7 @@ class HttpSmokeTest extends TestCase
             'sale_type' => 'credit',
             'items' => [[
                 'product_id' => $product->id,
+                'batch_id' => Batch::firstOrFail()->id,
                 'quantity' => 20, 'bonus_quantity' => 2,
                 'trade_price' => 100, 'discount_percent' => 0, 'gst_percent' => 0,
             ]],
@@ -163,7 +164,7 @@ class HttpSmokeTest extends TestCase
         $this->get(route('ledger.customer.pdf', $customer))->assertOk()->assertHeader('content-type', 'application/pdf');
     }
 
-    public function test_manual_batch_number_resolves_to_specific_batch(): void
+    public function test_selecting_a_specific_batch_consumes_from_that_batch(): void
     {
         $this->actingAs($this->admin);
 
@@ -185,12 +186,14 @@ class HttpSmokeTest extends TestCase
             $this->post(route('purchases.post', PurchaseInvoice::latest('id')->first()));
         }
 
-        // Typing "late" (case-insensitive) must pull stock from LATE, not FIFO.
+        $late = Batch::where('batch_number', 'LATE')->firstOrFail();
+
+        // Selecting LATE must pull stock from LATE, not the FIFO (EARLY) batch.
         $this->post(route('sales.store'), [
             'customer_id' => $customer->id, 'warehouse_id' => 1,
             'invoice_date' => now()->toDateString(), 'sale_type' => 'credit',
             'items' => [[
-                'product_id' => $product->id, 'batch_number' => 'late',
+                'product_id' => $product->id, 'batch_id' => $late->id,
                 'quantity' => 10, 'trade_price' => 50,
             ]],
         ])->assertRedirect()->assertSessionHas('success');
@@ -201,17 +204,23 @@ class HttpSmokeTest extends TestCase
         $this->assertEqualsWithDelta(40.0, (float) Batch::where('batch_number', 'LATE')->first()->qty_available, 0.001);
         $this->assertEqualsWithDelta(50.0, (float) Batch::where('batch_number', 'EARLY')->first()->qty_available, 0.001);
 
-        // Unknown batch number is rejected with a clear error and nothing saved.
+        // A batch belonging to another product is rejected; nothing is saved.
+        $otherProduct = Product::create(['name' => 'Brufen', 'company_id' => $company->id, 'trade_price' => 30]);
+        $foreignBatch = Batch::create([
+            'product_id' => $otherProduct->id, 'warehouse_id' => 1, 'batch_number' => 'X1',
+            'expiry_date' => now()->addYear()->toDateString(), 'purchase_rate' => 20,
+            'effective_cost' => 20, 'trade_price' => 30, 'retail_price' => 40,
+            'qty_purchased' => 10, 'qty_available' => 10,
+        ]);
         $before = SalesInvoice::count();
         $this->post(route('sales.store'), [
             'customer_id' => $customer->id, 'warehouse_id' => 1,
             'invoice_date' => now()->toDateString(), 'sale_type' => 'credit',
             'items' => [[
-                'product_id' => $product->id, 'batch_number' => 'NOPE',
+                'product_id' => $product->id, 'batch_id' => $foreignBatch->id,
                 'quantity' => 1, 'trade_price' => 50,
             ]],
         ])->assertRedirect()->assertSessionHas('error');
-        $this->assertStringContainsString('NOPE', session('error'));
         $this->assertSame($before, SalesInvoice::count());
     }
 
@@ -302,7 +311,7 @@ class HttpSmokeTest extends TestCase
         ]);
         app(\App\Services\InvoicePostingService::class)->postPurchase($purchase->refresh());
 
-        $line = ['product_id' => $product->id, 'quantity' => 20, 'trade_price' => 100];
+        $line = ['product_id' => $product->id, 'batch_id' => Batch::firstOrFail()->id, 'quantity' => 20, 'trade_price' => 100];
 
         // Sale Base without terms → validation error, nothing saved.
         $this->post(route('sales.store'), [
@@ -358,13 +367,19 @@ class HttpSmokeTest extends TestCase
         ])->assertRedirect()->assertSessionHas('error');
         $this->assertSame(0, PurchaseInvoice::count());
 
-        // Sales: same guard.
+        // Sales: same guard (a valid batch is present so the duplicate check is what fires).
+        $batch = Batch::create([
+            'product_id' => $product->id, 'warehouse_id' => 1, 'batch_number' => 'B1',
+            'expiry_date' => now()->addYear()->toDateString(), 'purchase_rate' => 80,
+            'effective_cost' => 80, 'trade_price' => 100, 'retail_price' => 120,
+            'qty_purchased' => 100, 'qty_available' => 100,
+        ]);
         $this->post(route('sales.store'), [
             'customer_id' => $customer->id, 'warehouse_id' => 1,
             'invoice_date' => now()->toDateString(), 'sale_type' => 'credit',
             'items' => [
-                ['product_id' => $product->id, 'quantity' => 3, 'trade_price' => 100],
-                ['product_id' => $product->id, 'quantity' => 4, 'trade_price' => 100],
+                ['product_id' => $product->id, 'batch_id' => $batch->id, 'quantity' => 3, 'trade_price' => 100],
+                ['product_id' => $product->id, 'batch_id' => $batch->id, 'quantity' => 4, 'trade_price' => 100],
             ],
         ])->assertRedirect()->assertSessionHas('error');
         $this->assertSame(0, SalesInvoice::count());

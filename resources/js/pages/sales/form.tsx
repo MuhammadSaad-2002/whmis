@@ -1,3 +1,4 @@
+import { BatchSelectCell } from '@/components/batch-select-cell';
 import InputError from '@/components/input-error';
 import { ProductSearchCell, type ProductHit } from '@/components/product-search-cell';
 import { RulePickerDialog, type RuleHit } from '@/components/rule-picker-dialog';
@@ -25,7 +26,8 @@ import { toast } from 'sonner';
 interface ItemRow {
     product_id: number | null;
     product_name: string;
-    batch_number: string; // '' = auto FIFO; typed numbers resolve server-side
+    batch_id: string; // selected batch id ('' = none); required before save
+    batch_fallback: { id: number; batch_number: string; expiry_date: string | null } | null;
     stock: number;
     quantity: string;
     bonus_quantity: string;
@@ -77,7 +79,7 @@ interface Props {
 }
 
 const emptyRow = (): ItemRow => ({
-    product_id: null, product_name: '', batch_number: '', stock: 0,
+    product_id: null, product_name: '', batch_id: '', batch_fallback: null, stock: 0,
     quantity: '1', bonus_quantity: '0', applied_rule_id: null, applied_rule_name: '',
     trade_price: '', discount_percent: '0.00', gst_percent: '0.00', remarks: '',
 });
@@ -116,7 +118,8 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
             ? invoice.items.map((item) => ({
                   product_id: item.product_id,
                   product_name: item.product?.name ?? `#${item.product_id}`,
-                  batch_number: item.batch?.batch_number ?? '',
+                  batch_id: item.batch_id ? String(item.batch_id) : '',
+                  batch_fallback: item.batch ?? null,
                   stock: 0,
                   quantity: String(Number(item.quantity)),
                   bonus_quantity: String(Number(item.bonus_quantity)),
@@ -139,6 +142,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
 
     // Per-cell rule used both on blur and on save. Returns a message or null.
     const cellRule = (key: keyof ItemRow, value: string): string | null => {
+        if (key === 'batch_id') return !value ? 'Select a batch.' : null;
         if (key === 'quantity') return toNumber(value) < 1 ? 'Quantity must be at least 1.' : null;
         if (key === 'discount_percent') {
             const n = toNumber(value);
@@ -182,7 +186,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
         rows.forEach((row, i) => {
             if (!row.product_id) return;
             const rowErr: Record<string, string> = {};
-            (['quantity', 'discount_percent', 'gst_percent', 'trade_price'] as (keyof ItemRow)[]).forEach((key) => {
+            (['batch_id', 'quantity', 'discount_percent', 'gst_percent', 'trade_price'] as (keyof ItemRow)[]).forEach((key) => {
                 const message = cellRule(key, row[key] as string);
                 if (message) rowErr[key] = message;
             });
@@ -259,7 +263,8 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                           ...row,
                           product_id: product.id,
                           product_name: product.name,
-                          batch_number: '',
+                          batch_id: '',
+                          batch_fallback: null,
                           stock: product.stock,
                           applied_rule_id: null,
                           applied_rule_name: '',
@@ -309,7 +314,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
             .filter((row) => row.product_id && toNumber(row.quantity) > 0)
             .map((row) => ({
                 product_id: row.product_id,
-                batch_number: row.batch_number.trim() || null,
+                batch_id: row.batch_id ? Number(row.batch_id) : null,
                 quantity: toNumber(row.quantity),
                 bonus_quantity: toNumber(row.bonus_quantity),
                 applied_rule_id: row.applied_rule_id,
@@ -603,15 +608,24 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                                                 inputRef={grid.registerCell(rowIndex, 0)}
                                             />
                                         </td>
-                                        <td>
-                                            <Input
-                                                ref={grid.registerCell(rowIndex, 1) as never}
-                                                value={row.batch_number}
-                                                disabled={readonly || !row.product_id}
-                                                placeholder="Auto (FIFO)"
-                                                onChange={(e) => setCell(rowIndex, 'batch_number', e.target.value)}
+                                        <td
+                                            className={rowErrors[rowIndex]?.batch_id ? 'ring-1 ring-inset ring-destructive' : ''}
+                                            title={rowErrors[rowIndex]?.batch_id}
+                                        >
+                                            <BatchSelectCell
+                                                productId={row.product_id}
+                                                warehouseId={warehouse.id}
+                                                value={row.batch_id}
+                                                disabled={readonly}
+                                                invalid={!!rowErrors[rowIndex]?.batch_id}
+                                                fallback={row.batch_fallback}
+                                                registerRef={grid.registerCell(rowIndex, 1)}
                                                 onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 1)}
-                                                className="h-8 rounded-none border-0 px-2 text-sm focus-visible:ring-1"
+                                                onSelect={(id, qtyAvailable) => {
+                                                    setCell(rowIndex, 'batch_id', id);
+                                                    setRowError(rowIndex, 'batch_id', null);
+                                                    setRows((r) => r.map((row, i) => (i === rowIndex ? { ...row, stock: qtyAvailable } : row)));
+                                                }}
                                             />
                                         </td>
                                         <td className={`px-2 text-right tabular-nums ${short ? 'font-semibold text-destructive' : ''}`}>
