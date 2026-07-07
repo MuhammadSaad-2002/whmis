@@ -9,6 +9,8 @@ import { useCallback, useRef } from 'react';
  * ArrowUp/Down -> same column, previous/next row
  * F2     -> onProductSearch(row)
  * F4     -> onRulePicker(row) (reserved for the incentive engine)
+ * Ctrl/Cmd+D -> onDeleteRow(row) then focus the previous row (same column)
+ * Ctrl/Cmd+I -> onInsertRow(row) then focus the new row's first cell
  * F8/F9/Esc are page-level and handled by useInvoiceHotkeys.
  *
  * Columns left out of `enterOrder` (e.g. line GST %, remarks) stay reachable
@@ -20,9 +22,11 @@ export function useKeyboardGrid(options: {
     onAppendRow: () => void;
     onProductSearch?: (row: number) => void;
     onRulePicker?: (row: number) => void;
+    onDeleteRow?: (row: number) => void;
+    onInsertRow?: (row: number) => void;
     enterOrder?: number[];
 }) {
-    const { rowCount, colCount, onAppendRow, onProductSearch, onRulePicker, enterOrder } = options;
+    const { rowCount, colCount, onAppendRow, onProductSearch, onRulePicker, onDeleteRow, onInsertRow, enterOrder } = options;
     const cellRefs = useRef<Map<string, HTMLElement>>(new Map());
 
     const registerCell = useCallback((row: number, col: number) => {
@@ -83,6 +87,24 @@ export function useKeyboardGrid(options: {
 
     const handleKeyDown = useCallback(
         (e: React.KeyboardEvent, row: number, col: number) => {
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+                // Delete this row, cursor to the previous row (same column).
+                e.preventDefault();
+                if (onDeleteRow) {
+                    onDeleteRow(row);
+                    focusCell(Math.max(0, row - 1), col);
+                }
+                return;
+            }
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'i' || e.key === 'I')) {
+                // Insert a fresh row after this one, cursor into its first cell.
+                e.preventDefault();
+                if (onInsertRow) {
+                    onInsertRow(row);
+                    focusCell(row + 1, enterOrder?.[0] ?? 0);
+                }
+                return;
+            }
             if (e.key === 'Enter') {
                 e.preventDefault();
                 const next = enterTarget(row, col);
@@ -110,7 +132,7 @@ export function useKeyboardGrid(options: {
                 onRulePicker?.(row);
             }
         },
-        [enterTarget, focusCell, rowCount, enterOrder, onAppendRow, onProductSearch, onRulePicker],
+        [enterTarget, focusCell, rowCount, enterOrder, onAppendRow, onProductSearch, onRulePicker, onDeleteRow, onInsertRow],
     );
 
     return { registerCell, focusCell, handleKeyDown };

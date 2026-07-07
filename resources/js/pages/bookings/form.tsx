@@ -141,6 +141,8 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
         colCount: COL_COUNT,
         enterOrder: ENTER_ORDER,
         onAppendRow: () => setRows((r) => [...r, emptyRow()]),
+        onDeleteRow: (row) => setRows((r) => (r.length === 1 ? [emptyRow()] : r.filter((_, i) => i !== row))),
+        onInsertRow: (row) => setRows((r) => { const c = [...r]; c.splice(row + 1, 0, emptyRow()); return c; }),
         onProductSearch: (row) => setSearchSignal((s) => ({ row, n: s.n + 1 })),
         onRulePicker: (row) => {
             if (!rows[row]?.product_id) return;
@@ -503,7 +505,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                             onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))}
                         />
                         <p className="mt-2 text-xs text-muted-foreground">
-                            Keys: Enter next field · ↑↓ rows · F2 product · F4 rule · F8 save · F9 submit.
+                            Keys: Enter next field · ↑↓ rows · F2 product · F4 rule · Ctrl+D delete row · Ctrl+I add row · F8 save · F9 submit.
                             Stock is not reserved — availability is checked when the invoice is posted.
                         </p>
                     </div>

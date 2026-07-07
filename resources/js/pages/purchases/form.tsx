@@ -154,6 +154,8 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
         colCount: COLS.length,
         enterOrder: ENTER_ORDER,
         onAppendRow: () => setRows((r) => [...r, emptyRow()]),
+        onDeleteRow: (row) => setRows((r) => (r.length === 1 ? [emptyRow()] : r.filter((_, i) => i !== row))),
+        onInsertRow: (row) => setRows((r) => { const c = [...r]; c.splice(row + 1, 0, emptyRow()); return c; }),
         onProductSearch: (row) => setSearchSignal((s) => ({ row, n: s.n + 1 })),
     });
 
@@ -490,7 +492,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                             onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))}
                         />
                         <p className="mt-2 text-xs text-muted-foreground">
-                            Keys: Enter next field · ↑↓ rows · F2 product search · F8 save · F9 post
+                            Keys: Enter next field · ↑↓ rows · F2 product search · Ctrl+D delete row · Ctrl+I add row · F8 save · F9 post
                         </p>
                     </div>
                     <div className="ml-auto w-72 space-y-1 rounded-xl border p-4 text-sm">
