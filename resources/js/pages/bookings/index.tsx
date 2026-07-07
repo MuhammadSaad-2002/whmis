@@ -60,7 +60,7 @@ export default function BookingsIndex({ bookings, customers, filters }: Props) {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                         <h1 className="text-xl font-semibold">Booking Orders</h1>
-                        <p className="text-sm text-muted-foreground">Pharmacy orders taken by bookers, converted to invoices after approval</p>
+                        <p className="text-sm text-muted-foreground">Customer orders taken by bookers, converted to invoices after approval</p>
                     </div>
                     {can('bookings.create') && (
                         <Button asChild>
@@ -89,7 +89,7 @@ export default function BookingsIndex({ bookings, customers, filters }: Props) {
                         </SelectContent>
                     </Select>
                     <Select value={filters.customer_id ?? 'all'} onValueChange={(v) => setFilter('customer_id', v === 'all' ? undefined : v)}>
-                        <SelectTrigger className="w-48"><SelectValue placeholder="Pharmacy" /></SelectTrigger>
+                        <SelectTrigger className="w-48"><SelectValue placeholder="Customer" /></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">All pharmacies</SelectItem>
                             {customers.map((customer) => (
@@ -104,7 +104,7 @@ export default function BookingsIndex({ bookings, customers, filters }: Props) {
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Booking #</TableHead>
-                                <TableHead>Pharmacy</TableHead>
+                                <TableHead>Customer</TableHead>
                                 <TableHead>Booker</TableHead>
                                 <TableHead>Date</TableHead>
                                 <TableHead className="text-right">Total</TableHead>

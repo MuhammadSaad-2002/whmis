@@ -1,5 +1,6 @@
 import { ProductSearchCell, type ProductHit } from '@/components/product-search-cell';
 import { RulePickerDialog, type RuleHit } from '@/components/rule-picker-dialog';
+import { SearchableSelect } from '@/components/searchable-select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -317,21 +318,19 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
 
                 <div data-enter-nav className="grid grid-cols-2 gap-3 rounded-xl border p-4 md:grid-cols-4">
                     <div>
-                        <Label>Pharmacy *</Label>
-                        <Select
+                        <Label>Customer *</Label>
+                        <SearchableSelect
                             value={header.customer_id}
                             onValueChange={(v) => setHeader((h) => ({ ...h, customer_id: v }))}
                             disabled={readonly}
-                        >
-                            <SelectTrigger><SelectValue placeholder="Select pharmacy" /></SelectTrigger>
-                            <SelectContent>
-                                {customers.map((customer) => (
-                                    <SelectItem key={customer.id} value={String(customer.id)}>
-                                        {customer.name}{customer.city ? ` — ${customer.city}` : ''}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                            placeholder="Select customer"
+                            searchPlaceholder="Search customer…"
+                            emptyText="No customers found."
+                            options={customers.map((customer) => ({
+                                value: String(customer.id),
+                                label: customer.name + (customer.city ? ` — ${customer.city}` : ''),
+                            }))}
+                        />
                     </div>
                     <div>
                         <Label>Booking Date *</Label>

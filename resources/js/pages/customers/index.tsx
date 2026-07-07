@@ -152,7 +152,7 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                        <h1 className="text-xl font-semibold">Pharmacy Customers</h1>
+                        <h1 className="text-xl font-semibold">Customers</h1>
                         <p className="text-sm text-muted-foreground">Pharmacies you sell to</p>
                     </div>
                     {can('customers.manage') && (
@@ -171,7 +171,7 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                     <div className="relative w-72">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
                         <Input
-                            placeholder="Search pharmacy, owner, phone, city…"
+                            placeholder="Search customer, owner, phone, city…"
                             className="pl-8"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
@@ -210,7 +210,7 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Pharmacy</TableHead>
+                                <TableHead>Customer</TableHead>
                                 <TableHead>Owner / Contact</TableHead>
                                 <TableHead>City</TableHead>
                                 <TableHead>License</TableHead>
@@ -299,7 +299,7 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                     </DialogHeader>
                     <form onSubmit={submit} className="grid grid-cols-3 gap-3">
                         <div className="col-span-3">
-                            <Label htmlFor="name">Pharmacy Name *</Label>
+                            <Label htmlFor="name">Customer Name *</Label>
                             <Input id="name" value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} autoFocus />
                             {err('name') && <p className="text-xs text-destructive">{err('name')}</p>}
                         </div>
