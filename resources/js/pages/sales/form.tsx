@@ -75,7 +75,7 @@ interface Props {
 
 const emptyRow = (): ItemRow => ({
     product_id: null, product_name: '', batch_number: '', stock: 0,
-    quantity: '', bonus_quantity: '0', applied_rule_id: null, applied_rule_name: '',
+    quantity: '1', bonus_quantity: '0', applied_rule_id: null, applied_rule_name: '',
     trade_price: '', discount_percent: '0.00', gst_percent: '0.00', remarks: '',
 });
 
@@ -284,18 +284,27 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
 
     const selectedCustomer = customers.find((c) => String(c.id) === header.customer_id);
 
-    const cellInput = (rowIndex: number, colIndex: number, key: keyof ItemRow, type = 'text', className = '') => (
-        <Input
-            ref={grid.registerCell(rowIndex, colIndex) as never}
-            type={type}
-            value={rows[rowIndex][key] as string}
-            disabled={readonly}
-            onChange={(e) => setCell(rowIndex, key, e.target.value)}
-            onBlur={DECIMAL_KEYS.has(key) ? (e) => setCell(rowIndex, key, dec2(e.target.value)) : undefined}
-            onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, colIndex)}
-            className={`h-8 rounded-none border-0 px-2 text-sm focus-visible:ring-1 ${className}`}
-        />
-    );
+    const cellInput = (rowIndex: number, colIndex: number, key: keyof ItemRow, type = 'text', className = '') => {
+        const isQty = key === 'quantity';
+        const onBlur = isQty
+            ? (e: React.FocusEvent<HTMLInputElement>) => setCell(rowIndex, key, String(Math.max(1, toNumber(e.target.value))))
+            : DECIMAL_KEYS.has(key)
+                ? (e: React.FocusEvent<HTMLInputElement>) => setCell(rowIndex, key, dec2(e.target.value))
+                : undefined;
+        return (
+            <Input
+                ref={grid.registerCell(rowIndex, colIndex) as never}
+                type={type}
+                min={isQty ? 1 : undefined}
+                value={rows[rowIndex][key] as string}
+                disabled={readonly}
+                onChange={(e) => setCell(rowIndex, key, e.target.value)}
+                onBlur={onBlur}
+                onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, colIndex)}
+                className={`h-8 rounded-none border-0 px-2 text-sm focus-visible:ring-1 ${className}`}
+            />
+        );
+    };
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>

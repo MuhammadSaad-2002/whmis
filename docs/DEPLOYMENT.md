@@ -8,7 +8,7 @@ the cPanel host needs **only PHP 8.2+ and MySQL** — no Node, no Composer.
 Deployment uses **cPanel Git™ Version Control**: after each pull, cPanel runs the
 `.cpanel.yml` script in the repo root (migrate + rebuild caches).
 
-Production is `whmis.vwisdomtechnologies.com`. Required PHP extensions:
+Production is `whms.vwisdomtechnologies.com`. Required PHP extensions:
 `mbstring, xml, zip, gd, curl, pdo_mysql, bcmath, ctype, fileinfo, tokenizer, openssl`.
 
 > **Secrets never live in Git.** The real `.env` (with the DB password and
@@ -38,7 +38,7 @@ user is attached to the DB with **ALL PRIVILEGES**. Then:
 - **Repository Path**: `whmis` → clones to `/home/vwisdomo/whmis` (vendor + build come with it).
 
 ### 3. Document root
-**Domains → whmis.vwisdomtechnologies.com → Document Root** → set to
+**Domains → whms.vwisdomtechnologies.com → Document Root** → set to
 `/home/vwisdomo/whmis/public`.
 
 ### 4. Create the production `.env` (File Manager — no terminal)
@@ -58,7 +58,7 @@ This drives `whmis:check-alerts` (low stock / expiry / overdue notifications).
 (Optional — the app works without it; only the automated alerts need it.)
 
 ### 6. First login
-Open `https://whmis.vwisdomtechnologies.com/login` → `admin@whmis.local` /
+Open `https://whms.vwisdomtechnologies.com/login` → `admin@whmis.local` /
 `password` → **change the password immediately** (user menu → Settings → Password).
 
 > **Troubleshooting a 500 on first load:** set `APP_DEBUG=true` in `.env` to see

@@ -71,7 +71,7 @@ interface Props {
 
 const emptyRow = (): ItemRow => ({
     product_id: null, product_name: '', batch_number: '', expiry_date: '',
-    quantity: '', bonus_quantity: '0', purchase_rate: '', trade_price: '',
+    quantity: '1', bonus_quantity: '0', purchase_rate: '', trade_price: '',
     retail_price: '', discount_percent: '0.00', gst_percent: '0.00', remarks: '',
 });
 
@@ -250,18 +250,27 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
         </Badge>
     );
 
-    const cellInput = (rowIndex: number, colIndex: number, key: keyof ItemRow, type = 'text', className = '') => (
-        <Input
-            ref={grid.registerCell(rowIndex, colIndex) as never}
-            type={type}
-            value={rows[rowIndex][key] as string}
-            disabled={readonly}
-            onChange={(e) => setCell(rowIndex, key, e.target.value)}
-            onBlur={DECIMAL_KEYS.has(key) ? (e) => setCell(rowIndex, key, dec2(e.target.value)) : undefined}
-            onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, colIndex)}
-            className={`h-8 rounded-none border-0 px-2 text-sm focus-visible:ring-1 ${className}`}
-        />
-    );
+    const cellInput = (rowIndex: number, colIndex: number, key: keyof ItemRow, type = 'text', className = '') => {
+        const isQty = key === 'quantity';
+        const onBlur = isQty
+            ? (e: React.FocusEvent<HTMLInputElement>) => setCell(rowIndex, key, String(Math.max(1, toNumber(e.target.value))))
+            : DECIMAL_KEYS.has(key)
+                ? (e: React.FocusEvent<HTMLInputElement>) => setCell(rowIndex, key, dec2(e.target.value))
+                : undefined;
+        return (
+            <Input
+                ref={grid.registerCell(rowIndex, colIndex) as never}
+                type={type}
+                min={isQty ? 1 : undefined}
+                value={rows[rowIndex][key] as string}
+                disabled={readonly}
+                onChange={(e) => setCell(rowIndex, key, e.target.value)}
+                onBlur={onBlur}
+                onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, colIndex)}
+                className={`h-8 rounded-none border-0 px-2 text-sm focus-visible:ring-1 ${className}`}
+            />
+        );
+    };
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>

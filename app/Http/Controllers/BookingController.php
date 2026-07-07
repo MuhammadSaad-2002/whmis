@@ -227,7 +227,7 @@ class BookingController extends Controller
             'notes' => ['nullable', 'string'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'exists:products,id'],
-            'items.*.quantity' => ['required', 'numeric', 'gt:0'],
+            'items.*.quantity' => ['required', 'numeric', 'min:1'],
             'items.*.requested_bonus' => ['nullable', 'numeric', 'min:0'],
             'items.*.applied_rule_id' => ['nullable', 'exists:incentive_rules,id'],
             'items.*.trade_price' => ['required', 'numeric', 'min:0'],

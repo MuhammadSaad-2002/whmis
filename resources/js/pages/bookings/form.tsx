@@ -65,7 +65,7 @@ interface Props {
 }
 
 const emptyRow = (): ItemRow => ({
-    product_id: null, product_name: '', quantity: '', requested_bonus: '0',
+    product_id: null, product_name: '', quantity: '1', requested_bonus: '0',
     applied_rule_id: null, applied_rule_name: '', trade_price: '',
     discount_percent: '0.00', gst_percent: '0.00', remarks: '',
 });
@@ -394,8 +394,9 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                                     <td>
                                         <Input
                                             ref={grid.registerCell(rowIndex, 1) as never}
-                                            type="number" value={row.quantity} disabled={readonly}
+                                            type="number" min={1} value={row.quantity} disabled={readonly}
                                             onChange={(e) => setCell(rowIndex, 'quantity', e.target.value)}
+                                            onBlur={(e) => setCell(rowIndex, 'quantity', String(Math.max(1, toNumber(e.target.value))))}
                                             onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 1)}
                                             className="h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1"
                                         />

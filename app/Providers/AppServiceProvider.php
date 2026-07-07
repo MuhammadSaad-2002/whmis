@@ -7,6 +7,7 @@ use App\Models\Company;
 use App\Models\Customer;
 use App\Models\IncentiveRule;
 use App\Models\Payment;
+use App\Models\Product;
 use App\Models\PurchaseInvoice;
 use App\Models\PurchaseReturn;
 use App\Models\SalesInvoice;
@@ -34,6 +35,7 @@ class AppServiceProvider extends ServiceProvider
         Relation::enforceMorphMap([
             'customer' => Customer::class,
             'company' => Company::class,
+            'product' => Product::class,
             'sales_invoice' => SalesInvoice::class,
             'purchase_invoice' => PurchaseInvoice::class,
             'stock_adjustment' => StockAdjustment::class,

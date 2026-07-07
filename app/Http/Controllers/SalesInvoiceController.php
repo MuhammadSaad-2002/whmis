@@ -195,7 +195,7 @@ class SalesInvoiceController extends Controller
             'items.*.product_id' => ['required', 'exists:products,id'],
             'items.*.batch_number' => ['nullable', 'string', 'max:100'],
             'items.*.applied_rule_id' => ['nullable', 'exists:incentive_rules,id'],
-            'items.*.quantity' => ['required', 'numeric', 'gt:0'],
+            'items.*.quantity' => ['required', 'numeric', 'min:1'],
             'items.*.bonus_quantity' => ['nullable', 'numeric', 'min:0'],
             'items.*.trade_price' => ['required', 'numeric', 'min:0'],
             'items.*.discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],

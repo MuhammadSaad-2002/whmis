@@ -13,7 +13,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { amount, qty } from '@/lib/format';
+import { amount, dec2, money, qty } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, useForm } from '@inertiajs/react';
 import { Pencil, Plus, Search, Trash2, Upload } from 'lucide-react';
@@ -56,11 +56,17 @@ interface Props {
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Products', href: '/products' }];
 
+// Money/percent fields are held as strings so they can display 0.00; qty
+// fields (min_stock, reorder_level) stay plain numbers.
 const emptyForm = {
     name: '', generic_name: '', brand_name: '', company_id: '', category_id: '', product_type: '',
-    sku: '', barcode: '', pack_size: '', purchase_price: 0, trade_price: 0, retail_price: 0, mrp: 0,
-    tax_percent: 0, default_discount_percent: 0, min_stock: 0, reorder_level: 0, status: 'active', notes: '',
+    sku: '', barcode: '', pack_size: '',
+    purchase_price: '0.00', trade_price: '0.00', retail_price: '0.00', mrp: '0.00',
+    tax_percent: '0.00', default_discount_percent: '0.00',
+    min_stock: 0, reorder_level: 0, status: 'active', notes: '',
 };
+
+const DECIMAL_FIELDS = ['purchase_price', 'trade_price', 'retail_price', 'mrp', 'tax_percent', 'default_discount_percent'] as const;
 
 export default function ProductsIndex({ products, companies, categories, filters }: Props) {
     const { can } = usePermissions();
@@ -99,12 +105,12 @@ export default function ProductsIndex({ products, companies, categories, filters
             sku: product.sku ?? '',
             barcode: product.barcode ?? '',
             pack_size: product.pack_size ?? '',
-            purchase_price: Number(product.purchase_price),
-            trade_price: Number(product.trade_price),
-            retail_price: Number(product.retail_price),
-            mrp: Number(product.mrp),
-            tax_percent: Number(product.tax_percent),
-            default_discount_percent: Number(product.default_discount_percent),
+            purchase_price: dec2(product.purchase_price),
+            trade_price: dec2(product.trade_price),
+            retail_price: dec2(product.retail_price),
+            mrp: dec2(product.mrp),
+            tax_percent: dec2(product.tax_percent),
+            default_discount_percent: dec2(product.default_discount_percent),
             min_stock: Number(product.min_stock),
             reorder_level: Number(product.reorder_level),
             status: product.status,
@@ -128,17 +134,40 @@ export default function ProductsIndex({ products, companies, categories, filters
 
     const err = (key: string) => (form.errors as Record<string, string>)[key];
 
-    const numberField = (key: keyof typeof emptyForm, label: string, step = '0.01') => (
-        <div>
-            <Label htmlFor={key}>{label}</Label>
-            <Input
-                id={key} type="number" min={0} step={step}
-                value={form.data[key] as number}
-                onChange={(e) => form.setData(key, Number(e.target.value) as never)}
-            />
-            {err(key) && <p className="text-xs text-destructive">{err(key)}</p>}
-        </div>
-    );
+    // Live margins from the current (string) price fields.
+    const priceNum = (key: (typeof DECIMAL_FIELDS)[number]) => Number(form.data[key]) || 0;
+    const pPurchase = priceNum('purchase_price');
+    const pTrade = priceNum('trade_price');
+    const pRetail = priceNum('retail_price');
+    const pMrp = priceNum('mrp');
+    const yourMarginPct = pPurchase > 0 ? ((pTrade - pPurchase) / pPurchase) * 100 : 0;
+    const pharmacyMarginPct = pTrade > 0 ? ((pRetail - pTrade) / pTrade) * 100 : 0;
+    const priceWarnings = [
+        pTrade > 0 && pTrade < pPurchase ? 'Trade price is below purchase cost' : null,
+        pRetail > 0 && pRetail < pTrade ? 'Retail is below trade price' : null,
+        pMrp > 0 && pRetail > pMrp ? 'Retail exceeds MRP' : null,
+    ].filter(Boolean) as string[];
+
+    const numberField = (
+        key: keyof typeof emptyForm,
+        label: string,
+        opts: { dec?: boolean; step?: string; hint?: string } = {},
+    ) => {
+        const { dec = false, step = '0.01', hint } = opts;
+        return (
+            <div>
+                <Label htmlFor={key}>{label}</Label>
+                <Input
+                    id={key} type="number" min={0} step={step}
+                    value={form.data[key] as string | number}
+                    onChange={(e) => form.setData(key, (dec ? e.target.value : Number(e.target.value)) as never)}
+                    onBlur={dec ? (e) => form.setData(key, dec2(e.target.value) as never) : undefined}
+                />
+                {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+                {err(key) && <p className="text-xs text-destructive">{err(key)}</p>}
+            </div>
+        );
+    };
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -347,14 +376,37 @@ export default function ProductsIndex({ products, companies, categories, filters
                                 </SelectContent>
                             </Select>
                         </div>
-                        {numberField('purchase_price', 'Purchase Price')}
-                        {numberField('trade_price', 'Trade Price')}
-                        {numberField('retail_price', 'Retail Price')}
-                        {numberField('mrp', 'MRP')}
-                        {numberField('tax_percent', 'GST %')}
-                        {numberField('default_discount_percent', 'Default Discount %')}
-                        {numberField('min_stock', 'Minimum Stock', '1')}
-                        {numberField('reorder_level', 'Reorder Level', '1')}
+                        {numberField('purchase_price', 'Purchase Price', { dec: true, hint: 'Your cost from the supplier' })}
+                        {numberField('trade_price', 'Trade Price', { dec: true, hint: 'Price to the pharmacy (fills sales lines)' })}
+                        {numberField('retail_price', 'Retail Price', { dec: true, hint: 'Pharmacy → customer price' })}
+                        {numberField('mrp', 'MRP', { dec: true, hint: 'Printed maximum retail price' })}
+                        {numberField('tax_percent', 'GST %', { dec: true })}
+                        {numberField('default_discount_percent', 'Default Discount %', { dec: true })}
+                        {numberField('min_stock', 'Minimum Stock', { step: '1' })}
+                        {numberField('reorder_level', 'Reorder Level', { step: '1' })}
+
+                        <div className="col-span-3 rounded-lg border bg-muted/30 p-3 text-sm">
+                            <div className="grid gap-1 sm:grid-cols-2">
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="text-muted-foreground">Your margin (Trade − Purchase)</span>
+                                    <span className="tabular-nums font-medium">
+                                        {money(pTrade - pPurchase)} · {yourMarginPct.toFixed(2)}%
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="text-muted-foreground">Pharmacy margin (Retail − Trade)</span>
+                                    <span className="tabular-nums font-medium">
+                                        {money(pRetail - pTrade)} · {pharmacyMarginPct.toFixed(2)}%
+                                    </span>
+                                </div>
+                            </div>
+                            {priceWarnings.length > 0 && (
+                                <p className="mt-2 text-xs text-amber-600 dark:text-amber-500">
+                                    ⚠ {priceWarnings.join(' · ')}
+                                </p>
+                            )}
+                        </div>
+
                         <DialogFooter className="col-span-3">
                             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
                             <Button type="submit" disabled={form.processing}>
