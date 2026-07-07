@@ -149,7 +149,7 @@ export default function SuppliersIndex({ companies, filters }: Props) {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                    <div className="relative w-72">
+                    <div className="relative w-full sm:w-72">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
                         <Input
                             ref={searchRef}
@@ -245,7 +245,7 @@ export default function SuppliersIndex({ companies, filters }: Props) {
                     <DialogHeader>
                         <DialogTitle>{editing ? `Edit ${editing.name}` : 'Add Supplier'}</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submit} className="grid grid-cols-2 gap-3">
+                    <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="col-span-2">
                             <Label htmlFor="name">Supplier Name *</Label>
                             <Input

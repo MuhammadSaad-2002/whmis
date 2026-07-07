@@ -1,3 +1,4 @@
+import { AppFooter } from '@/components/app-footer';
 import { type SharedData } from '@/types';
 import { Head, Link, usePage } from '@inertiajs/react';
 
@@ -776,6 +777,7 @@ export default function Welcome() {
                     </main>
                 </div>
                 <div className="hidden h-14.5 lg:block"></div>
+                <AppFooter className="mt-auto w-full border-t-0" />
             </div>
         </>
     );

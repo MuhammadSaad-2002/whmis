@@ -104,7 +104,7 @@ export default function InventoryBatches({ batches, filters }: Props) {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                    <div className="relative w-72">
+                    <div className="relative w-full sm:w-72">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
                         <Input placeholder="Search batch or product…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>

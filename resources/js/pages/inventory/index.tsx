@@ -80,7 +80,7 @@ export default function InventoryIndex({ products, companies, filters, totals }:
                 </Card>
 
                 <div className="flex flex-wrap items-center gap-2">
-                    <div className="relative w-72">
+                    <div className="relative w-full sm:w-72">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
                         <Input ref={searchRef} onKeyDown={onSearchKeyDown} placeholder="Search product…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>

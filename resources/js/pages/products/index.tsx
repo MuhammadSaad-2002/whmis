@@ -219,7 +219,7 @@ export default function ProductsIndex({ products, companies, categories, filters
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                    <div className="relative w-72">
+                    <div className="relative w-full sm:w-72">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
                         <Input
                             ref={searchRef}
@@ -347,7 +347,7 @@ export default function ProductsIndex({ products, companies, categories, filters
                     <DialogHeader>
                         <DialogTitle>{editing ? `Edit ${editing.name}` : 'Add Product'}</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submit} className="grid grid-cols-3 gap-3">
+                    <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
                         <div className="col-span-2">
                             <Label htmlFor="name">Product Name *</Label>
                             <Input

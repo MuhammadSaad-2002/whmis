@@ -68,7 +68,7 @@ export default function PurchaseReturnsIndex({ returns, filters }: Props) {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                    <div className="relative w-64">
+                    <div className="relative w-full sm:w-64">
                         <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
                         <Input ref={searchRef} onKeyDown={onSearchKeyDown} placeholder="Return number…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>

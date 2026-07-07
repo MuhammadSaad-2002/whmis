@@ -240,7 +240,7 @@ export default function PaymentsIndex({ payments, customers, companies, filters 
                     <DialogHeader>
                         <DialogTitle>Record Payment / Receipt</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submit} className="grid grid-cols-2 gap-3">
+                    <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                             <Label>Party Type</Label>
                             <Select
