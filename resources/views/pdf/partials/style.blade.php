@@ -1,6 +1,9 @@
 <style>
+    /* Reserve bottom space so the fixed footer (rendered on every page) never
+       overlaps flowing content. */
+    @page { margin: 0 0 2.2cm 0; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: DejaVu Sans, sans-serif; font-size: 10px; color: #1a1a1a; padding: 24px; }
+    body { font-family: DejaVu Sans, sans-serif; font-size: 10px; color: #1a1a1a; padding: 24px 24px 0 24px; }
     h1 { font-size: 16px; margin-bottom: 2px; }
     h2 { font-size: 12px; margin-bottom: 8px; color: #444; }
     .header { width: 100%; margin-bottom: 14px; border-bottom: 2px solid #1a1a1a; padding-bottom: 10px; }
@@ -16,4 +19,9 @@
     .muted { color: #777; }
     .footer { margin-top: 26px; font-size: 8.5px; color: #888; border-top: 1px solid #ddd; padding-top: 6px; }
     .badge { display: inline-block; padding: 1px 6px; border: 1px solid #999; border-radius: 3px; font-size: 8.5px; text-transform: uppercase; }
+    /* Fixed per-page footer (dompdf repeats position:fixed on every page). */
+    .page-footer { position: fixed; bottom: 0.7cm; left: 24px; right: 24px; font-size: 8.5px; color: #888; border-top: 1px solid #ddd; padding-top: 6px; }
+    .page-footer td { vertical-align: bottom; }
+    .page-footer .brand { font-weight: bold; color: #555; }
+    .pageno:before { content: counter(page) " / " counter(pages); }
 </style>

@@ -10,7 +10,7 @@
         <tr>
             <td>
                 <h1>{{ config('app.name') }}</h1>
-                <div class="meta">{{ $title }}</div>
+                <div class="meta">{{ $title }} · {{ count($rows) }} rows</div>
             </td>
             <td style="text-align: right;" class="meta">
                 @if(!empty($filters['from']) || !empty($filters['to']))
@@ -59,6 +59,6 @@
         </tbody>
     </table>
 
-    <div class="footer">{{ count($rows) }} rows · {{ config('app.name') }}</div>
+    @include('pdf.partials.footer')
 </body>
 </html>

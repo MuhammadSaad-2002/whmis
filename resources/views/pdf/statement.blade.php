@@ -73,8 +73,6 @@
         </tbody>
     </table>
 
-    <div class="footer">
-        Generated {{ now()->format('d M Y H:i') }} · {{ config('app.name') }}
-    </div>
+    @include('pdf.partials.footer')
 </body>
 </html>

@@ -44,6 +44,12 @@ class SalesInvoice extends Model implements AuditableContract
         return $this->belongsTo(Customer::class);
     }
 
+    /** Set when the invoice was created by converting a booking. */
+    public function booking(): BelongsTo
+    {
+        return $this->belongsTo(Booking::class);
+    }
+
     public function warehouse(): BelongsTo
     {
         return $this->belongsTo(Warehouse::class);

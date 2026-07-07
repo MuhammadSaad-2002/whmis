@@ -168,7 +168,7 @@ class SalesInvoiceController extends Controller
 
     public function print(SalesInvoice $sale)
     {
-        $sale->load(['items.product', 'items.batch', 'customer', 'warehouse']);
+        $sale->load(['items.product.company', 'items.batch', 'customer', 'warehouse', 'booking.booker']);
 
         return Pdf::loadView('pdf.sales-invoice', ['invoice' => $sale])
             ->setPaper('a4')

@@ -87,8 +87,6 @@
         <p style="margin-top: 10px;" class="meta">Notes: {{ $invoice->notes }}</p>
     @endif
 
-    <div class="footer">
-        Generated {{ now()->format('d M Y H:i') }} · {{ config('app.name') }}
-    </div>
+    @include('pdf.partials.footer')
 </body>
 </html>

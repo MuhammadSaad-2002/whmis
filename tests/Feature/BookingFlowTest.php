@@ -148,6 +148,11 @@ class BookingFlowTest extends TestCase
         $this->assertSame('posted', $invoice->refresh()->status);
         // 30 − (20 + 2 bonus) = 8 left
         $this->assertEqualsWithDelta(8.0, $this->product->availableStock(), 0.001);
+
+        // The invoice PDF renders with booking details + per-line supplier loaded.
+        $this->get(route('sales.print', $invoice))
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
     }
 
     public function test_rejected_booking_cannot_convert(): void

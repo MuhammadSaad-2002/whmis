@@ -15,7 +15,8 @@
             <td style="text-align: right;">
                 <h1>{{ $invoice->invoice_number }}</h1>
                 <div class="meta">
-                    Date: {{ $invoice->invoice_date->format('d M Y') }}<br>
+                    Sale #: {{ $invoice->invoice_number }}<br>
+                    Sale Date: {{ $invoice->invoice_date->format('d M Y') }}<br>
                     @if($invoice->due_date) Due: {{ $invoice->due_date->format('d M Y') }}<br> @endif
                     Status: <span class="badge">{{ strtoupper($invoice->status) }}</span>
                 </div>
@@ -36,7 +37,12 @@
             </td>
             <td style="text-align:right;" class="meta">
                 Type: {{ ucwords(str_replace('_', ' ', $invoice->sale_type)) }}<br>
-                Warehouse: {{ $invoice->warehouse->name }}
+                Warehouse: {{ $invoice->warehouse->name }}<br>
+                @if($invoice->booking)
+                    Booking #: {{ $invoice->booking->booking_number }}<br>
+                    Booking Date: {{ $invoice->booking->booking_date->format('d M Y') }}<br>
+                    @if($invoice->booking->booker) Booked by: {{ $invoice->booking->booker->name }} @endif
+                @endif
             </td>
         </tr>
     </table>
@@ -53,7 +59,10 @@
             @foreach($invoice->items as $i => $item)
                 <tr>
                     <td>{{ $i + 1 }}</td>
-                    <td>{{ $item->product->name }}</td>
+                    <td>
+                        <strong>{{ $item->product->name }}</strong>
+                        @if($item->product->company)<br><span class="muted" style="font-size:8px;">{{ $item->product->company->name }}</span>@endif
+                    </td>
                     <td>{{ $item->batch?->batch_number ?? 'FIFO' }}</td>
                     <td class="num">{{ number_format((float) $item->quantity, 0) }}</td>
                     <td class="num">{{ number_format((float) $item->bonus_quantity, 0) }}</td>
@@ -89,8 +98,6 @@
         <p style="margin-top: 10px;" class="meta">Notes: {{ $invoice->notes }}</p>
     @endif
 
-    <div class="footer">
-        Generated {{ now()->format('d M Y H:i') }} · {{ config('app.name') }}
-    </div>
+    @include('pdf.partials.footer')
 </body>
 </html>
