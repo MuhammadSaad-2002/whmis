@@ -13,6 +13,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // Honor X-Forwarded-* from the cPanel/Cloudflare proxy so Laravel
+        // detects HTTPS. Without this, SESSION_SECURE_COOKIE=true drops the
+        // session cookie when TLS terminates at the proxy → login loops / 419.
+        $middleware->trustProxies(at: '*');
+
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,

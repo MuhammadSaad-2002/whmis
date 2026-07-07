@@ -11,8 +11,15 @@
 # PHP binary: this host runs CloudLinux alt-php 8.4, whose CLI is at
 # /opt/alt/php84/usr/bin/php. If that path ever changes, update it here.
 # All tasks are tolerant (|| true) so a deploy never hard-fails.
+#
+# `db:seed --force` provisions the first-time baseline (admin user, roles /
+# permissions, default warehouse, number series). The seeders are idempotent
+# (firstOrCreate / syncPermissions), so re-running on every deploy is safe and
+# keeps permissions in sync.
 deployment:
   tasks:
     - /opt/alt/php84/usr/bin/php artisan up || true
     - /opt/alt/php84/usr/bin/php artisan migrate --force || true
+    - /opt/alt/php84/usr/bin/php artisan db:seed --force || true
+    - /opt/alt/php84/usr/bin/php artisan storage:link || true
     - /opt/alt/php84/usr/bin/php artisan optimize:clear || true
