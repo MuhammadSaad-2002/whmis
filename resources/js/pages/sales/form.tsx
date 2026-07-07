@@ -1,3 +1,4 @@
+import InputError from '@/components/input-error';
 import { ProductSearchCell, type ProductHit } from '@/components/product-search-cell';
 import { RulePickerDialog, type RuleHit } from '@/components/rule-picker-dialog';
 import { SearchableSelect } from '@/components/searchable-select';
@@ -13,6 +14,7 @@ import { useInvoiceHotkeys, useKeyboardGrid } from '@/hooks/use-keyboard-grid';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { amount, dec2, money, qty as fmtQty, toNumber } from '@/lib/format';
+import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { computeLine, computeTotals } from '@/lib/invoice-math';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
@@ -132,6 +134,77 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
     const [activeRow, setActiveRow] = useState(0); // rule picker context
     const [searchSignal, setSearchSignal] = useState({ row: -1, n: 0 });
     const [saving, setSaving] = useState(false);
+    const [headerErrors, setHeaderErrors] = useState<Record<string, string>>({});
+    const [rowErrors, setRowErrors] = useState<Record<number, Record<string, string>>>({});
+
+    // Per-cell rule used both on blur and on save. Returns a message or null.
+    const cellRule = (key: keyof ItemRow, value: string): string | null => {
+        if (key === 'quantity') return toNumber(value) < 1 ? 'Quantity must be at least 1.' : null;
+        if (key === 'discount_percent') {
+            const n = toNumber(value);
+            return n < 0 || n > 100 ? 'Discount % must be between 0 and 100.' : null;
+        }
+        if (key === 'gst_percent') {
+            const n = toNumber(value);
+            return n < 0 || n > 100 ? 'GST % must be between 0 and 100.' : null;
+        }
+        if (key === 'trade_price') return toNumber(value) < 0 ? 'Price cannot be negative.' : null;
+        return null;
+    };
+
+    const setRowError = (row: number, key: string, message: string | null) => {
+        setRowErrors((prev) => {
+            const next = { ...prev };
+            const cur = { ...(next[row] ?? {}) };
+            if (message) cur[key] = message;
+            else delete cur[key];
+            if (Object.keys(cur).length) next[row] = cur;
+            else delete next[row];
+            return next;
+        });
+    };
+
+    // Source-row indices that survive payload()'s filter, so a server `items.N`
+    // error maps back to the row on screen.
+    const includedRowIndexes = () =>
+        rows.map((_, i) => i).filter((i) => rows[i].product_id && toNumber(rows[i].quantity) > 0);
+
+    const validate = (): boolean => {
+        const h: Record<string, string> = {};
+        const r: Record<number, Record<string, string>> = {};
+        if (!header.customer_id) h.customer_id = 'Customer is required.';
+        if (header.sale_type === 'sale_base' && !header.sale_terms.trim()) {
+            h.sale_terms = 'Terms are required for a Sale Base invoice.';
+        }
+        if (!rows.some((row) => row.product_id)) {
+            r[0] = { product_id: 'Add at least one product.' };
+        }
+        rows.forEach((row, i) => {
+            if (!row.product_id) return;
+            const rowErr: Record<string, string> = {};
+            (['quantity', 'discount_percent', 'gst_percent', 'trade_price'] as (keyof ItemRow)[]).forEach((key) => {
+                const message = cellRule(key, row[key] as string);
+                if (message) rowErr[key] = message;
+            });
+            if (Object.keys(rowErr).length) r[i] = { ...(r[i] ?? {}), ...rowErr };
+        });
+        setHeaderErrors(h);
+        setRowErrors(r);
+        return Object.keys(h).length === 0 && Object.keys(r).length === 0;
+    };
+
+    const handleServerErrors = (errors: Record<string, string>) => {
+        const { header: h, rows: serverRows } = splitItemErrors(errors);
+        const map = includedRowIndexes();
+        const remapped: Record<number, Record<string, string>> = {};
+        for (const [idx, errs] of Object.entries(serverRows)) {
+            const src = map[Number(idx)] ?? Number(idx);
+            remapped[src] = { ...(remapped[src] ?? {}), ...errs };
+        }
+        setHeaderErrors(h);
+        setRowErrors(remapped);
+        toast.error(ALERT_FIX);
+    };
 
     const computed = useMemo(
         () =>
@@ -197,6 +270,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                     : row,
             ),
         );
+        setRowError(rowIndex, 'product_id', null);
         grid.focusCell(rowIndex, 1); // jump to batch
     };
 
@@ -246,30 +320,30 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
             })),
     });
 
-    const termsMissing = () => {
-        if (header.sale_type === 'sale_base' && !header.sale_terms.trim()) {
-            toast.error('Enter the terms for a Sale Base invoice.');
-            return true;
-        }
-        return false;
-    };
-
     const save = () => {
-        if (readonly || saving || termsMissing()) return;
+        if (readonly || saving) return;
+        if (!validate()) {
+            toast.error(ALERT_FIX);
+            return;
+        }
         setSaving(true);
-        const options = { preserveScroll: true, onFinish: () => setSaving(false) };
+        const options = { preserveScroll: true, onError: handleServerErrors, onFinish: () => setSaving(false) };
         if (invoice) router.put(route('sales.update', invoice.id), payload(), options);
         else router.post(route('sales.store'), payload(), options);
     };
 
     const post = () => {
-        if (!invoice || readonly || saving || termsMissing()) return;
+        if (!invoice || readonly || saving) return;
+        if (!validate()) {
+            toast.error(ALERT_FIX);
+            return;
+        }
         if (!confirm(`Post ${invoice.invoice_number}? Stock will be dispatched (FIFO) and the customer ledger charged.`)) return;
         setSaving(true);
         router.put(route('sales.update', invoice.id), payload(), {
             preserveScroll: true,
-            onSuccess: () => router.post(route('sales.post', invoice.id), {}, { onFinish: () => setSaving(false) }),
-            onError: () => setSaving(false),
+            onSuccess: () => router.post(route('sales.post', invoice.id), {}, { onError: handleServerErrors, onFinish: () => setSaving(false) }),
+            onError: (errors) => { handleServerErrors(errors); setSaving(false); },
         });
     };
 
@@ -289,11 +363,15 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
 
     const cellInput = (rowIndex: number, colIndex: number, key: keyof ItemRow, type = 'text', className = '') => {
         const isQty = key === 'quantity';
-        const onBlur = isQty
-            ? (e: React.FocusEvent<HTMLInputElement>) => setCell(rowIndex, key, String(Math.max(1, toNumber(e.target.value))))
-            : DECIMAL_KEYS.has(key)
-                ? (e: React.FocusEvent<HTMLInputElement>) => setCell(rowIndex, key, dec2(e.target.value))
-                : undefined;
+        const onBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+            let value = e.target.value;
+            if (isQty) value = String(Math.max(1, toNumber(value)));
+            else if (DECIMAL_KEYS.has(key)) value = dec2(value);
+            if (isQty || DECIMAL_KEYS.has(key)) setCell(rowIndex, key, value);
+            // Only real product lines are validated; the trailing blank row isn't.
+            if (rows[rowIndex].product_id) setRowError(rowIndex, key, cellRule(key, value));
+        };
+        const cellError = rowErrors[rowIndex]?.[key];
         return (
             <Input
                 ref={grid.registerCell(rowIndex, colIndex) as never}
@@ -301,10 +379,15 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                 min={isQty ? 1 : undefined}
                 value={rows[rowIndex][key] as string}
                 disabled={readonly}
-                onChange={(e) => setCell(rowIndex, key, e.target.value)}
+                title={cellError}
+                aria-invalid={!!cellError}
+                onChange={(e) => {
+                    setCell(rowIndex, key, e.target.value);
+                    if (cellError) setRowError(rowIndex, key, null);
+                }}
                 onBlur={onBlur}
                 onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, colIndex)}
-                className={`h-8 rounded-none border-0 px-2 text-sm focus-visible:ring-1 ${className}`}
+                className={`h-8 rounded-none border-0 px-2 text-sm focus-visible:ring-1 ${cellError ? 'bg-destructive/10 ring-1 ring-destructive' : ''} ${className}`}
             />
         );
     };
@@ -371,7 +454,10 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                         <Label>Customer *</Label>
                         <SearchableSelect
                             value={header.customer_id}
-                            onValueChange={(v) => setHeader((h) => ({ ...h, customer_id: v }))}
+                            onValueChange={(v) => {
+                                setHeader((h) => ({ ...h, customer_id: v }));
+                                setHeaderErrors((e) => { const n = { ...e }; delete n.customer_id; return n; });
+                            }}
                             disabled={readonly}
                             autoFocus={!readonly}
                             placeholder="Select customer"
@@ -382,6 +468,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                                 label: customer.name + (customer.city ? ` — ${customer.city}` : ''),
                             }))}
                         />
+                        <InputError message={headerErrors.customer_id} className="mt-1 text-xs" />
                         {selectedCustomer && Number(selectedCustomer.credit_limit) > 0 && (
                             <p className="mt-1 text-xs text-muted-foreground">
                                 Credit limit: {money(selectedCustomer.credit_limit)}
@@ -463,9 +550,15 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                                 rows={2}
                                 value={header.sale_terms}
                                 disabled={readonly}
+                                aria-invalid={!!headerErrors.sale_terms}
+                                className={headerErrors.sale_terms ? 'border-destructive ring-1 ring-destructive' : ''}
                                 placeholder="Payment / return terms for this Sale Base invoice — printed on the invoice"
-                                onChange={(e) => setHeader((h) => ({ ...h, sale_terms: e.target.value }))}
+                                onChange={(e) => {
+                                    setHeader((h) => ({ ...h, sale_terms: e.target.value }));
+                                    setHeaderErrors((er) => { const n = { ...er }; delete n.sale_terms; return n; });
+                                }}
                             />
+                            <InputError message={headerErrors.sale_terms} className="mt-1 text-xs" />
                         </div>
                     )}
                 </div>
@@ -496,7 +589,10 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                                 return (
                                     <tr key={rowIndex} className="border-b last:border-0 [&>td]:border-r [&>td]:p-0 [&>td:last-child]:border-r-0">
                                         <td className="px-2 text-center text-muted-foreground">{rowIndex + 1}</td>
-                                        <td>
+                                        <td
+                                            className={rowErrors[rowIndex]?.product_id ? 'ring-1 ring-inset ring-destructive' : ''}
+                                            title={rowErrors[rowIndex]?.product_id}
+                                        >
                                             <ProductSearchCell
                                                 value={row.product_name}
                                                 warehouseId={warehouse.id}

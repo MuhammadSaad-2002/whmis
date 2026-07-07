@@ -14,9 +14,11 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { amount, money, shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
+import { ALERT_FIX, min, required, useClientValidation } from '@/lib/form-validation';
 import { Head, router, useForm } from '@inertiajs/react';
 import { Ban, Plus } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 interface PaymentRow {
     id: number;
@@ -69,6 +71,11 @@ export default function PaymentsIndex({ payments, customers, companies, filters 
         notes: '',
         allocations: [] as { invoice_type: string; invoice_id: number; amount: number }[],
     });
+    const { validateField, validateForm } = useClientValidation(form, {
+        party_id: required('Party'),
+        amount: min(0.01, 'Amount'),
+        payment_date: required('Date'),
+    });
 
     const parties = form.data.party_type === 'customer' ? customers : companies;
 
@@ -94,6 +101,10 @@ export default function PaymentsIndex({ payments, customers, companies, filters 
 
     const submit = (e: FormEvent) => {
         e.preventDefault();
+        if (!validateForm()) {
+            toast.error(ALERT_FIX);
+            return;
+        }
         form.transform((data) => ({
             ...data,
             party_id: Number(data.party_id),
@@ -112,6 +123,7 @@ export default function PaymentsIndex({ payments, customers, companies, filters 
                 form.reset();
                 setAllocations({});
             },
+            onError: () => toast.error(ALERT_FIX),
         });
     };
 
@@ -247,8 +259,8 @@ export default function PaymentsIndex({ payments, customers, companies, filters 
                         </div>
                         <div>
                             <Label>{form.data.party_type === 'customer' ? 'Customer' : 'Supplier'} *</Label>
-                            <Select value={form.data.party_id} onValueChange={(v) => form.setData('party_id', v)}>
-                                <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                            <Select value={form.data.party_id} onValueChange={(v) => { form.setData('party_id', v); form.clearErrors('party_id'); }}>
+                                <SelectTrigger aria-invalid={!!err('party_id')} className={err('party_id') ? 'border-destructive ring-1 ring-destructive' : ''}><SelectValue placeholder="Select…" /></SelectTrigger>
                                 <SelectContent>
                                     {parties.map((party) => (
                                         <SelectItem key={party.id} value={String(party.id)}>{party.name}</SelectItem>
@@ -275,12 +287,22 @@ export default function PaymentsIndex({ payments, customers, companies, filters 
                             <Input
                                 type="number" min={0} step="0.01" value={form.data.amount}
                                 onChange={(e) => form.setData('amount', Number(e.target.value))}
+                                onBlur={() => validateField('amount')}
+                                aria-invalid={!!err('amount')}
+                                className={err('amount') ? 'border-destructive ring-1 ring-destructive' : ''}
                             />
                             {err('amount') && <p className="text-xs text-destructive">{err('amount')}</p>}
                         </div>
                         <div>
                             <Label>Date *</Label>
-                            <Input type="date" value={form.data.payment_date} onChange={(e) => form.setData('payment_date', e.target.value)} />
+                            <Input
+                                type="date" value={form.data.payment_date}
+                                onChange={(e) => form.setData('payment_date', e.target.value)}
+                                onBlur={() => validateField('payment_date')}
+                                aria-invalid={!!err('payment_date')}
+                                className={err('payment_date') ? 'border-destructive ring-1 ring-destructive' : ''}
+                            />
+                            {err('payment_date') && <p className="text-xs text-destructive">{err('payment_date')}</p>}
                         </div>
                         <div>
                             <Label>Reference #</Label>

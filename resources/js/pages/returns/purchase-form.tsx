@@ -9,9 +9,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { amount, money, qty as fmtQty, toNumber } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
+import { ALERT_FIX } from '@/lib/form-validation';
 import { Head, router } from '@inertiajs/react';
 import { Plus, Trash2, Undo2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { toast } from 'sonner';
 
 interface LineRow {
     batch_id: number;
@@ -74,11 +76,22 @@ export default function PurchaseReturnForm({ companies, warehouse }: Props) {
     const hasInvalid = rows.some((row) => toNumber(row.quantity) > row.available + 1e-9);
 
     const submit = () => {
-        if (!companyId || saving) return;
+        if (saving) return;
+        if (!companyId) {
+            toast.error('Select a supplier first.');
+            return;
+        }
+        if (hasInvalid) {
+            toast.error('One or more return quantities exceed the available stock.');
+            return;
+        }
         const lines = rows
             .filter((row) => toNumber(row.quantity) > 0)
             .map((row) => ({ batch_id: row.batch_id, quantity: toNumber(row.quantity), rate: toNumber(row.rate) || null }));
-        if (lines.length === 0) return;
+        if (lines.length === 0) {
+            toast.error('Enter a return quantity on at least one batch.');
+            return;
+        }
         if (!confirm(`Post this return for ${money(total)}? Stock and the supplier ledger update immediately.`)) return;
         setSaving(true);
         router.post(route('returns.purchases.store'), {
@@ -87,7 +100,10 @@ export default function PurchaseReturnForm({ companies, warehouse }: Props) {
             return_date: returnDate,
             reason: reason || null,
             lines,
-        }, { onFinish: () => setSaving(false) });
+        }, {
+            onError: () => toast.error(ALERT_FIX),
+            onFinish: () => setSaving(false),
+        });
     };
 
     return (
@@ -99,7 +115,7 @@ export default function PurchaseReturnForm({ companies, warehouse }: Props) {
                         <h1 className="text-xl font-semibold">New Purchase Return</h1>
                         <p className="text-sm text-muted-foreground">Return in-stock batches to a supplier — debit note is issued immediately</p>
                     </div>
-                    <Button size="sm" onClick={submit} disabled={!companyId || saving || total <= 0 || hasInvalid}>
+                    <Button size="sm" onClick={submit} disabled={saving}>
                         <Undo2 className="mr-1 size-4" /> Post Return
                     </Button>
                 </div>

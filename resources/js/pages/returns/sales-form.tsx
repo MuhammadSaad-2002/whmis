@@ -8,9 +8,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { amount, money, qty as fmtQty, shortDate, toNumber } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
+import { ALERT_FIX } from '@/lib/form-validation';
 import { Head, router } from '@inertiajs/react';
 import { FileSearch, Undo2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 
 interface InvoiceHit {
     id: number;
@@ -90,6 +92,14 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
 
     const submit = () => {
         if (!invoice || saving) return;
+        if (!returnDate) {
+            toast.error('Enter a return date.');
+            return;
+        }
+        if (hasOverReturn) {
+            toast.error('One or more return quantities exceed the returnable amount.');
+            return;
+        }
         const payload = {
             sales_invoice_id: invoice.id,
             return_date: returnDate,
@@ -101,10 +111,16 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
                     quantity: toNumber(quantities[line.sales_invoice_item_id]),
                 })),
         };
-        if (payload.lines.length === 0) return;
+        if (payload.lines.length === 0) {
+            toast.error('Enter a return quantity on at least one line.');
+            return;
+        }
         if (!confirm(`Post this return for ${money(totalRefund)}? Stock and the customer ledger update immediately.`)) return;
         setSaving(true);
-        router.post(route('returns.sales.store'), payload, { onFinish: () => setSaving(false) });
+        router.post(route('returns.sales.store'), payload, {
+            onError: () => toast.error(ALERT_FIX),
+            onFinish: () => setSaving(false),
+        });
     };
 
     const hasOverReturn = lines.some(
@@ -128,7 +144,7 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
                         <Button variant="outline" size="sm" onClick={() => setPickerOpen(true)}>
                             <FileSearch className="mr-1 size-4" /> {invoice ? 'Change Invoice' : 'Find Invoice'}
                         </Button>
-                        <Button size="sm" onClick={submit} disabled={!invoice || saving || totalRefund <= 0 || hasOverReturn}>
+                        <Button size="sm" onClick={submit} disabled={!invoice || saving}>
                             <Undo2 className="mr-1 size-4" /> Post Return
                         </Button>
                     </div>

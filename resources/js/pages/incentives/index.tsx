@@ -15,9 +15,11 @@ import AppLayout from '@/layouts/app-layout';
 import { shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
+import { ALERT_FIX, required, useClientValidation, type Validator } from '@/lib/form-validation';
 import { Head, router, useForm } from '@inertiajs/react';
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 interface Slab {
     min_qty: number | string;
@@ -74,6 +76,10 @@ const emptyForm = {
     value: 0, min_qty: '', date_from: '', date_to: '', priority: 0, active: true,
 };
 
+// A rule that only applies when the incentive is of `type`.
+const whenType = (type: string, message: string, ok: (value: unknown) => boolean): Validator =>
+    (value, data) => (data?.rule_type === type && !ok(value) ? message : null);
+
 export default function IncentivesIndex({ rules, products, companies, customers, filters }: Props) {
     const { can } = usePermissions();
     const [dialogOpen, setDialogOpen] = useState(false);
@@ -85,6 +91,16 @@ export default function IncentivesIndex({ rules, products, companies, customers,
     });
 
     const form = useForm(emptyForm);
+    const { validateField, validateForm } = useClientValidation(form, {
+        name: required('Rule name'),
+        base_qty: whenType('qty_bonus', 'Buy quantity must be at least 1.', (v) => Number(v) >= 1),
+        bonus_qty: whenType('qty_bonus', 'Free quantity must be at least 1.', (v) => Number(v) >= 1),
+        value: [
+            whenType('percent_discount', 'Discount % must be between 0 and 100.', (v) => Number(v) >= 0 && Number(v) <= 100),
+            whenType('fixed_discount', 'Discount amount cannot be negative.', (v) => Number(v) >= 0),
+            whenType('price_override', 'Special price cannot be negative.', (v) => Number(v) >= 0),
+        ],
+    });
 
     useEffect(() => {
         const timeout = setTimeout(() => {
@@ -126,6 +142,10 @@ export default function IncentivesIndex({ rules, products, companies, customers,
 
     const submit = (e: FormEvent) => {
         e.preventDefault();
+        if (!validateForm()) {
+            toast.error(ALERT_FIX);
+            return;
+        }
         form.transform((data) => ({
             ...data,
             product_id: data.product_id || null,
@@ -145,7 +165,11 @@ export default function IncentivesIndex({ rules, products, companies, customers,
                 : null,
             value: ['percent_discount', 'fixed_discount', 'price_override'].includes(data.rule_type) ? data.value : null,
         }));
-        const options = { preserveScroll: true, onSuccess: () => setDialogOpen(false) };
+        const options = {
+            preserveScroll: true,
+            onSuccess: () => setDialogOpen(false),
+            onError: () => toast.error(ALERT_FIX),
+        };
         if (editing) form.put(route('incentives.update', editing.id), options);
         else form.post(route('incentives.store'), options);
     };
@@ -273,7 +297,14 @@ export default function IncentivesIndex({ rules, products, companies, customers,
                     <form onSubmit={submit} className="grid grid-cols-2 gap-3">
                         <div>
                             <Label>Rule Name *</Label>
-                            <Input value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} autoFocus />
+                            <Input
+                                value={form.data.name}
+                                onChange={(e) => form.setData('name', e.target.value)}
+                                onBlur={() => validateField('name')}
+                                aria-invalid={!!err('name')}
+                                className={err('name') ? 'border-destructive ring-1 ring-destructive' : ''}
+                                autoFocus
+                            />
                             {err('name') && <p className="text-xs text-destructive">{err('name')}</p>}
                         </div>
                         <div>
@@ -295,6 +326,9 @@ export default function IncentivesIndex({ rules, products, companies, customers,
                                     <Input
                                         type="number" min={1} value={form.data.base_qty}
                                         onChange={(e) => form.setData('base_qty', Number(e.target.value))}
+                                        onBlur={() => validateField('base_qty')}
+                                        aria-invalid={!!err('base_qty')}
+                                        className={err('base_qty') ? 'border-destructive ring-1 ring-destructive' : ''}
                                     />
                                     {err('base_qty') && <p className="text-xs text-destructive">{err('base_qty')}</p>}
                                 </div>
@@ -303,7 +337,11 @@ export default function IncentivesIndex({ rules, products, companies, customers,
                                     <Input
                                         type="number" min={1} value={form.data.bonus_qty}
                                         onChange={(e) => form.setData('bonus_qty', Number(e.target.value))}
+                                        onBlur={() => validateField('bonus_qty')}
+                                        aria-invalid={!!err('bonus_qty')}
+                                        className={err('bonus_qty') ? 'border-destructive ring-1 ring-destructive' : ''}
                                     />
+                                    {err('bonus_qty') && <p className="text-xs text-destructive">{err('bonus_qty')}</p>}
                                     <p className="text-xs text-muted-foreground">
                                         e.g. Buy {form.data.base_qty || 'X'} get {form.data.bonus_qty || 'Y'} free — repeats every {form.data.base_qty || 'X'}
                                     </p>
@@ -358,6 +396,9 @@ export default function IncentivesIndex({ rules, products, companies, customers,
                                 <Input
                                     type="number" min={0} step="0.01" value={form.data.value}
                                     onChange={(e) => form.setData('value', Number(e.target.value))}
+                                    onBlur={() => validateField('value')}
+                                    aria-invalid={!!err('value')}
+                                    className={err('value') ? 'border-destructive ring-1 ring-destructive' : ''}
                                 />
                                 {err('value') && <p className="text-xs text-destructive">{err('value')}</p>}
                             </div>

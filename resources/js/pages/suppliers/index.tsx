@@ -16,9 +16,11 @@ import AppLayout from '@/layouts/app-layout';
 import { money } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
+import { ALERT_FIX, positive, required, useClientValidation } from '@/lib/form-validation';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { BookUser, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 interface Company {
     id: number;
@@ -63,6 +65,11 @@ export default function SuppliersIndex({ companies, filters }: Props) {
     });
 
     const form = useForm(emptyForm);
+    const { validateField, validateForm } = useClientValidation(form, {
+        name: required('Supplier name'),
+        credit_days: positive('Credit days'),
+        credit_limit: positive('Credit limit'),
+    });
 
     useEffect(() => {
         const timeout = setTimeout(() => {
@@ -104,7 +111,15 @@ export default function SuppliersIndex({ companies, filters }: Props) {
 
     const submit = (e: FormEvent) => {
         e.preventDefault();
-        const options = { preserveScroll: true, onSuccess: () => setDialogOpen(false) };
+        if (!validateForm()) {
+            toast.error(ALERT_FIX);
+            return;
+        }
+        const options = {
+            preserveScroll: true,
+            onSuccess: () => setDialogOpen(false),
+            onError: () => toast.error(ALERT_FIX),
+        };
         if (editing) form.put(route('suppliers.update', editing.id), options);
         else form.post(route('suppliers.store'), options);
     };
@@ -233,7 +248,15 @@ export default function SuppliersIndex({ companies, filters }: Props) {
                     <form onSubmit={submit} className="grid grid-cols-2 gap-3">
                         <div className="col-span-2">
                             <Label htmlFor="name">Supplier Name *</Label>
-                            <Input id="name" value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} autoFocus />
+                            <Input
+                                id="name"
+                                value={form.data.name}
+                                onChange={(e) => form.setData('name', e.target.value)}
+                                onBlur={() => validateField('name')}
+                                aria-invalid={!!err('name')}
+                                className={err('name') ? 'border-destructive ring-1 ring-destructive' : ''}
+                                autoFocus
+                            />
                             {err('name') && <p className="text-xs text-destructive">{err('name')}</p>}
                         </div>
                         {(

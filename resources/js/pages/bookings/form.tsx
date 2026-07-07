@@ -1,3 +1,4 @@
+import InputError from '@/components/input-error';
 import { ProductSearchCell, type ProductHit } from '@/components/product-search-cell';
 import { RulePickerDialog, type RuleHit } from '@/components/rule-picker-dialog';
 import { SearchableSelect } from '@/components/searchable-select';
@@ -13,6 +14,7 @@ import { useInvoiceHotkeys, useKeyboardGrid } from '@/hooks/use-keyboard-grid';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { amount, dec2, money, toNumber } from '@/lib/format';
+import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { computeLine, computeTotals } from '@/lib/invoice-math';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
@@ -114,6 +116,77 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
     const [activeRow, setActiveRow] = useState(0); // rule picker context
     const [searchSignal, setSearchSignal] = useState({ row: -1, n: 0 });
     const [saving, setSaving] = useState(false);
+    const [headerErrors, setHeaderErrors] = useState<Record<string, string>>({});
+    const [rowErrors, setRowErrors] = useState<Record<number, Record<string, string>>>({});
+
+    // Per-cell rule used both on blur and on save. Returns a message or null.
+    const cellRule = (key: keyof ItemRow, value: string): string | null => {
+        if (key === 'quantity') return toNumber(value) < 1 ? 'Quantity must be at least 1.' : null;
+        if (key === 'discount_percent') {
+            const n = toNumber(value);
+            return n < 0 || n > 100 ? 'Discount % must be between 0 and 100.' : null;
+        }
+        if (key === 'gst_percent') {
+            const n = toNumber(value);
+            return n < 0 || n > 100 ? 'GST % must be between 0 and 100.' : null;
+        }
+        if (key === 'trade_price') return toNumber(value) < 0 ? 'Price cannot be negative.' : null;
+        return null;
+    };
+
+    const setRowError = (row: number, key: string, message: string | null) => {
+        setRowErrors((prev) => {
+            const next = { ...prev };
+            const cur = { ...(next[row] ?? {}) };
+            if (message) cur[key] = message;
+            else delete cur[key];
+            if (Object.keys(cur).length) next[row] = cur;
+            else delete next[row];
+            return next;
+        });
+    };
+
+    const ringClass = (row: number, key: keyof ItemRow) =>
+        rowErrors[row]?.[key] ? 'bg-destructive/10 ring-1 ring-destructive' : '';
+
+    // Source-row indices that survive payload()'s filter, so a server `items.N`
+    // error maps back to the row on screen.
+    const includedRowIndexes = () =>
+        rows.map((_, i) => i).filter((i) => rows[i].product_id && toNumber(rows[i].quantity) > 0);
+
+    const validate = (): boolean => {
+        const h: Record<string, string> = {};
+        const r: Record<number, Record<string, string>> = {};
+        if (!header.customer_id) h.customer_id = 'Customer is required.';
+        if (!rows.some((row) => row.product_id)) {
+            r[0] = { product_id: 'Add at least one product.' };
+        }
+        rows.forEach((row, i) => {
+            if (!row.product_id) return;
+            const rowErr: Record<string, string> = {};
+            (['quantity', 'discount_percent', 'gst_percent', 'trade_price'] as (keyof ItemRow)[]).forEach((key) => {
+                const message = cellRule(key, row[key] as string);
+                if (message) rowErr[key] = message;
+            });
+            if (Object.keys(rowErr).length) r[i] = { ...(r[i] ?? {}), ...rowErr };
+        });
+        setHeaderErrors(h);
+        setRowErrors(r);
+        return Object.keys(h).length === 0 && Object.keys(r).length === 0;
+    };
+
+    const handleServerErrors = (errors: Record<string, string>) => {
+        const { header: h, rows: serverRows } = splitItemErrors(errors);
+        const map = includedRowIndexes();
+        const remapped: Record<number, Record<string, string>> = {};
+        for (const [idx, errs] of Object.entries(serverRows)) {
+            const src = map[Number(idx)] ?? Number(idx);
+            remapped[src] = { ...(remapped[src] ?? {}), ...errs };
+        }
+        setHeaderErrors(h);
+        setRowErrors(remapped);
+        toast.error(ALERT_FIX);
+    };
 
     const computed = useMemo(
         () =>
@@ -177,6 +250,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                     : row,
             ),
         );
+        setRowError(rowIndex, 'product_id', null);
         grid.focusCell(rowIndex, 1);
     };
 
@@ -223,19 +297,27 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
 
     const save = () => {
         if (readonly || saving) return;
+        if (!validate()) {
+            toast.error(ALERT_FIX);
+            return;
+        }
         setSaving(true);
-        const options = { preserveScroll: true, onFinish: () => setSaving(false) };
+        const options = { preserveScroll: true, onError: handleServerErrors, onFinish: () => setSaving(false) };
         if (booking) router.put(route('bookings.update', booking.id), payload(), options);
         else router.post(route('bookings.store'), payload(), options);
     };
 
     const submit = () => {
         if (!booking || readonly || saving) return;
+        if (!validate()) {
+            toast.error(ALERT_FIX);
+            return;
+        }
         setSaving(true);
         router.put(route('bookings.update', booking.id), payload(), {
             preserveScroll: true,
-            onSuccess: () => router.post(route('bookings.submit', booking.id), {}, { onFinish: () => setSaving(false) }),
-            onError: () => setSaving(false),
+            onSuccess: () => router.post(route('bookings.submit', booking.id), {}, { onError: handleServerErrors, onFinish: () => setSaving(false) }),
+            onError: (errors) => { handleServerErrors(errors); setSaving(false); },
         });
     };
 
@@ -323,7 +405,10 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                         <Label>Customer *</Label>
                         <SearchableSelect
                             value={header.customer_id}
-                            onValueChange={(v) => setHeader((h) => ({ ...h, customer_id: v }))}
+                            onValueChange={(v) => {
+                                setHeader((h) => ({ ...h, customer_id: v }));
+                                setHeaderErrors((e) => { const n = { ...e }; delete n.customer_id; return n; });
+                            }}
                             disabled={readonly}
                             autoFocus={!readonly}
                             placeholder="Select customer"
@@ -334,6 +419,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                                 label: customer.name + (customer.city ? ` — ${customer.city}` : ''),
                             }))}
                         />
+                        <InputError message={headerErrors.customer_id} className="mt-1 text-xs" />
                     </div>
                     <div>
                         <Label>Booking Date *</Label>
@@ -382,7 +468,10 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                             {rows.map((row, rowIndex) => (
                                 <tr key={rowIndex} className="border-b last:border-0 [&>td]:border-r [&>td]:p-0 [&>td:last-child]:border-r-0">
                                     <td className="px-2 text-center text-muted-foreground">{rowIndex + 1}</td>
-                                    <td>
+                                    <td
+                                        className={rowErrors[rowIndex]?.product_id ? 'ring-1 ring-inset ring-destructive' : ''}
+                                        title={rowErrors[rowIndex]?.product_id}
+                                    >
                                         <ProductSearchCell
                                             value={row.product_name}
                                             warehouseId={warehouse.id}
@@ -397,10 +486,16 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                                         <Input
                                             ref={grid.registerCell(rowIndex, 1) as never}
                                             type="number" min={1} value={row.quantity} disabled={readonly}
-                                            onChange={(e) => setCell(rowIndex, 'quantity', e.target.value)}
-                                            onBlur={(e) => setCell(rowIndex, 'quantity', String(Math.max(1, toNumber(e.target.value))))}
+                                            title={rowErrors[rowIndex]?.quantity}
+                                            aria-invalid={!!rowErrors[rowIndex]?.quantity}
+                                            onChange={(e) => { setCell(rowIndex, 'quantity', e.target.value); if (rowErrors[rowIndex]?.quantity) setRowError(rowIndex, 'quantity', null); }}
+                                            onBlur={(e) => {
+                                                const v = String(Math.max(1, toNumber(e.target.value)));
+                                                setCell(rowIndex, 'quantity', v);
+                                                if (row.product_id) setRowError(rowIndex, 'quantity', cellRule('quantity', v));
+                                            }}
                                             onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 1)}
-                                            className="h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1"
+                                            className={`h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1 ${ringClass(rowIndex, 'quantity')}`}
                                         />
                                     </td>
                                     <td>
@@ -441,30 +536,48 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                                         <Input
                                             ref={grid.registerCell(rowIndex, 4) as never}
                                             type="number" value={row.trade_price} disabled={readonly}
-                                            onChange={(e) => setCell(rowIndex, 'trade_price', e.target.value)}
-                                            onBlur={(e) => setCell(rowIndex, 'trade_price', dec2(e.target.value))}
+                                            title={rowErrors[rowIndex]?.trade_price}
+                                            aria-invalid={!!rowErrors[rowIndex]?.trade_price}
+                                            onChange={(e) => { setCell(rowIndex, 'trade_price', e.target.value); if (rowErrors[rowIndex]?.trade_price) setRowError(rowIndex, 'trade_price', null); }}
+                                            onBlur={(e) => {
+                                                const v = dec2(e.target.value);
+                                                setCell(rowIndex, 'trade_price', v);
+                                                if (row.product_id) setRowError(rowIndex, 'trade_price', cellRule('trade_price', v));
+                                            }}
                                             onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 4)}
-                                            className="h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1"
+                                            className={`h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1 ${ringClass(rowIndex, 'trade_price')}`}
                                         />
                                     </td>
                                     <td>
                                         <Input
                                             ref={grid.registerCell(rowIndex, 5) as never}
                                             type="number" value={row.discount_percent} disabled={readonly}
-                                            onChange={(e) => setCell(rowIndex, 'discount_percent', e.target.value)}
-                                            onBlur={(e) => setCell(rowIndex, 'discount_percent', dec2(e.target.value))}
+                                            title={rowErrors[rowIndex]?.discount_percent}
+                                            aria-invalid={!!rowErrors[rowIndex]?.discount_percent}
+                                            onChange={(e) => { setCell(rowIndex, 'discount_percent', e.target.value); if (rowErrors[rowIndex]?.discount_percent) setRowError(rowIndex, 'discount_percent', null); }}
+                                            onBlur={(e) => {
+                                                const v = dec2(e.target.value);
+                                                setCell(rowIndex, 'discount_percent', v);
+                                                if (row.product_id) setRowError(rowIndex, 'discount_percent', cellRule('discount_percent', v));
+                                            }}
                                             onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 5)}
-                                            className="h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1"
+                                            className={`h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1 ${ringClass(rowIndex, 'discount_percent')}`}
                                         />
                                     </td>
                                     <td>
                                         <Input
                                             ref={grid.registerCell(rowIndex, 6) as never}
                                             type="number" value={row.gst_percent} disabled={readonly}
-                                            onChange={(e) => setCell(rowIndex, 'gst_percent', e.target.value)}
-                                            onBlur={(e) => setCell(rowIndex, 'gst_percent', dec2(e.target.value))}
+                                            title={rowErrors[rowIndex]?.gst_percent}
+                                            aria-invalid={!!rowErrors[rowIndex]?.gst_percent}
+                                            onChange={(e) => { setCell(rowIndex, 'gst_percent', e.target.value); if (rowErrors[rowIndex]?.gst_percent) setRowError(rowIndex, 'gst_percent', null); }}
+                                            onBlur={(e) => {
+                                                const v = dec2(e.target.value);
+                                                setCell(rowIndex, 'gst_percent', v);
+                                                if (row.product_id) setRowError(rowIndex, 'gst_percent', cellRule('gst_percent', v));
+                                            }}
                                             onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 6)}
-                                            className="h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1"
+                                            className={`h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1 ${ringClass(rowIndex, 'gst_percent')}`}
                                         />
                                     </td>
                                     <td className="px-2 text-right tabular-nums">{amount(computed[rowIndex].net_amount)}</td>

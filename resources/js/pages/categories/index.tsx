@@ -10,9 +10,11 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
+import { ALERT_FIX, required, useClientValidation } from '@/lib/form-validation';
 import { Head, router, useForm } from '@inertiajs/react';
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 interface Category {
     id: number;
@@ -39,6 +41,9 @@ export default function CategoriesIndex({ categories, filters }: Props) {
     });
 
     const form = useForm({ name: '', description: '' });
+    const { validateField, validateForm } = useClientValidation(form, {
+        name: required('Name'),
+    });
 
     useEffect(() => {
         const timeout = setTimeout(() => {
@@ -65,7 +70,15 @@ export default function CategoriesIndex({ categories, filters }: Props) {
 
     const submit = (e: FormEvent) => {
         e.preventDefault();
-        const options = { preserveScroll: true, onSuccess: () => setDialogOpen(false) };
+        if (!validateForm()) {
+            toast.error(ALERT_FIX);
+            return;
+        }
+        const options = {
+            preserveScroll: true,
+            onSuccess: () => setDialogOpen(false),
+            onError: () => toast.error(ALERT_FIX),
+        };
         if (editing) form.put(route('categories.update', editing.id), options);
         else form.post(route('categories.store'), options);
     };
@@ -146,7 +159,15 @@ export default function CategoriesIndex({ categories, filters }: Props) {
                     <form onSubmit={submit} className="grid gap-3">
                         <div>
                             <Label htmlFor="name">Name *</Label>
-                            <Input id="name" value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} autoFocus />
+                            <Input
+                                id="name"
+                                value={form.data.name}
+                                onChange={(e) => form.setData('name', e.target.value)}
+                                onBlur={() => validateField('name')}
+                                aria-invalid={!!form.errors.name}
+                                className={form.errors.name ? 'border-destructive ring-1 ring-destructive' : ''}
+                                autoFocus
+                            />
                             {form.errors.name && <p className="text-xs text-destructive">{form.errors.name}</p>}
                         </div>
                         <div>

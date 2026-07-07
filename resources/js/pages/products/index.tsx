@@ -16,9 +16,11 @@ import AppLayout from '@/layouts/app-layout';
 import { amount, dec2, money, qty } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
+import { ALERT_FIX, positive, required, useClientValidation } from '@/lib/form-validation';
 import { Head, router, useForm } from '@inertiajs/react';
 import { Pencil, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 interface Product {
     id: number;
@@ -81,6 +83,14 @@ export default function ProductsIndex({ products, companies, categories, filters
     });
 
     const form = useForm(emptyForm);
+    const { validateField, validateForm } = useClientValidation(form, {
+        name: required('Product name'),
+        company_id: required('Supplier'),
+        purchase_price: positive('Purchase price'),
+        trade_price: positive('Trade price'),
+        retail_price: positive('Retail price'),
+        mrp: positive('MRP'),
+    });
 
     useEffect(() => {
         const timeout = setTimeout(() => {
@@ -127,12 +137,20 @@ export default function ProductsIndex({ products, companies, categories, filters
 
     const submit = (e: FormEvent) => {
         e.preventDefault();
+        if (!validateForm()) {
+            toast.error(ALERT_FIX);
+            return;
+        }
         form.transform((data) => ({
             ...data,
             company_id: data.company_id || null,
             category_id: data.category_id || null,
         }));
-        const options = { preserveScroll: true, onSuccess: () => setDialogOpen(false) };
+        const options = {
+            preserveScroll: true,
+            onSuccess: () => setDialogOpen(false),
+            onError: () => toast.error(ALERT_FIX),
+        };
         if (editing) form.put(route('products.update', editing.id), options);
         else form.post(route('products.store'), options);
     };
@@ -166,7 +184,12 @@ export default function ProductsIndex({ products, companies, categories, filters
                     id={key} type="number" min={0} step={step}
                     value={form.data[key] as string | number}
                     onChange={(e) => form.setData(key, (dec ? e.target.value : Number(e.target.value)) as never)}
-                    onBlur={dec ? (e) => form.setData(key, dec2(e.target.value) as never) : undefined}
+                    onBlur={(e) => {
+                        if (dec) form.setData(key, dec2(e.target.value) as never);
+                        validateField(key);
+                    }}
+                    aria-invalid={!!err(key)}
+                    className={err(key) ? 'border-destructive ring-1 ring-destructive' : ''}
                 />
                 {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
                 {err(key) && <p className="text-xs text-destructive">{err(key)}</p>}
@@ -327,7 +350,15 @@ export default function ProductsIndex({ products, companies, categories, filters
                     <form onSubmit={submit} className="grid grid-cols-3 gap-3">
                         <div className="col-span-2">
                             <Label htmlFor="name">Product Name *</Label>
-                            <Input id="name" value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} autoFocus />
+                            <Input
+                                id="name"
+                                value={form.data.name}
+                                onChange={(e) => form.setData('name', e.target.value)}
+                                onBlur={() => validateField('name')}
+                                aria-invalid={!!err('name')}
+                                className={err('name') ? 'border-destructive ring-1 ring-destructive' : ''}
+                                autoFocus
+                            />
                             {err('name') && <p className="text-xs text-destructive">{err('name')}</p>}
                         </div>
                         <div>
@@ -336,8 +367,8 @@ export default function ProductsIndex({ products, companies, categories, filters
                         </div>
                         <div>
                             <Label>Supplier *</Label>
-                            <Select value={form.data.company_id} onValueChange={(v) => form.setData('company_id', v)}>
-                                <SelectTrigger><SelectValue placeholder="Select company" /></SelectTrigger>
+                            <Select value={form.data.company_id} onValueChange={(v) => { form.setData('company_id', v); form.clearErrors('company_id'); }}>
+                                <SelectTrigger aria-invalid={!!err('company_id')} className={err('company_id') ? 'border-destructive ring-1 ring-destructive' : ''}><SelectValue placeholder="Select company" /></SelectTrigger>
                                 <SelectContent>
                                     {companies.map((company) => (
                                         <SelectItem key={company.id} value={String(company.id)}>{company.name}</SelectItem>

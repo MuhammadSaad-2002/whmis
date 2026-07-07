@@ -1,3 +1,4 @@
+import InputError from '@/components/input-error';
 import { ProductSearchCell, type ProductHit } from '@/components/product-search-cell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,7 @@ import { useInvoiceHotkeys, useKeyboardGrid } from '@/hooks/use-keyboard-grid';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { amount, dec2, money, toNumber } from '@/lib/format';
+import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { computeLine, computeTotals } from '@/lib/invoice-math';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
@@ -125,6 +127,74 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
 
     const [searchSignal, setSearchSignal] = useState({ row: -1, n: 0 });
     const [saving, setSaving] = useState(false);
+    const [headerErrors, setHeaderErrors] = useState<Record<string, string>>({});
+    const [rowErrors, setRowErrors] = useState<Record<number, Record<string, string>>>({});
+
+    // Per-cell rule used both on blur and on save. Returns a message or null.
+    const cellRule = (key: keyof ItemRow, value: string): string | null => {
+        if (key === 'quantity') return toNumber(value) < 1 ? 'Quantity must be at least 1.' : null;
+        if (key === 'discount_percent') {
+            const n = toNumber(value);
+            return n < 0 || n > 100 ? 'Discount % must be between 0 and 100.' : null;
+        }
+        if (key === 'gst_percent') {
+            const n = toNumber(value);
+            return n < 0 || n > 100 ? 'GST % must be between 0 and 100.' : null;
+        }
+        if (key === 'purchase_rate') return toNumber(value) < 0 ? 'Rate cannot be negative.' : null;
+        return null;
+    };
+
+    const setRowError = (row: number, key: string, message: string | null) => {
+        setRowErrors((prev) => {
+            const next = { ...prev };
+            const cur = { ...(next[row] ?? {}) };
+            if (message) cur[key] = message;
+            else delete cur[key];
+            if (Object.keys(cur).length) next[row] = cur;
+            else delete next[row];
+            return next;
+        });
+    };
+
+    // Source-row indices that survive payload()'s filter, so a server `items.N`
+    // error maps back to the row on screen.
+    const includedRowIndexes = () =>
+        rows.map((_, i) => i).filter((i) => rows[i].product_id && toNumber(rows[i].quantity) > 0);
+
+    const validate = (): boolean => {
+        const h: Record<string, string> = {};
+        const r: Record<number, Record<string, string>> = {};
+        if (!header.company_id) h.company_id = 'Supplier is required.';
+        if (!rows.some((row) => row.product_id)) {
+            r[0] = { product_id: 'Add at least one product.' };
+        }
+        rows.forEach((row, i) => {
+            if (!row.product_id) return;
+            const rowErr: Record<string, string> = {};
+            (['quantity', 'discount_percent', 'gst_percent', 'purchase_rate'] as (keyof ItemRow)[]).forEach((key) => {
+                const message = cellRule(key, row[key] as string);
+                if (message) rowErr[key] = message;
+            });
+            if (Object.keys(rowErr).length) r[i] = { ...(r[i] ?? {}), ...rowErr };
+        });
+        setHeaderErrors(h);
+        setRowErrors(r);
+        return Object.keys(h).length === 0 && Object.keys(r).length === 0;
+    };
+
+    const handleServerErrors = (errors: Record<string, string>) => {
+        const { header: h, rows: serverRows } = splitItemErrors(errors);
+        const map = includedRowIndexes();
+        const remapped: Record<number, Record<string, string>> = {};
+        for (const [idx, errs] of Object.entries(serverRows)) {
+            const src = map[Number(idx)] ?? Number(idx);
+            remapped[src] = { ...(remapped[src] ?? {}), ...errs };
+        }
+        setHeaderErrors(h);
+        setRowErrors(remapped);
+        toast.error(ALERT_FIX);
+    };
 
     const computed = useMemo(
         () =>
@@ -185,6 +255,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                     : row,
             ),
         );
+        setRowError(rowIndex, 'product_id', null);
         grid.focusCell(rowIndex, 1); // jump to batch number
     };
 
@@ -216,21 +287,29 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
 
     const save = () => {
         if (readonly || saving) return;
+        if (!validate()) {
+            toast.error(ALERT_FIX);
+            return;
+        }
         setSaving(true);
-        const options = { preserveScroll: true, onFinish: () => setSaving(false) };
+        const options = { preserveScroll: true, onError: handleServerErrors, onFinish: () => setSaving(false) };
         if (invoice) router.put(route('purchases.update', invoice.id), payload(), options);
         else router.post(route('purchases.store'), payload(), options);
     };
 
     const post = () => {
         if (!invoice || readonly || saving) return;
+        if (!validate()) {
+            toast.error(ALERT_FIX);
+            return;
+        }
         if (!confirm(`Post ${invoice.invoice_number}? Stock will be received and the supplier ledger updated.`)) return;
         setSaving(true);
         // Save latest edits first, then post.
         router.put(route('purchases.update', invoice.id), payload(), {
             preserveScroll: true,
-            onSuccess: () => router.post(route('purchases.post', invoice.id), {}, { onFinish: () => setSaving(false) }),
-            onError: () => setSaving(false),
+            onSuccess: () => router.post(route('purchases.post', invoice.id), {}, { onError: handleServerErrors, onFinish: () => setSaving(false) }),
+            onError: (errors) => { handleServerErrors(errors); setSaving(false); },
         });
     };
 
@@ -254,11 +333,14 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
 
     const cellInput = (rowIndex: number, colIndex: number, key: keyof ItemRow, type = 'text', className = '') => {
         const isQty = key === 'quantity';
-        const onBlur = isQty
-            ? (e: React.FocusEvent<HTMLInputElement>) => setCell(rowIndex, key, String(Math.max(1, toNumber(e.target.value))))
-            : DECIMAL_KEYS.has(key)
-                ? (e: React.FocusEvent<HTMLInputElement>) => setCell(rowIndex, key, dec2(e.target.value))
-                : undefined;
+        const onBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+            let value = e.target.value;
+            if (isQty) value = String(Math.max(1, toNumber(value)));
+            else if (DECIMAL_KEYS.has(key)) value = dec2(value);
+            if (isQty || DECIMAL_KEYS.has(key)) setCell(rowIndex, key, value);
+            if (rows[rowIndex].product_id) setRowError(rowIndex, key, cellRule(key, value));
+        };
+        const cellError = rowErrors[rowIndex]?.[key];
         return (
             <Input
                 ref={grid.registerCell(rowIndex, colIndex) as never}
@@ -266,10 +348,15 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                 min={isQty ? 1 : undefined}
                 value={rows[rowIndex][key] as string}
                 disabled={readonly}
-                onChange={(e) => setCell(rowIndex, key, e.target.value)}
+                title={cellError}
+                aria-invalid={!!cellError}
+                onChange={(e) => {
+                    setCell(rowIndex, key, e.target.value);
+                    if (cellError) setRowError(rowIndex, key, null);
+                }}
                 onBlur={onBlur}
                 onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, colIndex)}
-                className={`h-8 rounded-none border-0 px-2 text-sm focus-visible:ring-1 ${className}`}
+                className={`h-8 rounded-none border-0 px-2 text-sm focus-visible:ring-1 ${cellError ? 'bg-destructive/10 ring-1 ring-destructive' : ''} ${className}`}
             />
         );
     };
@@ -333,16 +420,26 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                         <Label>Supplier *</Label>
                         <Select
                             value={header.company_id}
-                            onValueChange={(v) => setHeader((h) => ({ ...h, company_id: v }))}
+                            onValueChange={(v) => {
+                                setHeader((h) => ({ ...h, company_id: v }));
+                                setHeaderErrors((e) => { const n = { ...e }; delete n.company_id; return n; });
+                            }}
                             disabled={readonly}
                         >
-                            <SelectTrigger autoFocus={!readonly}><SelectValue placeholder="Select supplier" /></SelectTrigger>
+                            <SelectTrigger
+                                autoFocus={!readonly}
+                                aria-invalid={!!headerErrors.company_id}
+                                className={headerErrors.company_id ? 'border-destructive ring-1 ring-destructive' : ''}
+                            >
+                                <SelectValue placeholder="Select supplier" />
+                            </SelectTrigger>
                             <SelectContent>
                                 {companies.map((company) => (
                                     <SelectItem key={company.id} value={String(company.id)}>{company.name}</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
+                        <InputError message={headerErrors.company_id} className="mt-1 text-xs" />
                     </div>
                     <div>
                         <Label>Supplier Invoice #</Label>
@@ -434,7 +531,10 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                             {rows.map((row, rowIndex) => (
                                 <tr key={rowIndex} className="border-b last:border-0 [&>td]:border-r [&>td]:p-0 [&>td:last-child]:border-r-0">
                                     <td className="px-2 text-center text-muted-foreground">{rowIndex + 1}</td>
-                                    <td>
+                                    <td
+                                        className={rowErrors[rowIndex]?.product_id ? 'ring-1 ring-inset ring-destructive' : ''}
+                                        title={rowErrors[rowIndex]?.product_id}
+                                    >
                                         <ProductSearchCell
                                             value={row.product_name}
                                             warehouseId={warehouse.id}

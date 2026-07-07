@@ -17,9 +17,11 @@ import AppLayout from '@/layouts/app-layout';
 import { money } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
+import { ALERT_FIX, positive, required, useClientValidation } from '@/lib/form-validation';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { BookUser, Pencil, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 interface Customer {
     id: number;
@@ -92,6 +94,11 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
     });
 
     const form = useForm(emptyForm);
+    const { validateField, validateForm } = useClientValidation(form, {
+        name: required('Customer name'),
+        credit_limit: positive('Credit limit'),
+        credit_days: positive('Credit days'),
+    });
 
     useEffect(() => {
         const timeout = setTimeout(() => {
@@ -143,8 +150,16 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
 
     const submit = (e: FormEvent) => {
         e.preventDefault();
+        if (!validateForm()) {
+            toast.error(ALERT_FIX);
+            return;
+        }
         form.transform((data) => ({ ...data, booker_id: data.booker_id || null }));
-        const options = { preserveScroll: true, onSuccess: () => setDialogOpen(false) };
+        const options = {
+            preserveScroll: true,
+            onSuccess: () => setDialogOpen(false),
+            onError: () => toast.error(ALERT_FIX),
+        };
         if (editing) form.put(route('customers.update', editing.id), options);
         else form.post(route('customers.store'), options);
     };
@@ -307,7 +322,15 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                     <form onSubmit={submit} className="grid grid-cols-3 gap-3">
                         <div className="col-span-3">
                             <Label htmlFor="name">Customer Name *</Label>
-                            <Input id="name" value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} autoFocus />
+                            <Input
+                                id="name"
+                                value={form.data.name}
+                                onChange={(e) => form.setData('name', e.target.value)}
+                                onBlur={() => validateField('name')}
+                                aria-invalid={!!err('name')}
+                                className={err('name') ? 'border-destructive ring-1 ring-destructive' : ''}
+                                autoFocus
+                            />
                             {err('name') && <p className="text-xs text-destructive">{err('name')}</p>}
                         </div>
                         {textFields.map(([key, label]) => (
