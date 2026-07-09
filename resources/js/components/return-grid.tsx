@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { useKeyboardGrid } from '@/hooks/use-keyboard-grid';
 import { amount, qty as fmtQty, toNumber } from '@/lib/format';
 import { Plus, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 
 /** A returnable invoice line, normalized across sales/purchase returns. */
 export interface ReturnableLine {
@@ -22,6 +23,9 @@ export interface ReturnRow {
 
 export const emptyReturnRow = (): ReturnRow => ({ line_id: '', qty: '' });
 
+const labelFor = (l: ReturnableLine) =>
+    `${l.product}${l.company ? ` · ${l.company}` : ''}${l.batch_number ? ` · ${l.batch_number}` : ''} · ${fmtQty(l.returnable)} left`;
+
 interface Props {
     lines: ReturnableLine[];
     rows: ReturnRow[];
@@ -37,6 +41,7 @@ interface Props {
 export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount' }: Props) {
     const lineById = new Map(lines.map((l) => [String(l.line_id), l]));
     const chosen = new Set(rows.map((r) => r.line_id).filter(Boolean));
+    const [searchSignal, setSearchSignal] = useState({ row: -1, n: 0 });
 
     const grid = useKeyboardGrid({
         rowCount: rows.length,
@@ -45,6 +50,7 @@ export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount' }: Pr
         onAppendRow: () => setRows((r) => [...r, emptyReturnRow()]),
         onDeleteRow: (row) => setRows((r) => (r.length === 1 ? [emptyReturnRow()] : r.filter((_, i) => i !== row))),
         onInsertRow: (row) => setRows((r) => { const c = [...r]; c.splice(row + 1, 0, emptyReturnRow()); return c; }),
+        onProductSearch: (row) => setSearchSignal((s) => ({ row, n: s.n + 1 })),
     });
 
     const setRow = (i: number, patch: Partial<ReturnRow>) =>
@@ -72,10 +78,7 @@ export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount' }: Pr
                         const line = lineById.get(row.line_id);
                         const options = lines
                             .filter((l) => !chosen.has(String(l.line_id)) || String(l.line_id) === row.line_id)
-                            .map((l) => ({
-                                value: String(l.line_id),
-                                label: `${l.product}${l.company ? ` · ${l.company}` : ''}${l.batch_number ? ` · ${l.batch_number}` : ''} · ${fmtQty(l.returnable)} left`,
-                            }));
+                            .map((l) => ({ value: String(l.line_id), label: labelFor(l) }));
                         const q = toNumber(row.qty);
                         const over = !!line && q > line.returnable + 1e-9;
                         const lineAmount = line ? q * line.unit_amount : 0;
@@ -84,10 +87,11 @@ export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount' }: Pr
                                 <td className="px-2 text-center text-muted-foreground">{i + 1}</td>
                                 <td>
                                     <ReturnLineCell
-                                        value={row.line_id}
+                                        value={line ? labelFor(line) : ''}
                                         options={options}
-                                        registerRef={grid.registerCell(i, 0)}
-                                        onKeyDown={(e) => grid.handleKeyDown(e, i, 0)}
+                                        openSignal={searchSignal.row === i ? searchSignal.n : 0}
+                                        inputRef={grid.registerCell(i, 0)}
+                                        onGridKeyDown={(e) => grid.handleKeyDown(e, i, 0)}
                                         onSelect={(v) => setRow(i, { line_id: v })}
                                     />
                                 </td>
