@@ -3,10 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\Company;
+use App\Models\Customer;
 use App\Models\Product;
 use App\Models\User;
+use App\Support\AuditReferenceResolver;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Tests\TestCase;
 
 class AuditLogTest extends TestCase
@@ -75,5 +78,36 @@ class AuditLogTest extends TestCase
         $this->get('/audit-log?event=updated')
             ->assertOk()
             ->assertInertia(fn ($page) => $page->component('admin/audit/index'));
+    }
+
+    public function test_reference_resolver_replaces_ids_with_names(): void
+    {
+        $customer = Customer::create(['name' => 'City Pharmacy']);
+        $creator = User::factory()->create(['name' => 'Ahmed Raza']);
+
+        $audits = new Collection([
+            (object) [
+                'old_values' => [],
+                'new_values' => ['customer_id' => $customer->id, 'created_by' => $creator->id, 'gst_percent' => 17],
+            ],
+        ]);
+
+        $resolver = new AuditReferenceResolver($audits);
+        $resolved = $resolver->apply($audits->first()->new_values);
+
+        $this->assertSame('City Pharmacy', $resolved['customer_id']);
+        $this->assertSame('Ahmed Raza', $resolved['created_by']);
+        $this->assertSame(17, $resolved['gst_percent']); // non-reference field untouched
+    }
+
+    public function test_reference_resolver_falls_back_for_missing_records(): void
+    {
+        $audits = new Collection([
+            (object) ['old_values' => [], 'new_values' => ['customer_id' => 999]],
+        ]);
+
+        $resolver = new AuditReferenceResolver($audits);
+
+        $this->assertSame('#999', $resolver->apply(['customer_id' => 999])['customer_id']);
     }
 }

@@ -8,6 +8,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
+import { fieldLabel, formatValue, HIDDEN_FIELDS } from '@/lib/audit-format';
 import { type BreadcrumbItem } from '@/types';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Fragment, useState } from 'react';
@@ -52,13 +53,14 @@ export default function AuditIndex({ audits, filters, users, events, models }: P
 
     const keys = (row: AuditRow) => {
         const set = new Set([...Object.keys(row.old_values ?? {}), ...Object.keys(row.new_values ?? {})]);
-        return [...set];
+        return [...set].filter((k) => !HIDDEN_FIELDS.has(k));
     };
 
     const changedSummary = (row: AuditRow) => {
         const k = keys(row);
         if (k.length === 0) return '—';
-        return k.slice(0, 4).join(', ') + (k.length > 4 ? `, +${k.length - 4} more` : '');
+        const labels = k.map(fieldLabel);
+        return labels.slice(0, 4).join(', ') + (labels.length > 4 ? `, +${labels.length - 4} more` : '');
     };
 
     return (
@@ -167,9 +169,9 @@ export default function AuditIndex({ audits, filters, users, events, models }: P
                                                             <tbody>
                                                                 {keys(row).map((k) => (
                                                                     <tr key={k} className="border-t">
-                                                                        <td className="py-1 pr-4 font-medium">{k}</td>
-                                                                        <td className="py-1 pr-4 text-destructive">{formatVal(row.old_values?.[k])}</td>
-                                                                        <td className="py-1 text-green-700 dark:text-green-500">{formatVal(row.new_values?.[k])}</td>
+                                                                        <td className="py-1 pr-4 font-medium">{fieldLabel(k)}</td>
+                                                                        <td className="py-1 pr-4 text-destructive">{formatValue(row.old_values?.[k])}</td>
+                                                                        <td className="py-1 text-green-700 dark:text-green-500">{formatValue(row.new_values?.[k])}</td>
                                                                     </tr>
                                                                 ))}
                                                             </tbody>
@@ -188,10 +190,4 @@ export default function AuditIndex({ audits, filters, users, events, models }: P
             </div>
         </AppLayout>
     );
-}
-
-function formatVal(value: unknown): string {
-    if (value === null || value === undefined || value === '') return '—';
-    if (typeof value === 'object') return JSON.stringify(value);
-    return String(value);
 }
