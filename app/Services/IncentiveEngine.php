@@ -91,6 +91,17 @@ class IncentiveEngine
 
     private function slabBonus(array $slabs, float $qty): float
     {
+        // A single open-ended slab (min N, no max) repeats its bonus every N
+        // units — e.g. "every 10 → 1 bonus" gives 4 at qty 45.
+        if (count($slabs) === 1) {
+            $slab = $slabs[array_key_first($slabs)];
+            $min = (float) ($slab['min_qty'] ?? 0);
+            $hasMax = isset($slab['max_qty']) && $slab['max_qty'] !== null && $slab['max_qty'] !== '';
+            if (! $hasMax && $min > 0) {
+                return floor($qty / $min) * (float) ($slab['bonus_qty'] ?? 0);
+            }
+        }
+
         $best = 0.0;
         $bestMin = -1.0;
 

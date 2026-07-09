@@ -8,7 +8,6 @@ import { Label } from '@/components/ui/label';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { useInvoiceHotkeys, useKeyboardGrid } from '@/hooks/use-keyboard-grid';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
@@ -533,6 +532,14 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                             }}
                         />
                     </div>
+                    <div className="col-span-2">
+                        <Label>Remarks</Label>
+                        <Input
+                            value={header.notes} disabled={readonly}
+                            placeholder="Optional note for this invoice"
+                            onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))}
+                        />
+                    </div>
                 </div>
 
                 <div className="rounded-xl border">
@@ -657,41 +664,18 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                     )}
                 </div>
 
-                <div className="sticky bottom-0 z-10 mt-auto flex flex-wrap items-start justify-between gap-4 bg-background pt-2">
-                    <div className="w-full max-w-md">
-                        <Label>Notes</Label>
-                        <Textarea
-                            rows={2} value={header.notes} disabled={readonly}
-                            onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))}
-                        />
-                        <p className="mt-2 text-xs text-muted-foreground">
-                            Keys: Enter next field · ↑↓ rows · F2 product search · Ctrl+D delete row · Ctrl+I add row · F8 save · F9 post
-                        </p>
-                    </div>
-                    <div className="ml-auto w-80 space-y-1 rounded-xl border p-4 text-base">
-                        <div className="flex justify-between"><span>Subtotal</span><span className="tabular-nums">{amount(totals.subtotal)}</span></div>
-                        <div className="flex justify-between text-muted-foreground">
-                            <span>Item Discounts</span><span className="tabular-nums">−{amount(totals.item_discount_total)}</span>
-                        </div>
-                        <div className="flex justify-between text-muted-foreground">
-                            <span>Item GST</span><span className="tabular-nums">+{amount(totals.item_gst_total)}</span>
-                        </div>
-                        {totals.discount_amount > 0 && (
-                            <div className="flex justify-between text-muted-foreground">
-                                <span>Invoice Discount</span><span className="tabular-nums">−{amount(totals.discount_amount)}</span>
-                            </div>
-                        )}
-                        {totals.gst_amount > 0 && (
-                            <div className="flex justify-between text-muted-foreground">
-                                <span>Invoice GST</span><span className="tabular-nums">+{amount(totals.gst_amount)}</span>
-                            </div>
-                        )}
-                        <div className="flex justify-between border-t pt-2 text-xl font-bold">
-                            <span>Total</span><span className="tabular-nums">{money(totals.total_amount)}</span>
-                        </div>
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                            <span>Expected Margin</span><span className="tabular-nums">{amount(totals.total_margin)}</span>
-                        </div>
+                <div className="sticky bottom-0 z-10 mt-auto flex flex-wrap items-center justify-between gap-x-8 gap-y-2 border-t bg-background pt-3">
+                    <p className="max-w-md text-xs text-muted-foreground">
+                        Keys: Enter next field · ↑↓ rows · F2 product search · Ctrl+D delete row · Ctrl+I add row · F8 save · F9 post
+                    </p>
+                    <div className="flex flex-wrap items-center justify-end gap-x-8 gap-y-1 text-base font-bold tabular-nums">
+                        <span>Subtotal <span className="ml-1">{amount(totals.subtotal)}</span></span>
+                        <span>Discounts <span className="ml-1">−{amount(totals.item_discount_total)}</span></span>
+                        <span>GST <span className="ml-1">+{amount(totals.item_gst_total)}</span></span>
+                        {totals.discount_amount > 0 && <span>Inv. Disc <span className="ml-1">−{amount(totals.discount_amount)}</span></span>}
+                        {totals.gst_amount > 0 && <span>Inv. GST <span className="ml-1">+{amount(totals.gst_amount)}</span></span>}
+                        <span className="font-normal text-muted-foreground">Exp. Margin <span className="ml-1">{amount(totals.total_margin)}</span></span>
+                        <span className="text-xl">Total <span className="ml-1">{money(totals.total_amount)}</span></span>
                     </div>
                 </div>
             </div>

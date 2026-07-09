@@ -16,6 +16,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { amount, dec2, money, qty as fmtQty, toNumber } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
+import { ruleBonus, type AppliedRule } from '@/lib/incentive';
 import { computeLine, computeTotals } from '@/lib/invoice-math';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
@@ -33,6 +34,7 @@ interface ItemRow {
     bonus_quantity: string;
     applied_rule_id: number | null;
     applied_rule_name: string;
+    applied_rule: AppliedRule | null; // params for live bonus recompute (qty/slab rules)
     trade_price: string;
     discount_percent: string;
     gst_percent: string;
@@ -80,7 +82,7 @@ interface Props {
 
 const emptyRow = (): ItemRow => ({
     product_id: null, product_name: '', batch_id: '', batch_fallback: null, stock: 0,
-    quantity: '1', bonus_quantity: '0', applied_rule_id: null, applied_rule_name: '',
+    quantity: '1', bonus_quantity: '0', applied_rule_id: null, applied_rule_name: '', applied_rule: null,
     trade_price: '', discount_percent: '0.00', gst_percent: '0.00', remarks: '',
 });
 
@@ -125,6 +127,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                   bonus_quantity: String(Number(item.bonus_quantity)),
                   applied_rule_id: item.applied_rule_id,
                   applied_rule_name: item.applied_rule?.name ?? '',
+                  applied_rule: null,
                   trade_price: dec2(item.trade_price),
                   discount_percent: dec2(item.discount_percent),
                   gst_percent: dec2(item.gst_percent),
@@ -247,7 +250,15 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
     });
 
     const setCell = (rowIndex: number, key: keyof ItemRow, value: string) => {
-        setRows((r) => r.map((row, i) => (i === rowIndex ? { ...row, [key]: value } : row)));
+        setRows((r) => r.map((row, i) => {
+            if (i !== rowIndex) return row;
+            const next = { ...row, [key]: value };
+            // A qty/slab bonus rule recomputes its bonus live as the quantity changes.
+            if (key === 'quantity' && next.applied_rule) {
+                next.bonus_quantity = String(ruleBonus(next.applied_rule, toNumber(value)));
+            }
+            return next;
+        }));
     };
 
     const applyProduct = (rowIndex: number, product: ProductHit) => {
@@ -265,6 +276,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                           stock: product.stock,
                           applied_rule_id: null,
                           applied_rule_name: '',
+                          applied_rule: null,
                           trade_price: dec2(product.trade_price),
                           gst_percent: dec2(product.tax_percent ?? 0),
                           discount_percent: dec2(product.default_discount_percent ?? 0),
@@ -285,18 +297,24 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
             r.map((row, i) => {
                 if (i !== rowIndex) return row;
                 if (!rule) {
-                    return { ...row, applied_rule_id: null, applied_rule_name: '' };
+                    return { ...row, applied_rule_id: null, applied_rule_name: '', applied_rule: null };
                 }
+                const isBonusRule = rule.rule_type === 'qty_bonus' || rule.rule_type === 'slab_bonus';
+                const applied: AppliedRule | null = isBonusRule
+                    ? { rule_type: rule.rule_type, base_qty: rule.base_qty, bonus_qty: rule.bonus_qty, slabs: rule.slabs }
+                    : null;
                 return {
                     ...row,
                     applied_rule_id: rule.id,
                     applied_rule_name: rule.name,
-                    bonus_quantity: rule.effect.bonus_qty !== undefined ? String(rule.effect.bonus_qty) : row.bonus_quantity,
+                    applied_rule: applied,
+                    bonus_quantity: applied ? String(ruleBonus(applied, toNumber(row.quantity))) : row.bonus_quantity,
                     discount_percent: rule.effect.discount_percent !== undefined ? dec2(rule.effect.discount_percent) : row.discount_percent,
                     trade_price: rule.effect.trade_price !== undefined ? dec2(rule.effect.trade_price) : row.trade_price,
                 };
             }),
         );
+        grid.focusCell(rowIndex, 5); // move to Price after applying a rule
     };
 
     const payload = () => ({
@@ -547,6 +565,14 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                             }}
                         />
                     </div>
+                    <div className="col-span-2">
+                        <Label>Remarks</Label>
+                        <Input
+                            value={header.notes} disabled={readonly}
+                            placeholder="Optional note for this invoice"
+                            onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))}
+                        />
+                    </div>
                     {header.sale_type === 'sale_base' && (
                         <div className="col-span-2 md:col-span-4">
                             <Label>Terms *</Label>
@@ -690,38 +716,17 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                     )}
                 </div>
 
-                <div className="sticky bottom-0 z-10 mt-auto flex flex-wrap items-start justify-between gap-4 bg-background pt-2">
-                    <div className="w-full max-w-md">
-                        <Label>Notes</Label>
-                        <Textarea
-                            rows={2} value={header.notes} disabled={readonly}
-                            onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))}
-                        />
-                        <p className="mt-2 text-xs text-muted-foreground">
-                            Keys: Enter next field · ↑↓ rows · F2 product search · F4 incentive rule · Ctrl+D delete row · Ctrl+I add row · F8 save · F9 post
-                        </p>
-                    </div>
-                    <div className="ml-auto w-80 space-y-1 rounded-xl border p-4 text-base">
-                        <div className="flex justify-between"><span>Subtotal</span><span className="tabular-nums">{amount(totals.subtotal)}</span></div>
-                        <div className="flex justify-between text-muted-foreground">
-                            <span>Item Discounts</span><span className="tabular-nums">−{amount(totals.item_discount_total)}</span>
-                        </div>
-                        <div className="flex justify-between text-muted-foreground">
-                            <span>Item GST</span><span className="tabular-nums">+{amount(totals.item_gst_total)}</span>
-                        </div>
-                        {totals.discount_amount > 0 && (
-                            <div className="flex justify-between text-muted-foreground">
-                                <span>Invoice Discount</span><span className="tabular-nums">−{amount(totals.discount_amount)}</span>
-                            </div>
-                        )}
-                        {totals.gst_amount > 0 && (
-                            <div className="flex justify-between text-muted-foreground">
-                                <span>Invoice GST</span><span className="tabular-nums">+{amount(totals.gst_amount)}</span>
-                            </div>
-                        )}
-                        <div className="flex justify-between border-t pt-2 text-xl font-bold">
-                            <span>Total</span><span className="tabular-nums">{money(totals.total_amount)}</span>
-                        </div>
+                <div className="sticky bottom-0 z-10 mt-auto flex flex-wrap items-center justify-between gap-x-8 gap-y-2 border-t bg-background pt-3">
+                    <p className="text-xs text-muted-foreground">
+                        Keys: Enter next field · ↑↓ rows · F2 product search · F4 incentive rule · Ctrl+D delete row · Ctrl+I add row · F8 save · F9 post
+                    </p>
+                    <div className="flex flex-wrap items-center justify-end gap-x-8 gap-y-1 text-base font-bold tabular-nums">
+                        <span>Subtotal <span className="ml-1">{amount(totals.subtotal)}</span></span>
+                        <span>Discounts <span className="ml-1">−{amount(totals.item_discount_total)}</span></span>
+                        <span>GST <span className="ml-1">+{amount(totals.item_gst_total)}</span></span>
+                        {totals.discount_amount > 0 && <span>Inv. Disc <span className="ml-1">−{amount(totals.discount_amount)}</span></span>}
+                        {totals.gst_amount > 0 && <span>Inv. GST <span className="ml-1">+{amount(totals.gst_amount)}</span></span>}
+                        <span className="text-xl">Total <span className="ml-1">{money(totals.total_amount)}</span></span>
                     </div>
                 </div>
             </div>

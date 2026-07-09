@@ -10,6 +10,10 @@ export interface RuleHit {
     rule_type: string;
     summary: string;
     scope: string;
+    base_qty?: number;
+    bonus_qty?: number;
+    slabs?: { min_qty: number | string; max_qty: number | string | null; bonus_qty: number | string }[];
+    value?: number;
     effect: {
         bonus_qty?: number;
         discount_percent?: number;

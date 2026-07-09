@@ -132,6 +132,11 @@ class LookupController extends Controller
                 $rule->product_id ? 'This product' : null,
                 $rule->company_id ? 'Company-wide' : null,
             ])) ?: 'All customers & products',
+            // Rule parameters so the client can recompute the bonus live as qty changes.
+            'base_qty' => (float) $rule->base_qty,
+            'bonus_qty' => (float) $rule->bonus_qty,
+            'slabs' => $rule->slabs ?? [],
+            'value' => (float) $rule->value,
             'effect' => $engine->effect($rule, $qty, $price),
         ])->values());
     }

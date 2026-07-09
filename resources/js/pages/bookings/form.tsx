@@ -9,12 +9,12 @@ import { Label } from '@/components/ui/label';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { useInvoiceHotkeys, useKeyboardGrid } from '@/hooks/use-keyboard-grid';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { amount, dec2, money, toNumber } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
+import { ruleBonus, type AppliedRule } from '@/lib/incentive';
 import { computeLine, computeTotals } from '@/lib/invoice-math';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
@@ -29,6 +29,7 @@ interface ItemRow {
     requested_bonus: string;
     applied_rule_id: number | null;
     applied_rule_name: string;
+    applied_rule: AppliedRule | null;
     trade_price: string;
     discount_percent: string;
     gst_percent: string;
@@ -69,7 +70,7 @@ interface Props {
 
 const emptyRow = (): ItemRow => ({
     product_id: null, product_name: '', quantity: '1', requested_bonus: '0',
-    applied_rule_id: null, applied_rule_name: '', trade_price: '',
+    applied_rule_id: null, applied_rule_name: '', applied_rule: null, trade_price: '',
     discount_percent: '0.00', gst_percent: '0.00', remarks: '',
 });
 
@@ -104,6 +105,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                   requested_bonus: String(Number(item.requested_bonus)),
                   applied_rule_id: item.applied_rule_id,
                   applied_rule_name: item.applied_rule?.name ?? '',
+                  applied_rule: null,
                   trade_price: dec2(item.trade_price),
                   discount_percent: dec2(item.discount_percent),
                   gst_percent: dec2(item.gst_percent),
@@ -225,7 +227,16 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
     });
 
     const setCell = (rowIndex: number, key: keyof ItemRow, value: string) => {
-        setRows((r) => r.map((row, i) => (i === rowIndex ? { ...row, [key]: value } : row)));
+        setRows((r) =>
+            r.map((row, i) => {
+                if (i !== rowIndex) return row;
+                const next = { ...row, [key]: value };
+                if (key === 'quantity' && next.applied_rule) {
+                    next.requested_bonus = String(ruleBonus(next.applied_rule, toNumber(value)));
+                }
+                return next;
+            }),
+        );
     };
 
     const applyProduct = (rowIndex: number, product: ProductHit) => {
@@ -243,6 +254,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                           product_name: product.name,
                           applied_rule_id: null,
                           applied_rule_name: '',
+                          applied_rule: null,
                           trade_price: dec2(product.trade_price),
                           gst_percent: dec2(product.tax_percent ?? 0),
                           discount_percent: dec2(product.default_discount_percent ?? 0),
@@ -259,18 +271,25 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
             r.map((row, i) => {
                 if (i !== rowIndex) return row;
                 if (!rule) {
-                    return { ...row, applied_rule_id: null, applied_rule_name: '' };
+                    return { ...row, applied_rule_id: null, applied_rule_name: '', applied_rule: null };
                 }
+                // Keep bonus rules' params on the row so the bonus recomputes live as qty changes.
+                const applied: AppliedRule | null =
+                    rule.rule_type === 'qty_bonus' || rule.rule_type === 'slab_bonus'
+                        ? { rule_type: rule.rule_type, base_qty: rule.base_qty, bonus_qty: rule.bonus_qty, slabs: rule.slabs }
+                        : null;
                 return {
                     ...row,
                     applied_rule_id: rule.id,
                     applied_rule_name: rule.name,
-                    requested_bonus: rule.effect.bonus_qty !== undefined ? String(rule.effect.bonus_qty) : row.requested_bonus,
+                    applied_rule: applied,
+                    requested_bonus: applied ? String(ruleBonus(applied, toNumber(row.quantity))) : row.requested_bonus,
                     discount_percent: rule.effect.discount_percent !== undefined ? dec2(rule.effect.discount_percent) : row.discount_percent,
                     trade_price: rule.effect.trade_price !== undefined ? dec2(rule.effect.trade_price) : row.trade_price,
                 };
             }),
         );
+        grid.focusCell(rowIndex, 4); // move to Price after applying a rule
     };
 
     const removeRow = (index: number) => {
@@ -438,6 +457,14 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                     <div>
                         <Label>Warehouse</Label>
                         <Input value={warehouse.name} disabled />
+                    </div>
+                    <div className="col-span-2">
+                        <Label>Remarks</Label>
+                        <Input
+                            value={header.notes} disabled={readonly}
+                            placeholder="Optional note for this booking"
+                            onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))}
+                        />
                     </div>
                     {booking?.approver && (
                         <div>
@@ -612,29 +639,16 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                     )}
                 </div>
 
-                <div className="sticky bottom-0 z-10 mt-auto flex flex-wrap items-start justify-between gap-4 bg-background pt-2">
-                    <div className="w-full max-w-md">
-                        <Label>Notes</Label>
-                        <Textarea
-                            rows={2} value={header.notes} disabled={readonly}
-                            onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))}
-                        />
-                        <p className="mt-2 text-xs text-muted-foreground">
-                            Keys: Enter next field · ↑↓ rows · F2 product · F4 rule · Ctrl+D delete row · Ctrl+I add row · F8 save · F9 submit.
-                            Stock is not reserved — availability is checked when the invoice is posted.
-                        </p>
-                    </div>
-                    <div className="ml-auto w-80 space-y-1 rounded-xl border p-4 text-base">
-                        <div className="flex justify-between"><span>Subtotal</span><span className="tabular-nums">{amount(totals.subtotal)}</span></div>
-                        <div className="flex justify-between text-muted-foreground">
-                            <span>Discounts</span><span className="tabular-nums">−{amount(totals.item_discount_total)}</span>
-                        </div>
-                        <div className="flex justify-between text-muted-foreground">
-                            <span>GST</span><span className="tabular-nums">+{amount(totals.item_gst_total)}</span>
-                        </div>
-                        <div className="flex justify-between border-t pt-2 text-xl font-bold">
-                            <span>Total</span><span className="tabular-nums">{money(totals.total_amount)}</span>
-                        </div>
+                <div className="sticky bottom-0 z-10 mt-auto flex flex-wrap items-center justify-between gap-x-8 gap-y-2 border-t bg-background pt-3">
+                    <p className="max-w-md text-xs text-muted-foreground">
+                        Keys: Enter next field · ↑↓ rows · F2 product · F4 rule · Ctrl+D delete row · Ctrl+I add row · F8 save · F9 submit.
+                        Stock is not reserved — availability is checked when the invoice is posted.
+                    </p>
+                    <div className="flex flex-wrap items-center justify-end gap-x-8 gap-y-1 text-base font-bold tabular-nums">
+                        <span>Subtotal <span className="ml-1">{amount(totals.subtotal)}</span></span>
+                        <span>Discounts <span className="ml-1">−{amount(totals.item_discount_total)}</span></span>
+                        <span>GST <span className="ml-1">+{amount(totals.item_gst_total)}</span></span>
+                        <span className="text-xl">Total <span className="ml-1">{money(totals.total_amount)}</span></span>
                     </div>
                 </div>
             </div>

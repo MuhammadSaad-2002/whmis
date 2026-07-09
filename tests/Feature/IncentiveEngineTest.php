@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\Customer;
 use App\Models\IncentiveRule;
 use App\Models\Product;
+use App\Models\User;
 use App\Services\IncentiveEngine;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -57,6 +58,49 @@ class IncentiveEngineTest extends TestCase
         $this->assertEquals(['bonus_qty' => 1.0], $this->engine->effect($rule, 20, 100));
         $this->assertEquals(['bonus_qty' => 8.0], $this->engine->effect($rule, 60, 100));
         $this->assertEquals(['bonus_qty' => 0.0], $this->engine->effect($rule, 5, 100));
+    }
+
+    public function test_single_open_ended_slab_repeats_bonus(): void
+    {
+        // "Every 10 → 1 bonus" as a single open-ended slab: 45 qty -> 4 bonus.
+        $rule = $this->rule(['rule_type' => 'slab_bonus', 'slabs' => [
+            ['min_qty' => 10, 'max_qty' => null, 'bonus_qty' => 1],
+        ]]);
+
+        $this->assertEquals(['bonus_qty' => 4.0], $this->engine->effect($rule, 45, 100));
+        $this->assertEquals(['bonus_qty' => 1.0], $this->engine->effect($rule, 10, 100));
+        $this->assertEquals(['bonus_qty' => 0.0], $this->engine->effect($rule, 5, 100));
+    }
+
+    public function test_multi_range_slab_stays_tiered_not_repeating(): void
+    {
+        // Two explicit ranges must NOT repeat — 25 stays in the 20–29 tier (2).
+        $rule = $this->rule(['rule_type' => 'slab_bonus', 'slabs' => [
+            ['min_qty' => 10, 'max_qty' => 19, 'bonus_qty' => 1],
+            ['min_qty' => 20, 'max_qty' => 29, 'bonus_qty' => 2],
+        ]]);
+
+        $this->assertEquals(['bonus_qty' => 2.0], $this->engine->effect($rule, 25, 100));
+        $this->assertEquals(['bonus_qty' => 1.0], $this->engine->effect($rule, 15, 100));
+    }
+
+    public function test_lookup_rules_endpoint_returns_recompute_params(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $this->rule(['rule_type' => 'slab_bonus', 'product_id' => $this->product->id, 'slabs' => [
+            ['min_qty' => 10, 'max_qty' => null, 'bonus_qty' => 1],
+        ]]);
+
+        $response = $this->getJson(route('lookup.rules', [
+            'product_id' => $this->product->id, 'qty' => 45, 'price' => 100,
+        ]));
+
+        $response->assertOk()->assertJsonFragment([
+            'rule_type' => 'slab_bonus',
+            'slabs' => [['min_qty' => 10, 'max_qty' => null, 'bonus_qty' => 1]],
+        ]);
+        // Effect at qty 45 confirms the repeating slab is computed server-side.
+        $this->assertEquals(4.0, $response->json('0.effect.bonus_qty'));
     }
 
     public function test_discount_and_price_override_effects(): void
