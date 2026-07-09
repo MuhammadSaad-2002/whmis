@@ -155,9 +155,9 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="New Sales Return" />
             <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
                     <div>
-                        <h1 className="text-3xl font-bold">New Sales Return</h1>
+                        <h1 className="text-4xl font-bold">New Sales Return</h1>
                         <p className="text-sm text-muted-foreground">
                             {invoice
                                 ? <>Against <span className="font-medium">{invoice.invoice_number}</span> — {invoice.customer} ({shortDate(invoice.invoice_date)})</>

@@ -98,8 +98,8 @@ export default function InventoryBatches({ batches, filters }: Props) {
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Batches" />
             <div className="flex h-full flex-col gap-4 p-4">
-                <div>
-                    <h1 className="text-3xl font-bold">Batches & Expiry</h1>
+                <div className="border-b pb-4">
+                    <h1 className="text-4xl font-bold">Batches & Expiry</h1>
                     <p className="text-sm text-muted-foreground">Batch-wise stock, FIFO order, expiry monitoring</p>
                 </div>
 

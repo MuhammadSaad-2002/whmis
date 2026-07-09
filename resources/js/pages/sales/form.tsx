@@ -418,9 +418,9 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title={invoice ? invoice.invoice_number : 'New Sale'} />
             <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
                     <div className="flex items-center gap-3">
-                        <h1 className="text-3xl font-bold">
+                        <h1 className="text-4xl font-bold">
                             {invoice ? `Sale ${invoice.invoice_number}` : 'New Sales Invoice'}
                         </h1>
                         {invoice && (
@@ -716,17 +716,14 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                     )}
                 </div>
 
-                <div className="sticky bottom-0 z-10 mt-auto flex flex-wrap items-center justify-between gap-x-8 gap-y-2 border-t bg-background pt-3">
-                    <p className="text-xs text-muted-foreground">
-                        Keys: Enter next field · ↑↓ rows · F2 product search · F4 incentive rule · Ctrl+D delete row · Ctrl+I add row · F8 save · F9 post
-                    </p>
-                    <div className="flex flex-wrap items-center justify-end gap-x-8 gap-y-1 text-base font-bold tabular-nums">
+                <div className="sticky bottom-0 z-10 mt-auto bg-background pt-2">
+                    <div className="flex flex-wrap items-center gap-x-8 gap-y-1 rounded-xl border bg-muted px-5 py-3 text-base font-bold tabular-nums">
                         <span>Subtotal <span className="ml-1">{amount(totals.subtotal)}</span></span>
                         <span>Discounts <span className="ml-1">−{amount(totals.item_discount_total)}</span></span>
                         <span>GST <span className="ml-1">+{amount(totals.item_gst_total)}</span></span>
                         {totals.discount_amount > 0 && <span>Inv. Disc <span className="ml-1">−{amount(totals.discount_amount)}</span></span>}
                         {totals.gst_amount > 0 && <span>Inv. GST <span className="ml-1">+{amount(totals.gst_amount)}</span></span>}
-                        <span className="text-xl">Total <span className="ml-1">{money(totals.total_amount)}</span></span>
+                        <span className="ml-auto text-2xl text-primary">Total <span className="ml-1">{money(totals.total_amount)}</span></span>
                     </div>
                 </div>
             </div>

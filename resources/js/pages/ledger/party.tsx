@@ -43,9 +43,9 @@ export default function LedgerParty({ party, partyType, statement, aging, outsta
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title={`Ledger — ${party.name}`} />
             <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
                     <div>
-                        <h1 className="text-3xl font-bold">{party.name}</h1>
+                        <h1 className="text-4xl font-bold">{party.name}</h1>
                         <p className="text-sm text-muted-foreground">
                             {isCustomer ? 'Customer' : 'Supplier'} ledger{party.city ? ` · ${party.city}` : ''}{party.phone ? ` · ${party.phone}` : ''}
                         </p>

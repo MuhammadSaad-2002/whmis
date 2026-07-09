@@ -66,9 +66,9 @@ export default function ReportShow({ report, columns, rows, totals, chart, filte
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title={report.title} />
             <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
                     <div>
-                        <h1 className="text-3xl font-bold">{report.title}</h1>
+                        <h1 className="text-4xl font-bold">{report.title}</h1>
                         <p className="text-sm text-muted-foreground">{report.description}</p>
                     </div>
                     <div className="flex gap-2">

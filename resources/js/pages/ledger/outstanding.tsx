@@ -23,8 +23,8 @@ export default function Outstanding({ customers }: { customers: CustomerRow[] })
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Outstanding" />
             <div className="flex h-full flex-col gap-4 p-4">
-                <div>
-                    <h1 className="text-3xl font-bold">Outstanding Receivables</h1>
+                <div className="border-b pb-4">
+                    <h1 className="text-4xl font-bold">Outstanding Receivables</h1>
                     <p className="text-sm text-muted-foreground">
                         Total outstanding: <span className="font-semibold text-foreground">{money(total)}</span> across {customers.length} customers
                     </p>
