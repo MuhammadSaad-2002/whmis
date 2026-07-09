@@ -193,8 +193,8 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
 
                         <ReturnGrid lines={lines} rows={rows} setRows={setRows} amountHeader="Refund" />
 
-                        <div className="sticky bottom-0 z-10 ml-auto w-72 space-y-1 rounded-xl border bg-background p-4 text-sm">
-                            <div className="flex justify-between text-base font-semibold">
+                        <div className="sticky bottom-0 z-10 mt-auto ml-auto w-80 space-y-1 rounded-xl border bg-background p-4 text-base">
+                            <div className="flex justify-between text-xl font-bold">
                                 <span>Credit Note Total</span>
                                 <span className="tabular-nums">{money(totalRefund)}</span>
                             </div>

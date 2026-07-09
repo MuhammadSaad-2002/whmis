@@ -686,7 +686,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                     )}
                 </div>
 
-                <div className="sticky bottom-0 z-10 flex flex-wrap items-start justify-between gap-4 bg-background pt-2">
+                <div className="sticky bottom-0 z-10 mt-auto flex flex-wrap items-start justify-between gap-4 bg-background pt-2">
                     <div className="w-full max-w-md">
                         <Label>Notes</Label>
                         <Textarea
@@ -697,7 +697,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                             Keys: Enter next field · ↑↓ rows · F2 product search · F4 incentive rule · Ctrl+D delete row · Ctrl+I add row · F8 save · F9 post
                         </p>
                     </div>
-                    <div className="ml-auto w-72 space-y-1 rounded-xl border p-4 text-sm">
+                    <div className="ml-auto w-80 space-y-1 rounded-xl border p-4 text-base">
                         <div className="flex justify-between"><span>Subtotal</span><span className="tabular-nums">{amount(totals.subtotal)}</span></div>
                         <div className="flex justify-between text-muted-foreground">
                             <span>Item Discounts</span><span className="tabular-nums">−{amount(totals.item_discount_total)}</span>
@@ -715,7 +715,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                                 <span>Invoice GST</span><span className="tabular-nums">+{amount(totals.gst_amount)}</span>
                             </div>
                         )}
-                        <div className="flex justify-between border-t pt-1 text-base font-semibold">
+                        <div className="flex justify-between border-t pt-2 text-xl font-bold">
                             <span>Total</span><span className="tabular-nums">{money(totals.total_amount)}</span>
                         </div>
                     </div>

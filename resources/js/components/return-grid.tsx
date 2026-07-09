@@ -94,7 +94,7 @@ export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount' }: Pr
                                 <td className="px-2 text-center text-muted-foreground">{i + 1}</td>
                                 <td>
                                     <ReturnLineCell
-                                        value={line ? labelFor(line) : ''}
+                                        value={line ? line.product : ''}
                                         options={options}
                                         openSignal={searchSignal.row === i ? searchSignal.n : 0}
                                         inputRef={grid.registerCell(i, 0)}
