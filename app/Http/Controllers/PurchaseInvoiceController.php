@@ -126,6 +126,8 @@ class PurchaseInvoiceController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
+        \App\Support\AuditLogger::action($purchase, 'posted', ['invoice_number' => $purchase->invoice_number]);
+
         return back()->with('success', "Invoice {$purchase->invoice_number} posted. Stock received.");
     }
 
@@ -136,6 +138,8 @@ class PurchaseInvoiceController extends Controller
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }
+
+        \App\Support\AuditLogger::action($purchase, 'cancelled', ['invoice_number' => $purchase->invoice_number]);
 
         return back()->with('success', "Invoice {$purchase->invoice_number} cancelled.");
     }

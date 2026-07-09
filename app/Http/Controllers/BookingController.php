@@ -154,6 +154,8 @@ class BookingController extends Controller
             'approved_at' => now(),
         ]);
 
+        \App\Support\AuditLogger::action($booking, 'approved', ['booking_number' => $booking->booking_number]);
+
         return back()->with('success', "Booking {$booking->booking_number} approved.");
     }
 
@@ -192,6 +194,11 @@ class BookingController extends Controller
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }
+
+        \App\Support\AuditLogger::action($booking, 'converted', [
+            'booking_number' => $booking->booking_number,
+            'invoice_number' => $invoice->invoice_number,
+        ]);
 
         return redirect()
             ->route('sales.edit', $invoice)

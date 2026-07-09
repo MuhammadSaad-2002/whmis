@@ -14,11 +14,14 @@ import {
     ClipboardList,
     LayoutGrid,
     Pill,
+    ScrollText,
+    ShieldCheck,
     ShoppingCart,
     Store,
     Tags,
     TrendingUp,
     Undo2,
+    Users,
 } from 'lucide-react';
 import AppLogo from './app-logo';
 
@@ -64,6 +67,14 @@ const navGroups: { label: string; items: PermittedNavItem[] }[] = [
     {
         label: 'Reports',
         items: [{ title: 'Reports', url: '/reports', icon: BarChart3, permission: 'reports.view' }],
+    },
+    {
+        label: 'Administration',
+        items: [
+            { title: 'Users', url: '/users', icon: Users, permission: 'users.manage' },
+            { title: 'Roles & Permissions', url: '/roles', icon: ShieldCheck, permission: 'roles.manage' },
+            { title: 'Audit Log', url: '/audit-log', icon: ScrollText, permission: 'audit.view' },
+        ],
     },
 ];
 

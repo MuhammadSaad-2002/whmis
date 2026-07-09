@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AuditController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\CustomerController;
@@ -10,12 +11,15 @@ use App\Http\Controllers\LedgerController;
 use App\Http\Controllers\LookupController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\ProductCategoryController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PurchaseInvoiceController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ReturnController;
+use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SalesInvoiceController;
+use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('dashboard'))->name('home');
@@ -164,6 +168,19 @@ Route::middleware(['auth'])->group(function () {
         Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
         Route::get('reports/{key}', [ReportController::class, 'show'])->name('reports.show');
     });
+
+    // Administration: users, roles & permissions, audit trail
+    Route::middleware('can:users.manage')->group(function () {
+        Route::resource('users', UserController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::put('users/{user}/password', [UserController::class, 'password'])->name('users.password');
+        Route::post('users/{user}/toggle', [UserController::class, 'toggle'])->name('users.toggle');
+    });
+    Route::middleware('can:roles.manage')->group(function () {
+        Route::resource('roles', RoleController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::get('permissions', [PermissionController::class, 'index'])->name('permissions.index');
+    });
+    Route::get('audit-log', [AuditController::class, 'index'])
+        ->middleware('can:audit.view')->name('audit.index');
 
     // Notifications (bell)
     Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');

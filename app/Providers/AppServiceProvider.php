@@ -7,9 +7,11 @@ use App\Models\Company;
 use App\Models\Customer;
 use App\Models\IncentiveRule;
 use App\Models\Payment;
+use App\Models\Permission;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
 use App\Models\PurchaseReturn;
+use App\Models\Role;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
 use App\Models\StockAdjustment;
@@ -45,6 +47,8 @@ class AppServiceProvider extends ServiceProvider
             'incentive_rule' => IncentiveRule::class,
             'sales_return' => SalesReturn::class,
             'purchase_return' => PurchaseReturn::class,
+            'role' => Role::class,
+            'permission' => Permission::class,
         ]);
     }
 }
