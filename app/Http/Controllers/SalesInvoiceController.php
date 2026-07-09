@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Batch;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\SalesInvoice;
 use App\Models\Warehouse;
+use App\Services\InventoryService;
 use App\Services\InvoicePostingService;
 use App\Services\MarginCalculator;
 use App\Services\NumberSeriesService;
@@ -21,7 +23,37 @@ class SalesInvoiceController extends Controller
     public function __construct(
         private readonly NumberSeriesService $numbers,
         private readonly InvoicePostingService $posting,
+        private readonly InventoryService $inventory,
     ) {}
+
+    /** Reserve every line's batch stock for a freshly saved draft. */
+    private function reserveItems(SalesInvoice $invoice): void
+    {
+        foreach ($invoice->items()->get() as $item) {
+            if (! $item->batch_id) {
+                continue;
+            }
+            $units = (float) $item->quantity + (float) $item->bonus_quantity;
+            $this->inventory->reserve(Batch::findOrFail($item->batch_id), $units, $invoice);
+        }
+        $invoice->update(['stock_reserved' => true]);
+    }
+
+    /** Release a draft's reservation back to available stock. */
+    private function releaseItems(SalesInvoice $invoice): void
+    {
+        if (! $invoice->stock_reserved) {
+            return;
+        }
+        foreach ($invoice->items()->get() as $item) {
+            if (! $item->batch_id) {
+                continue;
+            }
+            $units = (float) $item->quantity + (float) $item->bonus_quantity;
+            $this->inventory->releaseReservation(Batch::findOrFail($item->batch_id), $units, $invoice);
+        }
+        $invoice->update(['stock_reserved' => false]);
+    }
 
     public function index(Request $request)
     {
@@ -71,6 +103,7 @@ class SalesInvoiceController extends Controller
                     'created_by' => $data['user_id'],
                 ]);
                 $this->syncItems($invoice, $data['items']);
+                $this->reserveItems($invoice); // subtract the chosen batches' stock on save
 
                 return $invoice;
             });
@@ -112,9 +145,11 @@ class SalesInvoiceController extends Controller
                     $sale->invoice_number = $data['invoice_number'];
                     $sale->manual_number = true;
                 }
+                $this->releaseItems($sale); // return the old reservation before re-syncing
                 $sale->fill($this->headerAttributes($data))->save();
                 $sale->items()->delete();
                 $this->syncItems($sale, $data['items']);
+                $this->reserveItems($sale); // reserve the new lines
             });
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
@@ -161,7 +196,10 @@ class SalesInvoiceController extends Controller
             return back()->with('error', 'Only draft invoices can be deleted.');
         }
 
-        $sale->delete();
+        DB::transaction(function () use ($sale) {
+            $this->releaseItems($sale); // return the reserved stock
+            $sale->delete();
+        });
 
         return redirect()->route('sales.index')->with('success', 'Draft deleted.');
     }

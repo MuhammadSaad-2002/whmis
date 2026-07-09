@@ -25,6 +25,7 @@ class SalesInvoice extends Model implements AuditableContract
             'due_date' => 'date',
             'posted_at' => 'datetime',
             'manual_number' => 'boolean',
+            'stock_reserved' => 'boolean',
             'subtotal' => 'decimal:2',
             'item_discount_total' => 'decimal:2',
             'item_gst_total' => 'decimal:2',

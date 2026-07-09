@@ -210,6 +210,54 @@ class InventoryService
     }
 
     /**
+     * Reserve stock for a saved draft sale — moves units from available to
+     * reserved so they can't be committed on another invoice.
+     */
+    public function reserve(Batch $batch, float $units, Model $reference): void
+    {
+        if ($units <= 0) {
+            return;
+        }
+
+        $batch = Batch::whereKey($batch->id)->lockForUpdate()->firstOrFail();
+
+        if ((float) $batch->qty_available + 1e-9 < $units) {
+            throw new RuntimeException(
+                "Not enough stock in batch {$batch->batch_number} to reserve {$units} (available {$batch->qty_available})."
+            );
+        }
+
+        $batch->qty_available = (float) $batch->qty_available - $units;
+        $batch->qty_reserved = (float) $batch->qty_reserved + $units;
+        $batch->save();
+
+        $this->recordMovement($batch, 'reservation', -$units, $reference, (float) $batch->effective_cost);
+    }
+
+    /**
+     * Release a draft's reservation back to available stock (edit / delete, or
+     * just before posting converts it to a real sale).
+     */
+    public function releaseReservation(Batch $batch, float $units, Model $reference): void
+    {
+        if ($units <= 0) {
+            return;
+        }
+
+        $batch = Batch::whereKey($batch->id)->lockForUpdate()->firstOrFail();
+        $release = min($units, (float) $batch->qty_reserved);
+        if ($release <= 0) {
+            return;
+        }
+
+        $batch->qty_available = (float) $batch->qty_available + $release;
+        $batch->qty_reserved = (float) $batch->qty_reserved - $release;
+        $batch->save();
+
+        $this->recordMovement($batch, 'reservation_release', $release, $reference, (float) $batch->effective_cost);
+    }
+
+    /**
      * Manual adjustment. Positive quantity adds stock, negative removes.
      */
     public function adjust(Batch $batch, float $quantity, string $type, Model $reference, ?string $remarks = null): void

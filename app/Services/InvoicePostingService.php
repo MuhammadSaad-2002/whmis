@@ -155,6 +155,18 @@ class InvoicePostingService
                 throw new RuntimeException('Cannot post an invoice without items.');
             }
 
+            // A saved draft already reserved its batches on save; release them
+            // so the consumeFifo loop below turns the reservation into a sale.
+            if ($invoice->stock_reserved) {
+                foreach ($invoice->items as $item) {
+                    if ($item->batch_id) {
+                        $units = (float) $item->quantity + (float) $item->bonus_quantity;
+                        $this->inventory->releaseReservation(Batch::findOrFail($item->batch_id), $units, $invoice);
+                    }
+                }
+                $invoice->update(['stock_reserved' => false]);
+            }
+
             $computedLines = [];
             $totalCost = 0.0;
             $totalProfit = 0.0;
