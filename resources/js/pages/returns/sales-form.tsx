@@ -77,9 +77,16 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
 
     const loadInvoice = async (hit: InvoiceHit) => {
         setPickerOpen(false);
-        const response = await fetch(`/returns/lookup/invoices/${hit.id}/returnable`, { headers: { Accept: 'application/json' } });
-        if (!response.ok) return;
-        const data = await response.json();
+        let data;
+        try {
+            const response = await fetch(`/returns/lookup/invoices/${hit.id}/returnable`, { headers: { Accept: 'application/json' } });
+            if (!response.ok) throw new Error(String(response.status));
+            data = await response.json();
+        } catch {
+            toast.error("Couldn't load this invoice's returnable items. Please try again.");
+            setPickerOpen(true);
+            return;
+        }
         setInvoice(data.invoice);
         setLines(
             (data.lines as ReturnableDto[])
