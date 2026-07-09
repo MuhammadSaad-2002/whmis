@@ -64,7 +64,7 @@ export default function BookingsIndex({ bookings, customers, filters }: Props) {
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                        <h1 className="text-2xl font-bold">Booking Orders</h1>
+                        <h1 className="text-3xl font-bold">Booking Orders</h1>
                         <p className="text-sm text-muted-foreground">Customer orders taken by bookers, converted to invoices after approval</p>
                     </div>
                     {can('bookings.create') && (

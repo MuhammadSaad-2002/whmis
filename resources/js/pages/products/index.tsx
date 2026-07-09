@@ -203,7 +203,7 @@ export default function ProductsIndex({ products, companies, categories, filters
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                        <h1 className="text-2xl font-bold">Products</h1>
+                        <h1 className="text-3xl font-bold">Products</h1>
                         <p className="text-sm text-muted-foreground">Medicine and product master</p>
                     </div>
                     {can('products.manage') && (

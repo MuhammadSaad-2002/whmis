@@ -38,7 +38,7 @@ export default function InventoryMovements({ movements, filters }: Props) {
             <Head title="Stock Movements" />
             <div className="flex h-full flex-col gap-4 p-4">
                 <div>
-                    <h1 className="text-2xl font-bold">Stock Movements</h1>
+                    <h1 className="text-3xl font-bold">Stock Movements</h1>
                     <p className="text-sm text-muted-foreground">Append-only ledger of every stock change</p>
                 </div>
 

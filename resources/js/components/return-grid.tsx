@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { useKeyboardGrid } from '@/hooks/use-keyboard-grid';
 import { amount, qty as fmtQty, toNumber } from '@/lib/format';
 import { Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 /** A returnable invoice line, normalized across sales/purchase returns. */
 export interface ReturnableLine {
@@ -53,6 +53,12 @@ export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount' }: Pr
         onProductSearch: (row) => setSearchSignal((s) => ({ row, n: s.n + 1 })),
     });
 
+    // Focus the first product cell once the grid mounts (after an invoice is
+    // chosen) so the user can type-search without clicking.
+    useEffect(() => {
+        grid.focusCell(0, 0);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
     const setRow = (i: number, patch: Partial<ReturnRow>) =>
         setRows((r) => r.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
 
@@ -60,9 +66,10 @@ export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount' }: Pr
         setRows((r) => (r.length === 1 ? [emptyReturnRow()] : r.filter((_, idx) => idx !== i)));
 
     return (
-        <div className="overflow-x-auto rounded-xl border">
+        <div className="rounded-xl border">
+            <div className="max-h-[55dvh] overflow-auto">
             <table className="w-full min-w-[760px] text-sm">
-                <thead className="bg-muted/50 text-xs uppercase">
+                <thead className="sticky top-0 z-10 bg-muted text-xs uppercase">
                     <tr className="[&>th]:border-b [&>th]:px-2 [&>th]:py-2 [&>th]:text-left">
                         <th className="w-8">#</th>
                         <th className="min-w-64">Product</th>
@@ -122,6 +129,7 @@ export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount' }: Pr
                     })}
                 </tbody>
             </table>
+            </div>
             <div className="border-t p-2">
                 <Button variant="ghost" size="sm" onClick={() => setRows((r) => [...r, emptyReturnRow()])}>
                     <Plus className="mr-1 size-4" /> Add Row

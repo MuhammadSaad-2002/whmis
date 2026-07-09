@@ -1,0 +1,1 @@
+import{j as t}from"./app-CkYhh9dh.js";function r({className:e=""}){return t.jsx("footer",{className:`text-muted-foreground border-t px-6 py-3 text-center text-xs ${e}`,children:"Developed by Virtual Wisdom Technologies"})}export{r as A};

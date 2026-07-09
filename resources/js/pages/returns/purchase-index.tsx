@@ -50,7 +50,7 @@ export default function PurchaseReturnsIndex({ returns, filters }: Props) {
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                        <h1 className="text-2xl font-bold">Purchase Returns</h1>
+                        <h1 className="text-3xl font-bold">Purchase Returns</h1>
                         <p className="text-sm text-muted-foreground">Stock returned to suppliers — debit notes on the supplier ledger</p>
                     </div>
                     <div className="flex gap-2">

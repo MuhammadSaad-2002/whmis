@@ -5,6 +5,7 @@ import {
 } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useInvoiceHotkeys } from '@/hooks/use-keyboard-grid';
 import AppLayout from '@/layouts/app-layout';
 import { money, shortDate, toNumber } from '@/lib/format';
 import { ALERT_FIX } from '@/lib/form-validation';
@@ -143,13 +144,20 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
         });
     };
 
+    const hotkeys = useInvoiceHotkeys({ onPost: submit });
+    useEffect(() => {
+        const listener = (e: KeyboardEvent) => hotkeys.handleKeyDown(e);
+        window.addEventListener('keydown', listener);
+        return () => window.removeEventListener('keydown', listener);
+    }, [hotkeys]);
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="New Sales Return" />
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                        <h1 className="text-2xl font-bold">New Sales Return</h1>
+                        <h1 className="text-3xl font-bold">New Sales Return</h1>
                         <p className="text-sm text-muted-foreground">
                             {invoice
                                 ? <>Against <span className="font-medium">{invoice.invoice_number}</span> — {invoice.customer} ({shortDate(invoice.invoice_date)})</>
@@ -185,7 +193,7 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
 
                         <ReturnGrid lines={lines} rows={rows} setRows={setRows} amountHeader="Refund" />
 
-                        <div className="ml-auto w-72 space-y-1 rounded-xl border p-4 text-sm">
+                        <div className="sticky bottom-0 z-10 ml-auto w-72 space-y-1 rounded-xl border bg-background p-4 text-sm">
                             <div className="flex justify-between text-base font-semibold">
                                 <span>Credit Note Total</span>
                                 <span className="tabular-nums">{money(totalRefund)}</span>

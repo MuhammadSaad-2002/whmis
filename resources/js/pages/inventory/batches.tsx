@@ -99,7 +99,7 @@ export default function InventoryBatches({ batches, filters }: Props) {
             <Head title="Batches" />
             <div className="flex h-full flex-col gap-4 p-4">
                 <div>
-                    <h1 className="text-2xl font-bold">Batches & Expiry</h1>
+                    <h1 className="text-3xl font-bold">Batches & Expiry</h1>
                     <p className="text-sm text-muted-foreground">Batch-wise stock, FIFO order, expiry monitoring</p>
                 </div>
 

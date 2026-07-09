@@ -367,7 +367,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-3">
-                        <h1 className="text-2xl font-bold">
+                        <h1 className="text-3xl font-bold">
                             {invoice ? `Purchase ${invoice.invoice_number}` : 'New Purchase Invoice'}
                         </h1>
                         {statusBadge}
@@ -506,9 +506,10 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                     </div>
                 </div>
 
-                <div className="overflow-x-auto rounded-xl border">
+                <div className="rounded-xl border">
+                    <div className="max-h-[55dvh] overflow-auto">
                     <table className="w-full min-w-[1250px] text-sm">
-                        <thead className="bg-muted/50 text-xs uppercase">
+                        <thead className="sticky top-0 z-10 bg-muted text-xs uppercase">
                             <tr className="[&>th]:border-b [&>th]:px-2 [&>th]:py-2 [&>th]:text-left">
                                 <th className="w-8">#</th>
                                 <th className="min-w-56">Product <kbd className="opacity-50">F2</kbd></th>
@@ -575,6 +576,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                             ))}
                         </tbody>
                     </table>
+                    </div>
                     {!readonly && (
                         <div className="border-t p-2">
                             <Button variant="ghost" size="sm" onClick={() => setRows((r) => [...r, emptyRow()])}>
@@ -584,7 +586,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                     )}
                 </div>
 
-                <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="sticky bottom-0 z-10 flex flex-wrap items-start justify-between gap-4 bg-background pt-2">
                     <div className="w-full max-w-md">
                         <Label>Notes</Label>
                         <Textarea
