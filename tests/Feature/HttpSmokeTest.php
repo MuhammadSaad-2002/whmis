@@ -255,7 +255,7 @@ class HttpSmokeTest extends TestCase
             'company_id' => $company->id, 'warehouse_id' => 1,
             'invoice_date' => now()->toDateString(), 'purchase_type' => 'credit',
             'items' => [[
-                'product_id' => $product->id, 'quantity' => 10,
+                'product_id' => $product->id, 'batch_number' => 'B-AUG', 'quantity' => 10,
                 'purchase_rate' => 250, 'trade_price' => 300,
             ]],
         ]);
@@ -266,7 +266,7 @@ class HttpSmokeTest extends TestCase
             'company_id' => $company->id, 'warehouse_id' => 1,
             'invoice_date' => now()->toDateString(), 'purchase_type' => 'credit',
             'items' => [[
-                'product_id' => $product->id, 'quantity' => 15,
+                'product_id' => $product->id, 'batch_number' => 'B-AUG', 'quantity' => 15,
                 'purchase_rate' => 250, 'trade_price' => 300,
             ]],
         ])->assertRedirect()->assertSessionHas('success');
@@ -348,7 +348,7 @@ class HttpSmokeTest extends TestCase
         );
     }
 
-    public function test_duplicate_product_on_one_invoice_is_rejected(): void
+    public function test_same_product_same_batch_rejected_but_different_batch_allowed(): void
     {
         $this->actingAs($this->admin);
 
@@ -356,36 +356,63 @@ class HttpSmokeTest extends TestCase
         $customer = Customer::create(['name' => 'City Pharmacy']);
         $product = Product::create(['name' => 'Panadol 500mg', 'company_id' => $company->id, 'trade_price' => 100]);
 
-        // Purchase: same product on two lines → rejected, nothing saved.
+        // Purchase: same product + same batch on two lines → rejected, nothing saved.
         $this->post(route('purchases.store'), [
             'company_id' => $company->id, 'warehouse_id' => 1,
             'invoice_date' => now()->toDateString(), 'purchase_type' => 'credit',
             'items' => [
-                ['product_id' => $product->id, 'quantity' => 10, 'purchase_rate' => 80, 'trade_price' => 100],
-                ['product_id' => $product->id, 'quantity' => 5, 'purchase_rate' => 80, 'trade_price' => 100],
+                ['product_id' => $product->id, 'batch_number' => 'B1', 'quantity' => 10, 'purchase_rate' => 80, 'trade_price' => 100],
+                ['product_id' => $product->id, 'batch_number' => 'B1', 'quantity' => 5, 'purchase_rate' => 80, 'trade_price' => 100],
             ],
         ])->assertRedirect()->assertSessionHas('error');
         $this->assertSame(0, PurchaseInvoice::count());
 
-        // Sales: same guard (a valid batch is present so the duplicate check is what fires).
-        $batch = Batch::create([
-            'product_id' => $product->id, 'warehouse_id' => 1, 'batch_number' => 'B1',
+        // Purchase: same product + DIFFERENT batch is fine.
+        $this->post(route('purchases.store'), [
+            'company_id' => $company->id, 'warehouse_id' => 1,
+            'invoice_date' => now()->toDateString(), 'purchase_type' => 'credit',
+            'items' => [
+                ['product_id' => $product->id, 'batch_number' => 'B1', 'quantity' => 10, 'purchase_rate' => 80, 'trade_price' => 100],
+                ['product_id' => $product->id, 'batch_number' => 'B2', 'quantity' => 5, 'purchase_rate' => 80, 'trade_price' => 100],
+            ],
+        ])->assertRedirect()->assertSessionHas('success');
+        $this->assertSame(1, PurchaseInvoice::count());
+
+        // Sales: two in-stock batches of the product.
+        $b1 = Batch::create([
+            'product_id' => $product->id, 'warehouse_id' => 1, 'batch_number' => 'SB1',
             'expiry_date' => now()->addYear()->toDateString(), 'purchase_rate' => 80,
             'effective_cost' => 80, 'trade_price' => 100, 'retail_price' => 120,
             'qty_purchased' => 100, 'qty_available' => 100,
         ]);
+        $b2 = Batch::create([
+            'product_id' => $product->id, 'warehouse_id' => 1, 'batch_number' => 'SB2',
+            'expiry_date' => now()->addYears(2)->toDateString(), 'purchase_rate' => 80,
+            'effective_cost' => 80, 'trade_price' => 100, 'retail_price' => 120,
+            'qty_purchased' => 100, 'qty_available' => 100,
+        ]);
+
+        // Sales: same product + same batch → rejected.
         $this->post(route('sales.store'), [
             'customer_id' => $customer->id, 'warehouse_id' => 1,
             'invoice_date' => now()->toDateString(), 'sale_type' => 'credit',
             'items' => [
-                ['product_id' => $product->id, 'batch_id' => $batch->id, 'quantity' => 3, 'trade_price' => 100],
-                ['product_id' => $product->id, 'batch_id' => $batch->id, 'quantity' => 4, 'trade_price' => 100],
+                ['product_id' => $product->id, 'batch_id' => $b1->id, 'quantity' => 3, 'trade_price' => 100],
+                ['product_id' => $product->id, 'batch_id' => $b1->id, 'quantity' => 4, 'trade_price' => 100],
             ],
         ])->assertRedirect()->assertSessionHas('error');
         $this->assertSame(0, SalesInvoice::count());
+        $this->assertStringContainsString('Panadol 500mg', session('error'));
 
-        $error = session('error');
-        $this->assertStringContainsString('Panadol 500mg', $error);
-        $this->assertStringContainsString('more than one line', $error);
+        // Sales: same product + DIFFERENT batches → allowed.
+        $this->post(route('sales.store'), [
+            'customer_id' => $customer->id, 'warehouse_id' => 1,
+            'invoice_date' => now()->toDateString(), 'sale_type' => 'credit',
+            'items' => [
+                ['product_id' => $product->id, 'batch_id' => $b1->id, 'quantity' => 3, 'trade_price' => 100],
+                ['product_id' => $product->id, 'batch_id' => $b2->id, 'quantity' => 4, 'trade_price' => 100],
+            ],
+        ])->assertRedirect()->assertSessionHas('success');
+        $this->assertSame(1, SalesInvoice::count());
     }
 }

@@ -45,6 +45,67 @@ class InventoryService
     }
 
     /**
+     * Add a purchase receipt to an existing batch (restock). Stock accumulates
+     * and effective_cost becomes the moving weighted average over on-hand units.
+     */
+    public function restockBatch(PurchaseInvoiceItem $item, float $effectiveCost, float $receiptNet): Batch
+    {
+        $invoice = $item->invoice;
+        $batch = Batch::whereKey($item->batch_id)->lockForUpdate()->firstOrFail();
+
+        $qty = (float) $item->quantity;
+        $bonus = (float) $item->bonus_quantity;
+        $units = $qty + $bonus;
+
+        $value = (float) $batch->qty_available * (float) $batch->effective_cost;
+        $newAvailable = (float) $batch->qty_available + $units;
+
+        $batch->qty_purchased = (float) $batch->qty_purchased + $qty;
+        $batch->qty_bonus = (float) $batch->qty_bonus + $bonus;
+        $batch->qty_available = $newAvailable;
+        $batch->effective_cost = $newAvailable > 1e-9 ? round(($value + $receiptNet) / $newAvailable, 4) : $effectiveCost;
+        // Latest receipt refreshes the batch's rates/selling prices.
+        $batch->purchase_rate = $item->purchase_rate;
+        $batch->trade_price = $item->trade_price;
+        $batch->retail_price = $item->retail_price;
+        $batch->save();
+
+        $this->recordMovement($batch, 'purchase', $units, $invoice, $effectiveCost);
+
+        return $batch;
+    }
+
+    /**
+     * Reverse a single purchase receipt from its batch (purchase cancellation),
+     * for both freshly-created and restocked batches. Removes only this
+     * receipt's units and unwinds its share of the moving-average cost.
+     */
+    public function reversePurchaseReceipt(Batch $batch, float $qty, float $bonus, float $receiptUnitCost, Model $reference): void
+    {
+        $batch = Batch::whereKey($batch->id)->lockForUpdate()->firstOrFail();
+        $units = $qty + $bonus;
+
+        if ((float) $batch->qty_available + 1e-9 < $units) {
+            throw new RuntimeException(
+                "Cannot cancel: stock from batch {$batch->batch_number} has already been sold or adjusted."
+            );
+        }
+
+        $value = (float) $batch->qty_available * (float) $batch->effective_cost;
+        $newAvailable = (float) $batch->qty_available - $units;
+
+        $batch->qty_purchased = max(0, (float) $batch->qty_purchased - $qty);
+        $batch->qty_bonus = max(0, (float) $batch->qty_bonus - $bonus);
+        $batch->qty_available = $newAvailable;
+        if ($newAvailable > 1e-9) {
+            $batch->effective_cost = round(($value - $units * $receiptUnitCost) / $newAvailable, 4);
+        }
+        $batch->save();
+
+        $this->recordMovement($batch, 'purchase_return', -$units, $reference, $receiptUnitCost);
+    }
+
+    /**
      * FIFO-consume stock for a product. Batches are locked, ordered by
      * earliest expiry then arrival. Returns allocations:
      * [['batch' => Batch, 'quantity' => float, 'cost' => float], ...]

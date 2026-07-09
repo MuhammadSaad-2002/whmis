@@ -1,5 +1,6 @@
 import InputError from '@/components/input-error';
 import { ProductSearchCell, type ProductHit } from '@/components/product-search-cell';
+import { PurchaseBatchCell } from '@/components/purchase-batch-cell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +24,7 @@ import { toast } from 'sonner';
 interface ItemRow {
     product_id: number | null;
     product_name: string;
+    batch_id: string; // chosen existing batch to restock, '' = new batch
     batch_number: string;
     expiry_date: string;
     quantity: string;
@@ -52,6 +54,7 @@ interface InvoiceDto {
     items: {
         product_id: number;
         product?: { id: number; name: string };
+        batch_id: number | null;
         batch_number: string | null;
         expiry_date: string | null;
         quantity: string;
@@ -72,7 +75,7 @@ interface Props {
 }
 
 const emptyRow = (): ItemRow => ({
-    product_id: null, product_name: '', batch_number: '', expiry_date: '',
+    product_id: null, product_name: '', batch_id: '', batch_number: '', expiry_date: '',
     quantity: '1', bonus_quantity: '0', purchase_rate: '', trade_price: '',
     retail_price: '', discount_percent: '0.00', gst_percent: '0.00', remarks: '',
 });
@@ -111,6 +114,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
             ? invoice.items.map((item) => ({
                   product_id: item.product_id,
                   product_name: item.product?.name ?? `#${item.product_id}`,
+                  batch_id: item.batch_id ? String(item.batch_id) : '',
                   batch_number: item.batch_number ?? '',
                   expiry_date: item.expiry_date?.slice(0, 10) ?? '',
                   quantity: String(Number(item.quantity)),
@@ -172,6 +176,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
         rows.forEach((row, i) => {
             if (!row.product_id) return;
             const rowErr: Record<string, string> = {};
+            if (!(row.batch_id || row.batch_number.trim())) rowErr.batch_number = 'Select or enter a batch.';
             (['quantity', 'discount_percent', 'gst_percent', 'purchase_rate'] as (keyof ItemRow)[]).forEach((key) => {
                 const message = cellRule(key, row[key] as string);
                 if (message) rowErr[key] = message;
@@ -233,12 +238,28 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
         setRows((r) => r.map((row, i) => (i === rowIndex ? { ...row, [key]: value } : row)));
     };
 
-    const applyProduct = (rowIndex: number, product: ProductHit) => {
-        const dup = rows.findIndex((r, i) => i !== rowIndex && r.product_id === product.id);
-        if (dup !== -1) {
-            toast.error(`${product.name} is already on line ${dup + 1} — change the quantity there instead.`);
-            return;
+    // Prefill rate/trade/retail from the product's latest batch (fallback: the
+    // master prices already set by applyProduct).
+    const fetchLatestBatchPrices = async (rowIndex: number, productId: number) => {
+        try {
+            const res = await fetch(`/lookup/products/${productId}/all-batches?warehouse_id=${warehouse.id}`, { headers: { Accept: 'application/json' } });
+            if (!res.ok) return;
+            const batches: { purchase_rate: number; trade_price: number; retail_price: number }[] = await res.json();
+            if (!batches.length) return;
+            const latest = batches[0];
+            setRows((r) => r.map((row, i) => (i === rowIndex && row.product_id === productId && !row.batch_id ? {
+                ...row,
+                purchase_rate: dec2(latest.purchase_rate),
+                trade_price: dec2(latest.trade_price),
+                retail_price: dec2(latest.retail_price),
+            } : row)));
+        } catch {
+            /* ignore */
         }
+    };
+
+    const applyProduct = (rowIndex: number, product: ProductHit) => {
+        // A product may repeat with a different batch, so no product-level guard.
         setRows((r) =>
             r.map((row, i) =>
                 i === rowIndex
@@ -246,6 +267,9 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                           ...row,
                           product_id: product.id,
                           product_name: product.name,
+                          batch_id: '',
+                          batch_number: '',
+                          expiry_date: '',
                           purchase_rate: dec2(product.purchase_price),
                           trade_price: dec2(product.trade_price),
                           retail_price: dec2(product.retail_price),
@@ -256,7 +280,8 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
             ),
         );
         setRowError(rowIndex, 'product_id', null);
-        grid.focusCell(rowIndex, 1); // jump to batch number
+        grid.focusCell(rowIndex, 1); // jump to batch
+        void fetchLatestBatchPrices(rowIndex, product.id);
     };
 
     const removeRow = (index: number) => {
@@ -272,6 +297,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
             .filter((row) => row.product_id && toNumber(row.quantity) > 0)
             .map((row) => ({
                 product_id: row.product_id,
+                batch_id: row.batch_id ? Number(row.batch_id) : null,
                 batch_number: row.batch_number || null,
                 expiry_date: row.expiry_date || null,
                 quantity: toNumber(row.quantity),
@@ -341,13 +367,16 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
             if (rows[rowIndex].product_id) setRowError(rowIndex, key, cellRule(key, value));
         };
         const cellError = rowErrors[rowIndex]?.[key];
+        // Row fields stay locked until a batch is chosen or typed.
+        const row = rows[rowIndex];
+        const locked = !readonly && !(row.batch_id || row.batch_number.trim());
         return (
             <Input
                 ref={grid.registerCell(rowIndex, colIndex) as never}
                 type={type}
                 min={isQty ? 1 : undefined}
                 value={rows[rowIndex][key] as string}
-                disabled={readonly}
+                disabled={readonly || locked}
                 title={cellError}
                 aria-invalid={!!cellError}
                 onChange={(e) => {
@@ -546,7 +575,49 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                                             inputRef={grid.registerCell(rowIndex, 0)}
                                         />
                                     </td>
-                                    <td>{cellInput(rowIndex, 1, 'batch_number')}</td>
+                                    <td
+                                        className={rowErrors[rowIndex]?.batch_number ? 'ring-1 ring-inset ring-destructive' : ''}
+                                        title={rowErrors[rowIndex]?.batch_number}
+                                    >
+                                        <PurchaseBatchCell
+                                            productId={row.product_id}
+                                            warehouseId={warehouse.id}
+                                            value={row.batch_id}
+                                            batchNumber={row.batch_number}
+                                            disabled={readonly}
+                                            invalid={!!rowErrors[rowIndex]?.batch_number}
+                                            registerRef={grid.registerCell(rowIndex, 1)}
+                                            onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 1)}
+                                            onPickExisting={(b) => {
+                                                const dup = rows.findIndex((r, i) => i !== rowIndex && r.product_id === row.product_id && r.batch_id === String(b.id));
+                                                if (dup !== -1) {
+                                                    setRowError(rowIndex, 'batch_number', `This product + batch is already on line ${dup + 1}.`);
+                                                    return;
+                                                }
+                                                setRowError(rowIndex, 'batch_number', null);
+                                                setRows((r) => r.map((rw, i) => (i === rowIndex ? {
+                                                    ...rw,
+                                                    batch_id: String(b.id),
+                                                    batch_number: b.batch_number,
+                                                    expiry_date: b.expiry_date ?? '',
+                                                    purchase_rate: dec2(b.purchase_rate),
+                                                    trade_price: dec2(b.trade_price),
+                                                    retail_price: dec2(b.retail_price),
+                                                } : rw)));
+                                                grid.focusCell(rowIndex, 3); // proceed to Qty
+                                            }}
+                                            onCreateNew={(number) => {
+                                                const dup = rows.findIndex((r, i) => i !== rowIndex && r.product_id === row.product_id && !r.batch_id && r.batch_number.trim().toLowerCase() === number.toLowerCase());
+                                                if (dup !== -1) {
+                                                    setRowError(rowIndex, 'batch_number', `This product + batch is already on line ${dup + 1}.`);
+                                                    return;
+                                                }
+                                                setRowError(rowIndex, 'batch_number', null);
+                                                setRows((r) => r.map((rw, i) => (i === rowIndex ? { ...rw, batch_id: '', batch_number: number } : rw)));
+                                                grid.focusCell(rowIndex, 2); // proceed to Expiry (new batch)
+                                            }}
+                                        />
+                                    </td>
                                     <td>{cellInput(rowIndex, 2, 'expiry_date', 'date')}</td>
                                     <td>{cellInput(rowIndex, 3, 'quantity', 'number', 'text-right')}</td>
                                     <td>{cellInput(rowIndex, 4, 'bonus_quantity', 'number', 'text-right')}</td>

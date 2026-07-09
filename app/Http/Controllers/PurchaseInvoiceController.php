@@ -59,19 +59,23 @@ class PurchaseInvoiceController extends Controller
     {
         $data = $this->validated($request);
 
-        if ($name = $this->duplicateProductName($data['items'])) {
-            return back()->with('error', "{$name} appears on more than one line — combine it into a single line.");
+        if ($name = $this->duplicateProductBatch($data['items'])) {
+            return back()->with('error', "{$name} appears more than once with the same batch — use a different batch or combine the lines.");
         }
 
-        $invoice = DB::transaction(function () use ($data) {
-            $invoice = PurchaseInvoice::create($this->headerAttributes($data) + [
-                'invoice_number' => $this->numbers->next('purchase_invoice'),
-                'created_by' => $data['user_id'],
-            ]);
-            $this->syncItems($invoice, $data['items']);
+        try {
+            $invoice = DB::transaction(function () use ($data) {
+                $invoice = PurchaseInvoice::create($this->headerAttributes($data) + [
+                    'invoice_number' => $this->numbers->next('purchase_invoice'),
+                    'created_by' => $data['user_id'],
+                ]);
+                $this->syncItems($invoice, $data['items']);
 
-            return $invoice;
-        });
+                return $invoice;
+            });
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return redirect()
             ->route('purchases.edit', $invoice)
@@ -97,15 +101,19 @@ class PurchaseInvoiceController extends Controller
 
         $data = $this->validated($request);
 
-        if ($name = $this->duplicateProductName($data['items'])) {
-            return back()->with('error', "{$name} appears on more than one line — combine it into a single line.");
+        if ($name = $this->duplicateProductBatch($data['items'])) {
+            return back()->with('error', "{$name} appears more than once with the same batch — use a different batch or combine the lines.");
         }
 
-        DB::transaction(function () use ($purchase, $data) {
-            $purchase->update($this->headerAttributes($data));
-            $purchase->items()->delete();
-            $this->syncItems($purchase, $data['items']);
-        });
+        try {
+            DB::transaction(function () use ($purchase, $data) {
+                $purchase->update($this->headerAttributes($data));
+                $purchase->items()->delete();
+                $this->syncItems($purchase, $data['items']);
+            });
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return back()->with('success', 'Draft updated.');
     }
@@ -192,7 +200,8 @@ class PurchaseInvoiceController extends Controller
             'notes' => ['nullable', 'string'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'exists:products,id'],
-            'items.*.batch_number' => ['nullable', 'string', 'max:100'],
+            'items.*.batch_number' => ['required', 'string', 'max:100'],
+            'items.*.batch_id' => ['nullable', 'integer', 'exists:batches,id'],
             'items.*.expiry_date' => ['nullable', 'date'],
             'items.*.quantity' => ['required', 'numeric', 'min:1'],
             'items.*.bonus_quantity' => ['nullable', 'numeric', 'min:0'],
@@ -213,16 +222,44 @@ class PurchaseInvoiceController extends Controller
         ])->map(fn ($v) => $v ?? null)->all();
     }
 
-    /** Name of the first product that appears on more than one line, or null. */
-    private function duplicateProductName(array $items): ?string
+    /** Name of the first product that repeats with the same batch, or null. */
+    private function duplicateProductBatch(array $items): ?string
     {
-        foreach (array_count_values(array_column($items, 'product_id')) as $id => $count) {
-            if ($count > 1) {
-                return Product::whereKey($id)->value('name') ?? "Product #{$id}";
+        $seen = [];
+        foreach ($items as $item) {
+            $batchKey = $item['batch_id'] ?? mb_strtolower(trim((string) ($item['batch_number'] ?? '')));
+            $key = $item['product_id'] . ':' . $batchKey;
+            if (isset($seen[$key])) {
+                return Product::whereKey($item['product_id'])->value('name') ?? "Product #{$item['product_id']}";
             }
+            $seen[$key] = true;
         }
 
         return null;
+    }
+
+    /**
+     * A chosen existing batch (restock) must belong to this product + warehouse.
+     * Returns the resolved batch id or null (new batch to be created on post).
+     */
+    private function resolveBatchId(PurchaseInvoice $invoice, array $item): ?int
+    {
+        if (empty($item['batch_id'])) {
+            return null;
+        }
+
+        $batch = \App\Models\Batch::query()
+            ->where('id', $item['batch_id'])
+            ->where('product_id', $item['product_id'])
+            ->where('warehouse_id', $invoice->warehouse_id)
+            ->first();
+
+        if (! $batch) {
+            $product = Product::whereKey($item['product_id'])->value('name');
+            throw new RuntimeException("The selected batch does not belong to {$product} in this warehouse.");
+        }
+
+        return (int) $batch->id;
     }
 
     /**
@@ -239,6 +276,7 @@ class PurchaseInvoiceController extends Controller
 
             $invoice->items()->create([
                 'product_id' => $item['product_id'],
+                'batch_id' => $this->resolveBatchId($invoice, $item),
                 'batch_number' => $item['batch_number'] ?? null,
                 'expiry_date' => $item['expiry_date'] ?? null,
                 'quantity' => $item['quantity'],

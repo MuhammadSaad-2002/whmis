@@ -79,6 +79,30 @@ class LookupController extends Controller
     }
 
     /**
+     * Every batch of a product (incl. out-of-stock), most-recently received
+     * first — powers the purchase restock dropdown and latest-price prefill.
+     */
+    public function allBatches(Request $request, Product $product)
+    {
+        $warehouseId = (int) ($request->warehouse_id ?: Warehouse::default()->id);
+
+        $batches = $product->batches()
+            ->where('warehouse_id', $warehouseId)
+            ->orderByDesc('id')
+            ->get();
+
+        return response()->json($batches->map(fn ($batch) => [
+            'id' => $batch->id,
+            'batch_number' => $batch->batch_number,
+            'expiry_date' => $batch->expiry_date?->toDateString(),
+            'qty_available' => (float) $batch->qty_available,
+            'purchase_rate' => (float) $batch->purchase_rate,
+            'trade_price' => (float) $batch->trade_price,
+            'retail_price' => (float) $batch->retail_price,
+        ]));
+    }
+
+    /**
      * Applicable incentive rules for a grid line — powers the F4 picker.
      */
     public function rules(Request $request, IncentiveEngine $engine)

@@ -251,11 +251,8 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
     };
 
     const applyProduct = (rowIndex: number, product: ProductHit) => {
-        const dup = rows.findIndex((r, i) => i !== rowIndex && r.product_id === product.id);
-        if (dup !== -1) {
-            toast.error(`${product.name} is already on line ${dup + 1} — change the quantity there instead.`);
-            return;
-        }
+        // A product may repeat with a different batch, so no product-level guard
+        // here — the same product + batch is blocked when the batch is chosen.
         setRows((r) =>
             r.map((row, i) =>
                 i === rowIndex
@@ -377,13 +374,15 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
             if (rows[rowIndex].product_id) setRowError(rowIndex, key, cellRule(key, value));
         };
         const cellError = rowErrors[rowIndex]?.[key];
+        // Row fields stay locked until a batch is selected.
+        const locked = !readonly && !rows[rowIndex].batch_id;
         return (
             <Input
                 ref={grid.registerCell(rowIndex, colIndex) as never}
                 type={type}
                 min={isQty ? 1 : undefined}
                 value={rows[rowIndex][key] as string}
-                disabled={readonly}
+                disabled={readonly || locked}
                 title={cellError}
                 aria-invalid={!!cellError}
                 onChange={(e) => {
@@ -622,10 +621,15 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                                                 fallback={row.batch_fallback}
                                                 registerRef={grid.registerCell(rowIndex, 1)}
                                                 onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 1)}
-                                                onSelect={(id, qtyAvailable) => {
-                                                    setCell(rowIndex, 'batch_id', id);
+                                                onSelect={(id, qtyAvailable, tradePrice) => {
+                                                    const dup = rows.findIndex((r, i) => i !== rowIndex && r.product_id === row.product_id && r.batch_id === id);
+                                                    if (dup !== -1) {
+                                                        setRowError(rowIndex, 'batch_id', `This product + batch is already on line ${dup + 1}.`);
+                                                        return;
+                                                    }
                                                     setRowError(rowIndex, 'batch_id', null);
-                                                    setRows((r) => r.map((row, i) => (i === rowIndex ? { ...row, stock: qtyAvailable } : row)));
+                                                    setRows((r) => r.map((rw, i) => (i === rowIndex ? { ...rw, batch_id: id, stock: qtyAvailable, trade_price: tradePrice > 0 ? dec2(tradePrice) : rw.trade_price } : rw)));
+                                                    grid.focusCell(rowIndex, 2); // proceed to Qty
                                                 }}
                                             />
                                         </td>
@@ -638,7 +642,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                                             <button
                                                 type="button"
                                                 ref={grid.registerCell(rowIndex, 4) as never}
-                                                disabled={readonly || !row.product_id}
+                                                disabled={readonly || !row.batch_id}
                                                 onClick={() => {
                                                     setActiveRow(rowIndex);
                                                     setRuleOpen(true);

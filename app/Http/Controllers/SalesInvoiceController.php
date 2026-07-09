@@ -57,8 +57,8 @@ class SalesInvoiceController extends Controller
     {
         $data = $this->validated($request);
 
-        if ($name = $this->duplicateProductName($data['items'])) {
-            return back()->with('error', "{$name} appears on more than one line — combine it into a single line.");
+        if ($name = $this->duplicateProductBatch($data['items'])) {
+            return back()->with('error', "{$name} appears more than once with the same batch — pick a different batch or combine the lines.");
         }
 
         try {
@@ -102,8 +102,8 @@ class SalesInvoiceController extends Controller
 
         $data = $this->validated($request, $sale);
 
-        if ($name = $this->duplicateProductName($data['items'])) {
-            return back()->with('error', "{$name} appears on more than one line — combine it into a single line.");
+        if ($name = $this->duplicateProductBatch($data['items'])) {
+            return back()->with('error', "{$name} appears more than once with the same batch — pick a different batch or combine the lines.");
         }
 
         try {
@@ -212,13 +212,16 @@ class SalesInvoiceController extends Controller
         ])->map(fn ($v) => $v ?? null)->all();
     }
 
-    /** Name of the first product that appears on more than one line, or null. */
-    private function duplicateProductName(array $items): ?string
+    /** Name of the first product that repeats with the same batch, or null. */
+    private function duplicateProductBatch(array $items): ?string
     {
-        foreach (array_count_values(array_column($items, 'product_id')) as $id => $count) {
-            if ($count > 1) {
-                return Product::whereKey($id)->value('name') ?? "Product #{$id}";
+        $seen = [];
+        foreach ($items as $item) {
+            $key = $item['product_id'] . ':' . ($item['batch_id'] ?? '');
+            if (isset($seen[$key])) {
+                return Product::whereKey($item['product_id'])->value('name') ?? "Product #{$item['product_id']}";
             }
+            $seen[$key] = true;
         }
 
         return null;

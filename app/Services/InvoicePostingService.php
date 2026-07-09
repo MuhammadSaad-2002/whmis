@@ -53,8 +53,13 @@ class InvoicePostingService
                     'margin_percent' => $line['margin_percent'],
                 ]);
 
-                $batch = $this->inventory->receiveFromPurchaseItem($item, $line['effective_cost']);
-                $item->update(['batch_id' => $batch->id]);
+                if ($item->batch_id) {
+                    // Restock the chosen existing batch (validated at save time).
+                    $this->inventory->restockBatch($item, $line['effective_cost'], $line['net_amount']);
+                } else {
+                    $batch = $this->inventory->receiveFromPurchaseItem($item, $line['effective_cost']);
+                    $item->update(['batch_id' => $batch->id]);
+                }
 
                 $computedLines[] = $line;
                 $totalMargin += $line['margin'];
@@ -105,7 +110,17 @@ class InvoicePostingService
             if ($invoice->isPosted()) {
                 foreach ($invoice->items as $item) {
                     if ($item->batch_id) {
-                        $this->inventory->withdrawPurchasedStock(Batch::findOrFail($item->batch_id), $invoice);
+                        $qty = (float) $item->quantity;
+                        $bonus = (float) $item->bonus_quantity;
+                        $units = $qty + $bonus;
+                        $receiptUnitCost = $units > 0 ? (float) $item->net_amount / $units : 0.0;
+                        $this->inventory->reversePurchaseReceipt(
+                            Batch::findOrFail($item->batch_id),
+                            $qty,
+                            $bonus,
+                            $receiptUnitCost,
+                            $invoice,
+                        );
                     }
                 }
 

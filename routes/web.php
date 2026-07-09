@@ -174,6 +174,7 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('lookup')->group(function () {
         Route::get('products', [LookupController::class, 'products'])->name('lookup.products');
         Route::get('products/{product}/batches', [LookupController::class, 'batches'])->name('lookup.batches');
+        Route::get('products/{product}/all-batches', [LookupController::class, 'allBatches'])->name('lookup.all-batches');
         Route::get('open-invoices', [LookupController::class, 'openInvoices'])->name('lookup.open-invoices');
         Route::get('rules', [LookupController::class, 'rules'])->name('lookup.rules');
     });
