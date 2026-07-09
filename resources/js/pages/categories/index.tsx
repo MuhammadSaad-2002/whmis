@@ -88,7 +88,7 @@ export default function CategoriesIndex({ categories, filters }: Props) {
             <Head title="Categories" />
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="flex items-center justify-between">
-                    <h1 className="text-xl font-semibold">Product Categories</h1>
+                    <h1 className="text-2xl font-bold">Product Categories</h1>
                     {can('categories.manage') && (
                         <Button onClick={openCreate}>
                             <Plus className="mr-1 size-4" /> Add Category

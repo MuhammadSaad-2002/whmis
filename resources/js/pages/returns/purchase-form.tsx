@@ -1,28 +1,41 @@
-import { ProductSearchDialog, type ProductHit } from '@/components/product-search-dialog';
+import { ReturnGrid, emptyReturnRow, type ReturnRow, type ReturnableLine } from '@/components/return-grid';
 import { Button } from '@/components/ui/button';
+import {
+    CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList,
+} from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-    Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
-import { amount, money, qty as fmtQty, toNumber } from '@/lib/format';
-import { type BreadcrumbItem } from '@/types';
+import { money, shortDate, toNumber } from '@/lib/format';
 import { ALERT_FIX } from '@/lib/form-validation';
+import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
-import { Plus, Trash2, Undo2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { FileSearch, Undo2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-interface LineRow {
-    batch_id: number;
+interface InvoiceHit {
+    id: number;
+    invoice_number: string;
+    supplier: string | null;
+    invoice_date: string;
+    total_amount: number;
+}
+
+interface ReturnableDto {
+    purchase_invoice_item_id: number;
     product: string;
-    batch_number: string;
-    expiry_date: string | null;
-    available: number;
-    quantity: string;
-    rate: string;
+    company: string | null;
+    batch_number: string | null;
+    returnable: number;
+    rate: number;
+}
+
+interface LoadedInvoice {
+    id: number;
+    invoice_number: string;
+    supplier: string;
+    invoice_date: string;
 }
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -30,76 +43,92 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'New Return', href: '#' },
 ];
 
-interface Props {
-    companies: { id: number; name: string }[];
-    warehouse: { id: number; name: string };
-}
-
-export default function PurchaseReturnForm({ companies, warehouse }: Props) {
-    const [companyId, setCompanyId] = useState('');
+export default function PurchaseReturnForm({ warehouse }: { warehouse: { id: number; name: string } }) {
+    const [pickerOpen, setPickerOpen] = useState(true);
+    const [query, setQuery] = useState('');
+    const [hits, setHits] = useState<InvoiceHit[]>([]);
+    const [invoice, setInvoice] = useState<LoadedInvoice | null>(null);
+    const [lines, setLines] = useState<ReturnableLine[]>([]);
+    const [rows, setRows] = useState<ReturnRow[]>([emptyReturnRow()]);
     const [returnDate, setReturnDate] = useState(new Date().toISOString().slice(0, 10));
     const [reason, setReason] = useState('');
-    const [rows, setRows] = useState<LineRow[]>([]);
-    const [searchOpen, setSearchOpen] = useState(false);
     const [saving, setSaving] = useState(false);
 
-    const addProductBatches = async (product: ProductHit) => {
-        const response = await fetch(`/lookup/products/${product.id}/batches?warehouse_id=${warehouse.id}`, {
-            headers: { Accept: 'application/json' },
-        });
-        if (!response.ok) return;
-        const batches: { id: number; batch_number: string; expiry_date: string | null; qty_available: number }[] =
-            await response.json();
+    useEffect(() => {
+        if (!pickerOpen) return;
+        const controller = new AbortController();
+        const timeout = setTimeout(async () => {
+            try {
+                const response = await fetch(`/returns/lookup/purchase-invoices?q=${encodeURIComponent(query)}`, {
+                    signal: controller.signal,
+                    headers: { Accept: 'application/json' },
+                });
+                if (response.ok) setHits(await response.json());
+            } catch {
+                /* aborted */
+            }
+        }, 250);
+        return () => {
+            clearTimeout(timeout);
+            controller.abort();
+        };
+    }, [query, pickerOpen]);
 
-        setRows((current) => {
-            const existing = new Set(current.map((row) => row.batch_id));
-            const additions = batches
-                .filter((batch) => !existing.has(batch.id) && batch.qty_available > 0)
-                .map((batch) => ({
-                    batch_id: batch.id,
-                    product: product.name,
-                    batch_number: batch.batch_number,
-                    expiry_date: batch.expiry_date,
-                    available: batch.qty_available,
-                    quantity: '',
-                    rate: String(product.purchase_price || ''),
-                }));
-            return [...current, ...additions];
-        });
+    const loadInvoice = async (hit: InvoiceHit) => {
+        setPickerOpen(false);
+        const response = await fetch(`/returns/lookup/purchase-invoices/${hit.id}/returnable`, { headers: { Accept: 'application/json' } });
+        if (!response.ok) return;
+        const data = await response.json();
+        setInvoice(data.invoice);
+        setLines(
+            (data.lines as ReturnableDto[])
+                .filter((l) => l.returnable > 0)
+                .map((l) => ({
+                    line_id: l.purchase_invoice_item_id,
+                    product: l.product,
+                    company: l.company,
+                    batch_number: l.batch_number,
+                    returnable: l.returnable,
+                    unit_amount: l.rate,
+                })),
+        );
+        setRows([emptyReturnRow()]);
     };
 
+    const lineById = useMemo(() => new Map(lines.map((l) => [String(l.line_id), l])), [lines]);
     const total = useMemo(
-        () => rows.reduce((sum, row) => sum + toNumber(row.quantity) * toNumber(row.rate), 0),
-        [rows],
+        () => rows.reduce((sum, r) => sum + toNumber(r.qty) * (lineById.get(r.line_id)?.unit_amount ?? 0), 0),
+        [rows, lineById],
     );
 
-    const hasInvalid = rows.some((row) => toNumber(row.quantity) > row.available + 1e-9);
-
     const submit = () => {
-        if (saving) return;
-        if (!companyId) {
-            toast.error('Select a supplier first.');
+        if (!invoice || saving) return;
+        if (!returnDate) {
+            toast.error('Enter a return date.');
             return;
         }
-        if (hasInvalid) {
-            toast.error('One or more return quantities exceed the available stock.');
+        const payloadLines = rows
+            .filter((r) => r.line_id && toNumber(r.qty) > 0)
+            .map((r) => ({ purchase_invoice_item_id: Number(r.line_id), quantity: toNumber(r.qty) }));
+        if (payloadLines.length === 0) {
+            toast.error('Add a product and a return quantity on at least one line.');
             return;
         }
-        const lines = rows
-            .filter((row) => toNumber(row.quantity) > 0)
-            .map((row) => ({ batch_id: row.batch_id, quantity: toNumber(row.quantity), rate: toNumber(row.rate) || null }));
-        if (lines.length === 0) {
-            toast.error('Enter a return quantity on at least one batch.');
+        const over = rows.some((r) => {
+            const line = lineById.get(r.line_id);
+            return line && toNumber(r.qty) > line.returnable + 1e-9;
+        });
+        if (over) {
+            toast.error('One or more return quantities exceed the returnable amount.');
             return;
         }
         if (!confirm(`Post this return for ${money(total)}? Stock and the supplier ledger update immediately.`)) return;
         setSaving(true);
         router.post(route('returns.purchases.store'), {
-            company_id: Number(companyId),
-            warehouse_id: warehouse.id,
+            purchase_invoice_id: invoice.id,
             return_date: returnDate,
             reason: reason || null,
-            lines,
+            lines: payloadLines,
         }, {
             onError: () => toast.error(ALERT_FIX),
             onFinish: () => setSaving(false),
@@ -112,131 +141,77 @@ export default function PurchaseReturnForm({ companies, warehouse }: Props) {
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                        <h1 className="text-xl font-semibold">New Purchase Return</h1>
-                        <p className="text-sm text-muted-foreground">Return in-stock batches to a supplier — debit note is issued immediately</p>
+                        <h1 className="text-2xl font-bold">New Purchase Return</h1>
+                        <p className="text-sm text-muted-foreground">
+                            {invoice
+                                ? <>Against <span className="font-medium">{invoice.invoice_number}</span> — {invoice.supplier} ({shortDate(invoice.invoice_date)})</>
+                                : 'Pick a posted purchase invoice to return against'}
+                        </p>
                     </div>
-                    <Button size="sm" onClick={submit} disabled={saving}>
-                        <Undo2 className="mr-1 size-4" /> Post Return
-                    </Button>
-                </div>
-
-                <div data-enter-nav className="grid grid-cols-2 gap-3 rounded-xl border p-4 md:grid-cols-4">
-                    <div>
-                        <Label>Supplier *</Label>
-                        <Select
-                            value={companyId}
-                            onValueChange={(v) => {
-                                setCompanyId(v);
-                                setRows([]);
-                            }}
-                        >
-                            <SelectTrigger autoFocus><SelectValue placeholder="Select supplier" /></SelectTrigger>
-                            <SelectContent>
-                                {companies.map((company) => (
-                                    <SelectItem key={company.id} value={String(company.id)}>{company.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div>
-                        <Label>Return Date</Label>
-                        <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
-                    </div>
-                    <div>
-                        <Label>Reason</Label>
-                        <Input placeholder="e.g. near expiry, damaged" value={reason} onChange={(e) => setReason(e.target.value)} />
-                    </div>
-                    <div>
-                        <Label>Warehouse</Label>
-                        <Input value={warehouse.name} disabled />
-                    </div>
-                </div>
-
-                <div className="rounded-xl border">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Product</TableHead>
-                                <TableHead>Batch</TableHead>
-                                <TableHead>Expiry</TableHead>
-                                <TableHead className="text-right">Available</TableHead>
-                                <TableHead className="w-28 text-right">Return Qty</TableHead>
-                                <TableHead className="w-28 text-right">Rate</TableHead>
-                                <TableHead className="text-right">Amount</TableHead>
-                                <TableHead className="w-10" />
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {rows.length === 0 && (
-                                <TableRow>
-                                    <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
-                                        {companyId ? 'Add products to load their in-stock batches.' : 'Select a supplier first.'}
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                            {rows.map((row, index) => {
-                                const over = toNumber(row.quantity) > row.available + 1e-9;
-                                return (
-                                    <TableRow key={row.batch_id}>
-                                        <TableCell className="font-medium">{row.product}</TableCell>
-                                        <TableCell className="font-mono text-sm">{row.batch_number}</TableCell>
-                                        <TableCell>{row.expiry_date?.slice(0, 7) ?? '—'}</TableCell>
-                                        <TableCell className="text-right tabular-nums">{fmtQty(row.available)}</TableCell>
-                                        <TableCell>
-                                            <Input
-                                                type="number" min={0} max={row.available}
-                                                className={`h-8 text-right ${over ? 'border-destructive' : ''}`}
-                                                value={row.quantity} placeholder="0"
-                                                onChange={(e) =>
-                                                    setRows((r) => r.map((x, i) => (i === index ? { ...x, quantity: e.target.value } : x)))
-                                                }
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <Input
-                                                type="number" min={0} step="0.01"
-                                                className="h-8 text-right"
-                                                value={row.rate}
-                                                onChange={(e) =>
-                                                    setRows((r) => r.map((x, i) => (i === index ? { ...x, rate: e.target.value } : x)))
-                                                }
-                                            />
-                                        </TableCell>
-                                        <TableCell className="text-right tabular-nums">
-                                            {amount(toNumber(row.quantity) * toNumber(row.rate))}
-                                        </TableCell>
-                                        <TableCell>
-                                            <button type="button" tabIndex={-1} onClick={() => setRows((r) => r.filter((_, i) => i !== index))}>
-                                                <Trash2 className="size-4 text-muted-foreground hover:text-destructive" />
-                                            </button>
-                                        </TableCell>
-                                    </TableRow>
-                                );
-                            })}
-                        </TableBody>
-                    </Table>
-                    <div className="border-t p-2">
-                        <Button variant="ghost" size="sm" disabled={!companyId} onClick={() => setSearchOpen(true)}>
-                            <Plus className="mr-1 size-4" /> Add Product Batches
+                    <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setPickerOpen(true)}>
+                            <FileSearch className="mr-1 size-4" /> {invoice ? 'Change Invoice' : 'Find Invoice'}
+                        </Button>
+                        <Button size="sm" onClick={submit} disabled={!invoice || saving}>
+                            <Undo2 className="mr-1 size-4" /> Post Return
                         </Button>
                     </div>
                 </div>
 
-                <div className="ml-auto w-72 space-y-1 rounded-xl border p-4 text-sm">
-                    <div className="flex justify-between text-base font-semibold">
-                        <span>Debit Note Total</span>
-                        <span className="tabular-nums">{money(total)}</span>
-                    </div>
-                </div>
+                {invoice && (
+                    <>
+                        <div data-enter-nav className="grid grid-cols-2 gap-3 rounded-xl border p-4 md:grid-cols-4">
+                            <div>
+                                <Label>Return Date</Label>
+                                <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
+                            </div>
+                            <div className="md:col-span-2">
+                                <Label>Reason</Label>
+                                <Input placeholder="e.g. near expiry, damaged" value={reason} onChange={(e) => setReason(e.target.value)} />
+                            </div>
+                            <div>
+                                <Label>Warehouse</Label>
+                                <Input value={warehouse.name} disabled />
+                            </div>
+                        </div>
+
+                        <ReturnGrid lines={lines} rows={rows} setRows={setRows} amountHeader="Amount" />
+
+                        <div className="ml-auto w-72 space-y-1 rounded-xl border p-4 text-sm">
+                            <div className="flex justify-between text-base font-semibold">
+                                <span>Debit Note Total</span>
+                                <span className="tabular-nums">{money(total)}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                The dropdown lists only this invoice's products. Posting withdraws stock from the received batch and issues a supplier debit note.
+                            </p>
+                        </div>
+                    </>
+                )}
             </div>
 
-            <ProductSearchDialog
-                open={searchOpen}
-                onOpenChange={setSearchOpen}
-                warehouseId={warehouse.id}
-                companyId={companyId ? Number(companyId) : undefined}
-                onSelect={(product) => void addProductBatches(product)}
-            />
+            <CommandDialog open={pickerOpen} onOpenChange={setPickerOpen}>
+                <CommandInput placeholder="Search purchase invoice or supplier…" value={query} onValueChange={setQuery} />
+                <CommandList>
+                    <CommandEmpty>No posted purchase invoices found.</CommandEmpty>
+                    {hits.map((hit) => (
+                        <CommandItem
+                            key={hit.id}
+                            value={`${hit.invoice_number} ${hit.supplier} ${hit.id}`}
+                            onSelect={() => void loadInvoice(hit)}
+                            className="flex items-center justify-between gap-3"
+                        >
+                            <div>
+                                <div className="font-medium">{hit.invoice_number}</div>
+                                <div className="text-xs text-muted-foreground">
+                                    {hit.supplier} · {shortDate(hit.invoice_date)}
+                                </div>
+                            </div>
+                            <span className="text-xs tabular-nums text-muted-foreground">{money(hit.total_amount)}</span>
+                        </CommandItem>
+                    ))}
+                </CommandList>
+            </CommandDialog>
         </AppLayout>
     );
 }

@@ -28,6 +28,8 @@ class ReturnFlowTest extends TestCase
 
     private Product $product;
 
+    private PurchaseInvoice $purchase;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -56,6 +58,7 @@ class ReturnFlowTest extends TestCase
             'quantity' => 100, 'purchase_rate' => 80, 'trade_price' => 100,
         ]);
         $posting->postPurchase($purchase->refresh());
+        $this->purchase = $purchase->refresh();
 
         $sale = SalesInvoice::create([
             'invoice_number' => app(NumberSeriesService::class)->next('sales_invoice'),
@@ -129,19 +132,21 @@ class ReturnFlowTest extends TestCase
         $this->postPurchaseAndSale(); // supplier owed 8000 (100 × 80)
         $batch = Batch::firstOrFail();
         $ledger = app(LedgerService::class);
+        $item = $this->purchase->items->first();
 
         $this->assertEqualsWithDelta(8000.0, $ledger->outstanding($this->company), 0.01);
 
         $return = app(ReturnService::class)->createPurchaseReturn(
-            $this->company,
-            1,
-            [['batch_id' => $batch->id, 'quantity' => 10]],
+            $this->purchase,
+            [['purchase_invoice_item_id' => $item->id, 'quantity' => 10]],
             now()->toDateString(),
             'Near expiry',
         );
 
         $this->assertStringStartsWith('PR-', $return->return_number);
         $this->assertEqualsWithDelta(800.0, (float) $return->total_amount, 0.01); // 10 × purchase rate 80
+        $this->assertSame($this->purchase->id, (int) $return->purchase_invoice_id);
+        $this->assertSame($item->id, (int) $return->items->first()->purchase_invoice_item_id);
         $this->assertEqualsWithDelta(70.0, (float) $batch->refresh()->qty_available, 0.001); // 80 − 10
         $this->assertEqualsWithDelta(7200.0, $ledger->outstanding($this->company), 0.01);
 
@@ -150,25 +155,27 @@ class ReturnFlowTest extends TestCase
         $this->assertEqualsWithDelta(800.0, (float) $entry->debit, 0.01);
     }
 
-    public function test_purchase_return_blocks_more_than_available_and_wrong_supplier(): void
+    public function test_purchase_return_capped_by_stock_and_received_quantity(): void
     {
         $this->postPurchaseAndSale();
-        $batch = Batch::firstOrFail(); // 80 available
+        $batch = Batch::firstOrFail(); // 80 available, 100 received
+        $item = $this->purchase->items->first();
         $service = app(ReturnService::class);
 
+        // Can't withdraw more than is physically in the batch (20 already sold).
         try {
-            $service->createPurchaseReturn($this->company, 1, [['batch_id' => $batch->id, 'quantity' => 90]], now()->toDateString());
+            $service->createPurchaseReturn($this->purchase, [['purchase_invoice_item_id' => $item->id, 'quantity' => 90]], now()->toDateString());
             $this->fail('Expected negative-stock guard.');
         } catch (RuntimeException $e) {
             $this->assertStringContainsString('negative', $e->getMessage());
         }
 
-        $other = Company::create(['name' => 'Other Co']);
-        try {
-            $service->createPurchaseReturn($other, 1, [['batch_id' => $batch->id, 'quantity' => 1]], now()->toDateString());
-            $this->fail('Expected supplier mismatch guard.');
-        } catch (RuntimeException $e) {
-            $this->assertStringContainsString('does not belong', $e->getMessage());
-        }
+        // Drain the batch (80), then a further 30 exceeds the received quantity.
+        $service->createPurchaseReturn($this->purchase, [['purchase_invoice_item_id' => $item->id, 'quantity' => 80]], now()->toDateString());
+        $this->assertEqualsWithDelta(0.0, (float) $batch->refresh()->qty_available, 0.001);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/only 20 returnable/');
+        $service->createPurchaseReturn($this->purchase, [['purchase_invoice_item_id' => $item->id, 'quantity' => 30]], now()->toDateString());
     }
 }

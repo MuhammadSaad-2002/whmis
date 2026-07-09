@@ -24,7 +24,7 @@ export default function Outstanding({ customers }: { customers: CustomerRow[] })
             <Head title="Outstanding" />
             <div className="flex h-full flex-col gap-4 p-4">
                 <div>
-                    <h1 className="text-xl font-semibold">Outstanding Receivables</h1>
+                    <h1 className="text-2xl font-bold">Outstanding Receivables</h1>
                     <p className="text-sm text-muted-foreground">
                         Total outstanding: <span className="font-semibold text-foreground">{money(total)}</span> across {customers.length} customers
                     </p>

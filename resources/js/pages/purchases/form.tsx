@@ -367,7 +367,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-3">
-                        <h1 className="text-xl font-semibold">
+                        <h1 className="text-2xl font-bold">
                             {invoice ? `Purchase ${invoice.invoice_number}` : 'New Purchase Invoice'}
                         </h1>
                         {statusBadge}

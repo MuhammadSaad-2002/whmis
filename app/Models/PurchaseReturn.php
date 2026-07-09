@@ -27,6 +27,11 @@ class PurchaseReturn extends Model implements AuditableContract
         return $this->belongsTo(Company::class);
     }
 
+    public function invoice(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseInvoice::class, 'purchase_invoice_id');
+    }
+
     public function warehouse(): BelongsTo
     {
         return $this->belongsTo(Warehouse::class);

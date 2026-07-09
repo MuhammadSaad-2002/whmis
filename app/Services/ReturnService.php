@@ -2,9 +2,9 @@
 
 namespace App\Services;
 
-use App\Models\Batch;
-use App\Models\Company;
+use App\Models\PurchaseInvoice;
 use App\Models\PurchaseReturn;
+use App\Models\PurchaseReturnItem;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnItem;
@@ -122,16 +122,23 @@ class ReturnService
     }
 
     /**
-     * Purchase return to a supplier: stock out of chosen batches, debit note.
-     * $lines: [['batch_id' => int, 'quantity' => float, 'rate' => ?float], ...]
+     * Purchase return against a posted purchase invoice: stock out of the
+     * invoice lines' batches, debit note. Returnable per line is capped by
+     * (received − already returned).
+     * $lines: [['purchase_invoice_item_id' => int, 'quantity' => float], ...]
      */
-    public function createPurchaseReturn(Company $company, int $warehouseId, array $lines, string $date, ?string $reason = null): PurchaseReturn
+    public function createPurchaseReturn(PurchaseInvoice $invoice, array $lines, string $date, ?string $reason = null): PurchaseReturn
     {
-        return DB::transaction(function () use ($company, $warehouseId, $lines, $date, $reason) {
+        return DB::transaction(function () use ($invoice, $lines, $date, $reason) {
+            if (! $invoice->isPosted()) {
+                throw new RuntimeException('Returns can only be made against posted invoices.');
+            }
+
             $return = PurchaseReturn::create([
                 'return_number' => $this->numbers->next('purchase_return'),
-                'company_id' => $company->id,
-                'warehouse_id' => $warehouseId,
+                'company_id' => $invoice->company_id,
+                'purchase_invoice_id' => $invoice->id,
+                'warehouse_id' => $invoice->warehouse_id,
                 'return_date' => $date,
                 'reason' => $reason,
                 'created_by' => Auth::id(),
@@ -145,23 +152,36 @@ class ReturnService
                     continue;
                 }
 
-                $batch = Batch::with('product:id,name,company_id')->findOrFail($line['batch_id']);
+                $item = $invoice->items()->with(['batch', 'product:id,name'])->whereKey($line['purchase_invoice_item_id'])->firstOrFail();
 
-                if ((int) $batch->product->company_id !== (int) $company->id) {
-                    throw new RuntimeException("Batch {$batch->batch_number} does not belong to {$company->name}.");
+                if (! $item->batch) {
+                    throw new RuntimeException("No batch on record for {$item->product->name} — this line cannot be returned.");
                 }
 
-                $rate = isset($line['rate']) && $line['rate'] !== null && $line['rate'] !== ''
-                    ? (float) $line['rate']
-                    : (float) $batch->purchase_rate;
+                $alreadyReturned = (float) PurchaseReturnItem::where('purchase_invoice_item_id', $item->id)->sum('quantity');
+                $returnable = (float) $item->quantity - $alreadyReturned;
+                if ($qty > $returnable + 1e-9) {
+                    throw new RuntimeException(sprintf(
+                        'Cannot return %s of %s: only %s returnable (received %s, already returned %s).',
+                        $qty,
+                        $item->product->name,
+                        $returnable,
+                        (float) $item->quantity,
+                        $alreadyReturned,
+                    ));
+                }
+
+                $rate = (float) $item->purchase_rate;
                 $amount = round($qty * $rate, 2);
 
-                // adjust() locks the batch and rejects going negative.
-                $this->inventory->adjust($batch, -$qty, 'purchase_return', $return, $reason);
+                // adjust() locks the batch and rejects going negative (can't
+                // return stock that has since been sold).
+                $this->inventory->adjust($item->batch, -$qty, 'purchase_return', $return, $reason);
 
                 $return->items()->create([
-                    'batch_id' => $batch->id,
-                    'product_id' => $batch->product_id,
+                    'purchase_invoice_item_id' => $item->id,
+                    'batch_id' => $item->batch_id,
+                    'product_id' => $item->product_id,
                     'quantity' => $qty,
                     'rate' => $rate,
                     'net_amount' => $amount,
@@ -171,19 +191,19 @@ class ReturnService
             }
 
             if ($return->items()->count() === 0) {
-                throw new RuntimeException('Nothing to return — enter a quantity on at least one batch.');
+                throw new RuntimeException('Nothing to return — enter a quantity on at least one line.');
             }
 
             $return->update(['total_amount' => round($total, 2)]);
 
             $this->ledger->post(
-                $company,
+                $invoice->company,
                 'debit_note',
                 $date,
                 round($total, 2),
                 0,
                 $return,
-                "Debit Note {$return->return_number}",
+                "Debit Note {$return->return_number} against {$invoice->invoice_number}",
             );
 
             return $return->refresh();

@@ -23,6 +23,11 @@ class PurchaseReturnItem extends Model
         return $this->belongsTo(PurchaseReturn::class);
     }
 
+    public function invoiceItem(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseInvoiceItem::class, 'purchase_invoice_item_id');
+    }
+
     public function batch(): BelongsTo
     {
         return $this->belongsTo(Batch::class);

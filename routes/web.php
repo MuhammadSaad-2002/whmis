@@ -123,6 +123,8 @@ Route::middleware(['auth'])->group(function () {
             ->middleware('can:returns.manage')->name('returns.purchases.store');
         Route::get('lookup/invoices', [ReturnController::class, 'lookupInvoices'])->name('returns.lookup.invoices');
         Route::get('lookup/invoices/{sale}/returnable', [ReturnController::class, 'lookupReturnable'])->name('returns.lookup.returnable');
+        Route::get('lookup/purchase-invoices', [ReturnController::class, 'lookupPurchaseInvoices'])->name('returns.lookup.purchase-invoices');
+        Route::get('lookup/purchase-invoices/{purchase}/returnable', [ReturnController::class, 'lookupPurchaseReturnable'])->name('returns.lookup.purchase-returnable');
     });
 
     // Incentive rules

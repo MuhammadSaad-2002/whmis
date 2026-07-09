@@ -1,14 +1,14 @@
+import { ReturnGrid, emptyReturnRow, type ReturnRow, type ReturnableLine } from '@/components/return-grid';
 import { Button } from '@/components/ui/button';
 import {
     CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList,
 } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
-import { amount, money, qty as fmtQty, shortDate, toNumber } from '@/lib/format';
-import { type BreadcrumbItem } from '@/types';
+import { money, shortDate, toNumber } from '@/lib/format';
 import { ALERT_FIX } from '@/lib/form-validation';
+import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
 import { FileSearch, Undo2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -23,11 +23,11 @@ interface InvoiceHit {
     total_amount: number;
 }
 
-interface ReturnableLine {
+interface ReturnableDto {
     sales_invoice_item_id: number;
     product: string;
-    sold_qty: number;
-    already_returned: number;
+    company: string | null;
+    batch_number: string | null;
     returnable: number;
     unit_refund: number;
 }
@@ -50,7 +50,7 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
     const [hits, setHits] = useState<InvoiceHit[]>([]);
     const [invoice, setInvoice] = useState<LoadedInvoice | null>(null);
     const [lines, setLines] = useState<ReturnableLine[]>([]);
-    const [quantities, setQuantities] = useState<Record<number, string>>({});
+    const [rows, setRows] = useState<ReturnRow[]>([emptyReturnRow()]);
     const [returnDate, setReturnDate] = useState(new Date().toISOString().slice(0, 10));
     const [reason, setReason] = useState('');
     const [saving, setSaving] = useState(false);
@@ -81,13 +81,25 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
         if (!response.ok) return;
         const data = await response.json();
         setInvoice(data.invoice);
-        setLines(data.lines);
-        setQuantities({});
+        setLines(
+            (data.lines as ReturnableDto[])
+                .filter((l) => l.returnable > 0)
+                .map((l) => ({
+                    line_id: l.sales_invoice_item_id,
+                    product: l.product,
+                    company: l.company,
+                    batch_number: l.batch_number,
+                    returnable: l.returnable,
+                    unit_amount: l.unit_refund,
+                })),
+        );
+        setRows([emptyReturnRow()]);
     };
 
+    const lineById = useMemo(() => new Map(lines.map((l) => [String(l.line_id), l])), [lines]);
     const totalRefund = useMemo(
-        () => lines.reduce((sum, line) => sum + toNumber(quantities[line.sales_invoice_item_id]) * line.unit_refund, 0),
-        [lines, quantities],
+        () => rows.reduce((sum, r) => sum + toNumber(r.qty) * (lineById.get(r.line_id)?.unit_amount ?? 0), 0),
+        [rows, lineById],
     );
 
     const submit = () => {
@@ -96,36 +108,33 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
             toast.error('Enter a return date.');
             return;
         }
-        if (hasOverReturn) {
-            toast.error('One or more return quantities exceed the returnable amount.');
+        const payloadLines = rows
+            .filter((r) => r.line_id && toNumber(r.qty) > 0)
+            .map((r) => ({ sales_invoice_item_id: Number(r.line_id), quantity: toNumber(r.qty) }));
+        if (payloadLines.length === 0) {
+            toast.error('Add a product and a return quantity on at least one line.');
             return;
         }
-        const payload = {
-            sales_invoice_id: invoice.id,
-            return_date: returnDate,
-            reason: reason || null,
-            lines: lines
-                .filter((line) => toNumber(quantities[line.sales_invoice_item_id]) > 0)
-                .map((line) => ({
-                    sales_invoice_item_id: line.sales_invoice_item_id,
-                    quantity: toNumber(quantities[line.sales_invoice_item_id]),
-                })),
-        };
-        if (payload.lines.length === 0) {
-            toast.error('Enter a return quantity on at least one line.');
+        const over = rows.some((r) => {
+            const line = lineById.get(r.line_id);
+            return line && toNumber(r.qty) > line.returnable + 1e-9;
+        });
+        if (over) {
+            toast.error('One or more return quantities exceed the returnable amount.');
             return;
         }
         if (!confirm(`Post this return for ${money(totalRefund)}? Stock and the customer ledger update immediately.`)) return;
         setSaving(true);
-        router.post(route('returns.sales.store'), payload, {
+        router.post(route('returns.sales.store'), {
+            sales_invoice_id: invoice.id,
+            return_date: returnDate,
+            reason: reason || null,
+            lines: payloadLines,
+        }, {
             onError: () => toast.error(ALERT_FIX),
             onFinish: () => setSaving(false),
         });
     };
-
-    const hasOverReturn = lines.some(
-        (line) => toNumber(quantities[line.sales_invoice_item_id]) > line.returnable + 1e-9,
-    );
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -133,7 +142,7 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                        <h1 className="text-xl font-semibold">New Sales Return</h1>
+                        <h1 className="text-2xl font-bold">New Sales Return</h1>
                         <p className="text-sm text-muted-foreground">
                             {invoice
                                 ? <>Against <span className="font-medium">{invoice.invoice_number}</span> — {invoice.customer} ({shortDate(invoice.invoice_date)})</>
@@ -167,51 +176,7 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
                             </div>
                         </div>
 
-                        <div className="rounded-xl border">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Product</TableHead>
-                                        <TableHead className="text-right">Sold</TableHead>
-                                        <TableHead className="text-right">Already Returned</TableHead>
-                                        <TableHead className="text-right">Returnable</TableHead>
-                                        <TableHead className="text-right">Refund / Unit</TableHead>
-                                        <TableHead className="w-32 text-right">Return Qty</TableHead>
-                                        <TableHead className="text-right">Refund</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {lines.map((line) => {
-                                        const returnQty = toNumber(quantities[line.sales_invoice_item_id]);
-                                        const over = returnQty > line.returnable + 1e-9;
-                                        return (
-                                            <TableRow key={line.sales_invoice_item_id}>
-                                                <TableCell className="font-medium">{line.product}</TableCell>
-                                                <TableCell className="text-right tabular-nums">{fmtQty(line.sold_qty)}</TableCell>
-                                                <TableCell className="text-right tabular-nums">{fmtQty(line.already_returned)}</TableCell>
-                                                <TableCell className="text-right tabular-nums">{fmtQty(line.returnable)}</TableCell>
-                                                <TableCell className="text-right tabular-nums">{amount(line.unit_refund)}</TableCell>
-                                                <TableCell>
-                                                    <Input
-                                                        type="number" min={0} max={line.returnable}
-                                                        className={`h-8 text-right ${over ? 'border-destructive' : ''}`}
-                                                        value={quantities[line.sales_invoice_item_id] ?? ''}
-                                                        placeholder="0"
-                                                        disabled={line.returnable <= 0}
-                                                        onChange={(e) =>
-                                                            setQuantities((q) => ({ ...q, [line.sales_invoice_item_id]: e.target.value }))
-                                                        }
-                                                    />
-                                                </TableCell>
-                                                <TableCell className="text-right tabular-nums">
-                                                    {amount(returnQty * line.unit_refund)}
-                                                </TableCell>
-                                            </TableRow>
-                                        );
-                                    })}
-                                </TableBody>
-                            </Table>
-                        </div>
+                        <ReturnGrid lines={lines} rows={rows} setRows={setRows} amountHeader="Refund" />
 
                         <div className="ml-auto w-72 space-y-1 rounded-xl border p-4 text-sm">
                             <div className="flex justify-between text-base font-semibold">
@@ -219,7 +184,7 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
                                 <span className="tabular-nums">{money(totalRefund)}</span>
                             </div>
                             <p className="text-xs text-muted-foreground">
-                                Bonus (free) units are not refundable and stay excluded. Posting restores stock to the original batches.
+                                The dropdown lists only this invoice's products. Bonus (free) units are not refundable; posting restores stock to the original batches.
                             </p>
                         </div>
                     </>
