@@ -14,6 +14,19 @@ class NumberSeriesService
     public function next(string $docType): string
     {
         return DB::transaction(function () use ($docType) {
+            // Self-heal: if the series row was never seeded (e.g. a deploy where the
+            // seed step silently failed), create it on demand so document creation
+            // never 500s. Once it exists the row-locked path below is unchanged.
+            NumberSeries::firstOrCreate(
+                ['doc_type' => $docType],
+                [
+                    'prefix' => NumberSeries::DEFAULTS[$docType] ?? strtoupper($docType),
+                    'next_number' => 1,
+                    'padding' => 4,
+                    'yearly' => true,
+                ]
+            );
+
             $series = NumberSeries::where('doc_type', $docType)->lockForUpdate()->firstOrFail();
 
             $number = $series->next_number;

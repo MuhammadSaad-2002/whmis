@@ -15,18 +15,7 @@ class SystemSeeder extends Seeder
             ['name' => 'Main Warehouse', 'is_default' => true, 'status' => 'active']
         );
 
-        $series = [
-            'purchase_invoice' => 'PI',
-            'sales_invoice' => 'SI',
-            'payment_in' => 'RCV',
-            'payment_out' => 'PAY',
-            'stock_adjustment' => 'ADJ',
-            'booking' => 'BK',
-            'sales_return' => 'SR',
-            'purchase_return' => 'PR',
-        ];
-
-        foreach ($series as $docType => $prefix) {
+        foreach (NumberSeries::DEFAULTS as $docType => $prefix) {
             NumberSeries::firstOrCreate(
                 ['doc_type' => $docType],
                 ['prefix' => $prefix, 'next_number' => 1, 'padding' => 4, 'yearly' => true]
