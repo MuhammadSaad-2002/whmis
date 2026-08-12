@@ -11,6 +11,7 @@ export interface LineInput {
     rate: number | string; // purchase_rate or trade_price
     trade_price?: number | string; // for purchase margin
     discount_percent?: number | string;
+    incentive_discount?: number | string; // Rs discount from stacked incentives
     gst_percent?: number | string;
 }
 
@@ -34,7 +35,9 @@ export function computeLine(input: LineInput, withMargin: boolean): LineComputed
     const trade = toNumber(input.trade_price);
 
     const gross = r2(quantity * rate);
-    const discount = r2((gross * toNumber(input.discount_percent)) / 100);
+    const manualDiscount = r2((gross * toNumber(input.discount_percent)) / 100);
+    const incentiveDiscount = r2(toNumber(input.incentive_discount));
+    const discount = Math.min(r2(manualDiscount + incentiveDiscount), gross);
     const taxable = gross - discount;
     const gst = r2((taxable * toNumber(input.gst_percent)) / 100);
     const net = r2(taxable + gst);

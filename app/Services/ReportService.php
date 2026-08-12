@@ -11,6 +11,7 @@ use App\Models\PurchaseInvoice;
 use App\Models\PurchaseInvoiceItem;
 use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceItem;
+use App\Models\SalesInvoiceItemIncentive;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnItem;
 use App\Models\User;
@@ -35,6 +36,7 @@ class ReportService
             'product-sales' => ['title' => 'Product Sales & Profitability', 'category' => 'Sales', 'description' => 'Qty, bonus given, revenue, cost, profit per product', 'filters' => ['date_range', 'supplier']],
             'customer-sales' => ['title' => 'Customer Sales & Profitability', 'category' => 'Sales', 'description' => 'Revenue, profit, and outstanding per pharmacy', 'filters' => ['date_range']],
             'booker-sales' => ['title' => 'Booker Sales', 'category' => 'Sales', 'description' => 'Sales attributed to each booker via assigned customers', 'filters' => ['date_range']],
+            'incentives-given' => ['title' => 'Incentives Given', 'category' => 'Sales', 'description' => 'Incentive rules granted to customers: times applied, invoices, and Rs value', 'filters' => ['date_range', 'customer']],
             'purchase-register' => ['title' => 'Purchase Register', 'category' => 'Purchases', 'description' => 'Every posted purchase invoice in a period', 'filters' => ['date_range', 'supplier']],
             'supplier-purchases' => ['title' => 'Supplier Purchases', 'category' => 'Purchases', 'description' => 'Purchase volume and margin per supplier', 'filters' => ['date_range']],
             'bonus-analysis' => ['title' => 'Bonus Analysis', 'category' => 'Purchases', 'description' => 'Bonus received vs bonus given away per product', 'filters' => ['date_range']],
@@ -56,6 +58,7 @@ class ReportService
             'product-sales' => $this->productSales($from, $to, $filters),
             'customer-sales' => $this->customerSales($from, $to),
             'booker-sales' => $this->bookerSales($from, $to),
+            'incentives-given' => $this->incentivesGiven($from, $to, $filters),
             'purchase-register' => $this->purchaseRegister($from, $to, $filters),
             'supplier-purchases' => $this->supplierPurchases($from, $to),
             'bonus-analysis' => $this->bonusAnalysis($from, $to),
@@ -318,6 +321,63 @@ class ReportService
                 'returns' => (float) $rows->sum('returns'),
                 'net_revenue' => (float) $rows->sum('net_revenue'),
                 'net_profit' => (float) $rows->sum('net_profit'),
+            ],
+        ];
+    }
+
+    /**
+     * Incentives Given — the durable record of what each customer received.
+     * Reads the per-line incentive rows attached to posted (non-cancelled)
+     * sales invoices, grouped per customer × rule: how many times applied, in
+     * how many distinct invoices, bonus units, Rs discount, and total value.
+     */
+    private function incentivesGiven(Carbon $from, Carbon $to, array $filters): array
+    {
+        $records = SalesInvoiceItemIncentive::query()
+            ->whereHas('invoice', fn ($q) => $q->where('status', 'posted')
+                ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to))
+            ->when($filters['customer_id'] ?? null, fn ($q, $id) => $q->where('customer_id', $id))
+            ->with('customer:id,name,city')
+            ->get();
+
+        $rows = $records
+            ->groupBy(fn ($r) => $r->customer_id.'|'.$r->rule_type.'|'.$r->rule_name)
+            ->map(function ($group) {
+                $first = $group->first();
+
+                return [
+                    'customer' => $first->customer?->name ?? '—',
+                    'city' => $first->customer?->city,
+                    'rule' => $first->rule_name,
+                    'type' => ucwords(str_replace('_', ' ', $first->rule_type)),
+                    'times' => $group->count(),
+                    'invoices' => $group->pluck('sales_invoice_id')->unique()->count(),
+                    'bonus_qty' => round((float) $group->sum('bonus_qty'), 2),
+                    'discount' => round((float) $group->sum('discount_amount'), 2),
+                    'value_given' => round((float) $group->sum('value_given'), 2),
+                ];
+            })
+            ->sortByDesc('value_given')->values();
+
+        return [
+            'columns' => [
+                ['key' => 'customer', 'label' => 'Customer'],
+                ['key' => 'city', 'label' => 'City'],
+                ['key' => 'rule', 'label' => 'Incentive Rule'],
+                ['key' => 'type', 'label' => 'Type'],
+                ['key' => 'times', 'label' => 'Times Applied', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'invoices', 'label' => 'Invoices', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'bonus_qty', 'label' => 'Bonus Units', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'discount', 'label' => 'Discount Rs', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'value_given', 'label' => 'Total Value', 'align' => 'right', 'format' => 'money'],
+            ],
+            'rows' => $rows->all(),
+            'totals' => [
+                'times' => (int) $rows->sum('times'),
+                'invoices' => (int) $rows->sum('invoices'),
+                'bonus_qty' => (float) $rows->sum('bonus_qty'),
+                'discount' => (float) $rows->sum('discount'),
+                'value_given' => (float) $rows->sum('value_given'),
             ],
         ];
     }

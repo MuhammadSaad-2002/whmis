@@ -2,25 +2,22 @@ import { Badge } from '@/components/ui/badge';
 import {
     CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList,
 } from '@/components/ui/command';
+import type { IncentiveHit } from '@/lib/incentive';
 import { useEffect, useState } from 'react';
 
-export interface RuleHit {
-    id: number;
-    name: string;
-    rule_type: string;
+/** A rule as returned by /lookup/rules — an IncentiveHit plus display fields. */
+export interface RuleHit extends IncentiveHit {
     summary: string;
     scope: string;
-    base_qty?: number;
-    bonus_qty?: number;
-    slabs?: { min_qty: number | string; max_qty: number | string | null; bonus_qty: number | string }[];
-    value?: number;
-    effect: {
-        bonus_qty?: number;
-        discount_percent?: number;
-        discount_amount?: number;
-        trade_price?: number;
-    };
 }
+
+const TYPE_LABELS: Record<string, string> = {
+    qty_bonus: 'quantity bonus',
+    slab_bonus: 'slab bonus',
+    percent_discount: 'percent discount',
+    fixed_discount: 'fixed discount',
+    price_override: 'price override',
+};
 
 interface Props {
     open: boolean;
@@ -29,8 +26,9 @@ interface Props {
     customerId: number | null;
     qty: number;
     price: number;
-    appliedRuleId: number | null;
-    onApply: (rule: RuleHit | null) => void; // null = clear rule
+    applied: RuleHit[]; // rules already stacked on this line
+    onAdd: (rule: RuleHit) => void;
+    onRemove: (rule: RuleHit) => void;
 }
 
 function effectLabel(effect: RuleHit['effect']): string {
@@ -42,7 +40,7 @@ function effectLabel(effect: RuleHit['effect']): string {
     return parts.join(' · ') || 'no effect at this qty';
 }
 
-export function RulePickerDialog({ open, onOpenChange, productId, customerId, qty, price, appliedRuleId, onApply }: Props) {
+export function RulePickerDialog({ open, onOpenChange, productId, customerId, qty, price, applied, onAdd, onRemove }: Props) {
     const [rules, setRules] = useState<RuleHit[]>([]);
     const [loading, setLoading] = useState(false);
 
@@ -72,46 +70,49 @@ export function RulePickerDialog({ open, onOpenChange, productId, customerId, qt
         return () => controller.abort();
     }, [open, productId, customerId, qty, price]);
 
+    // Stack stays open while toggling so several incentives can be combined; a
+    // line may hold at most one rule per type, so a type already taken by a
+    // different rule is blocked.
+    const appliedIds = new Set(applied.map((a) => a.id));
+    const takenTypes = new Set(applied.map((a) => a.rule_type));
+
     return (
         <CommandDialog open={open} onOpenChange={onOpenChange}>
-            <CommandInput placeholder="Applicable incentive rules…" />
+            <CommandInput placeholder="Stack incentive rules — Esc when done…" />
             <CommandList>
                 <CommandEmpty>
                     {!productId ? 'Pick a product first.' : loading ? 'Loading…' : 'No rules apply to this line.'}
                 </CommandEmpty>
-                {appliedRuleId && (
-                    <CommandItem
-                        value="__clear__"
-                        onSelect={() => {
-                            onApply(null);
-                            onOpenChange(false);
-                        }}
-                    >
-                        <span className="text-destructive">✕ Clear applied rule</span>
-                    </CommandItem>
-                )}
-                {rules.map((rule) => (
-                    <CommandItem
-                        key={rule.id}
-                        value={`${rule.name} ${rule.id}`}
-                        onSelect={() => {
-                            onApply(rule);
-                            onOpenChange(false);
-                        }}
-                        className="flex items-center justify-between gap-3"
-                    >
-                        <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                                <span className="truncate font-medium">{rule.name}</span>
-                                {rule.id === appliedRuleId && <Badge variant="outline">applied</Badge>}
+                {rules.map((rule) => {
+                    const isApplied = appliedIds.has(rule.id);
+                    const blocked = !isApplied && takenTypes.has(rule.rule_type);
+                    return (
+                        <CommandItem
+                            key={rule.id}
+                            value={`${rule.name} ${rule.id}`}
+                            disabled={blocked}
+                            onSelect={() => {
+                                if (isApplied) onRemove(rule);
+                                else if (!blocked) onAdd(rule);
+                            }}
+                            className="flex items-center justify-between gap-3 data-[disabled=true]:opacity-40"
+                        >
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <span className="truncate font-medium">{rule.name}</span>
+                                    {isApplied && <Badge variant="default">applied · ✕ remove</Badge>}
+                                    {blocked && (
+                                        <Badge variant="outline">{TYPE_LABELS[rule.rule_type] ?? rule.rule_type} taken</Badge>
+                                    )}
+                                </div>
+                                <div className="truncate text-xs text-muted-foreground">
+                                    {rule.summary} · {rule.scope}
+                                </div>
                             </div>
-                            <div className="truncate text-xs text-muted-foreground">
-                                {rule.summary} · {rule.scope}
-                            </div>
-                        </div>
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{effectLabel(rule.effect)}</span>
-                    </CommandItem>
-                ))}
+                            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{effectLabel(rule.effect)}</span>
+                        </CommandItem>
+                    );
+                })}
             </CommandList>
         </CommandDialog>
     );

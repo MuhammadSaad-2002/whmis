@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Batch;
 use App\Models\Customer;
+use App\Models\IncentiveRule;
 use App\Models\Product;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
 use App\Models\Warehouse;
+use App\Services\IncentiveEngine;
 use App\Services\InventoryService;
 use App\Services\InvoicePostingService;
 use App\Services\MarginCalculator;
@@ -15,6 +17,7 @@ use App\Services\NumberSeriesService;
 use App\Services\SaleNetPositionService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -27,6 +30,7 @@ class SalesInvoiceController extends Controller
         private readonly InvoicePostingService $posting,
         private readonly InventoryService $inventory,
         private readonly SaleNetPositionService $netPosition,
+        private readonly IncentiveEngine $incentives,
     ) {}
 
     /** Reserve every line's batch stock for a freshly saved draft. */
@@ -145,7 +149,13 @@ class SalesInvoiceController extends Controller
 
     public function edit(SalesInvoice $sale)
     {
-        $sale->load(['items.product:id,name,generic_name', 'items.batch:id,batch_number,expiry_date', 'items.appliedRule:id,name', 'customer:id,name,city,credit_limit']);
+        $sale->load([
+            'items.product:id,name,generic_name',
+            'items.batch:id,batch_number,expiry_date',
+            'items.appliedRule:id,name',
+            'items.incentives.rule:id,name,rule_type,base_qty,bonus_qty,slabs,value',
+            'customer:id,name,city,credit_limit',
+        ]);
 
         return Inertia::render('sales/form', [
             'customers' => Customer::active()->orderBy('name')->get(['id', 'name', 'city', 'credit_limit']),
@@ -237,7 +247,7 @@ class SalesInvoiceController extends Controller
 
     public function print(SalesInvoice $sale)
     {
-        $sale->load(['items.product.company', 'items.batch', 'customer', 'warehouse', 'booking.booker']);
+        $sale->load(['items.product.company', 'items.batch', 'items.incentives', 'customer', 'warehouse', 'booking.booker']);
 
         return Pdf::loadView('pdf.sales-invoice', ['invoice' => $sale])
             ->setPaper('a4')
@@ -252,6 +262,7 @@ class SalesInvoiceController extends Controller
         $sale->load([
             'items.product:id,name',
             'items.batch:id,batch_number',
+            'items.incentives',
             'customer:id,name,city',
             'warehouse:id,name',
             'returns.creator:id,name',
@@ -295,7 +306,8 @@ class SalesInvoiceController extends Controller
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'exists:products,id'],
             'items.*.batch_id' => ['required', 'integer', 'exists:batches,id'],
-            'items.*.applied_rule_id' => ['nullable', 'exists:incentive_rules,id'],
+            'items.*.incentive_rule_ids' => ['nullable', 'array'],
+            'items.*.incentive_rule_ids.*' => ['integer', 'exists:incentive_rules,id'],
             'items.*.quantity' => ['required', 'numeric', 'min:1'],
             'items.*.bonus_quantity' => ['nullable', 'numeric', 'min:0'],
             'items.*.trade_price' => ['required', 'numeric', 'min:0'],
@@ -330,28 +342,73 @@ class SalesInvoiceController extends Controller
 
     private function syncItems(SalesInvoice $invoice, array $items): void
     {
-        $payload = array_map(fn ($item) => [
-            'product_id' => $item['product_id'],
-            'batch_id' => $this->resolveBatchId($invoice, $item),
-            'quantity' => $item['quantity'],
-            'bonus_quantity' => $item['bonus_quantity'] ?? 0,
-            'applied_rule_id' => $item['applied_rule_id'] ?? null,
-            'trade_price' => $item['trade_price'],
-            'discount_percent' => $item['discount_percent'] ?? 0,
-            'gst_percent' => $item['gst_percent'] ?? 0,
-            'remarks' => $item['remarks'] ?? null,
-        ], array_values($items));
+        $date = Carbon::parse($invoice->invoice_date);
+        $breakdowns = [];
+        $payload = [];
+
+        foreach (array_values($items) as $i => $item) {
+            // Re-run the engine so the picked rules are verified and their effects
+            // recomputed authoritatively (the client is never trusted for totals).
+            $combined = $this->incentives->combine(
+                (int) $item['product_id'],
+                $invoice->customer_id ? (int) $invoice->customer_id : null,
+                (float) $item['quantity'],
+                (float) $item['trade_price'],
+                $item['incentive_rule_ids'] ?? [],
+                $date,
+            );
+            $breakdown = $combined['breakdown'];
+            $hasBonusRule = collect($breakdown)
+                ->whereIn('rule_type', [IncentiveRule::TYPE_QTY_BONUS, IncentiveRule::TYPE_SLAB_BONUS])
+                ->isNotEmpty();
+
+            $payload[] = [
+                'product_id' => $item['product_id'],
+                'batch_id' => $this->resolveBatchId($invoice, $item),
+                'quantity' => $item['quantity'],
+                // A bonus rule owns the bonus qty; without one a manual bonus stands.
+                'bonus_quantity' => $hasBonusRule ? $combined['bonus_qty'] : ($item['bonus_quantity'] ?? 0),
+                'applied_rule_id' => $breakdown[0]['rule_id'] ?? null,
+                'trade_price' => $combined['trade_price'],
+                'discount_percent' => $item['discount_percent'] ?? 0,
+                'incentive_discount' => $combined['incentive_discount'],
+                'gst_percent' => $item['gst_percent'] ?? 0,
+                'remarks' => $item['remarks'] ?? null,
+            ];
+            $breakdowns[$i] = $breakdown;
+        }
 
         $computed = MarginCalculator::computeSalesItems($payload, [
             'discount_percent' => (float) ($invoice->discount_percent ?? 0),
             'gst_percent' => (float) ($invoice->gst_percent ?? 0),
         ]);
 
-        foreach ($computed['items'] as $item) {
-            $invoice->items()->create($item);
+        foreach ($computed['items'] as $i => $itemData) {
+            $line = $invoice->items()->create($itemData);
+            $this->recordIncentives($invoice, $line, $breakdowns[$i]);
         }
 
         $invoice->update($computed['totals']);
+    }
+
+    /** Persist the per-line incentive record (the durable "what was given" ledger). */
+    private function recordIncentives(SalesInvoice $invoice, $line, array $breakdown): void
+    {
+        foreach ($breakdown as $b) {
+            $line->incentives()->create([
+                'sales_invoice_id' => $invoice->id,
+                'customer_id' => $invoice->customer_id,
+                'product_id' => $line->product_id,
+                'incentive_rule_id' => $b['rule_id'],
+                'rule_type' => $b['rule_type'],
+                'rule_name' => $b['rule_name'],
+                'bonus_qty' => $b['bonus_qty'],
+                'discount_amount' => $b['discount_amount'],
+                'trade_price' => $b['trade_price'],
+                'value_given' => $b['value_given'],
+                'sort_order' => $b['sort_order'],
+            ]);
+        }
     }
 
     /**

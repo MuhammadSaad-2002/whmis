@@ -145,6 +145,71 @@ class IncentiveEngineTest extends TestCase
         );
     }
 
+    public function test_combine_sums_bonuses_and_combines_discounts(): void
+    {
+        $qtyBonus = $this->rule(['rule_type' => 'qty_bonus', 'base_qty' => 10, 'bonus_qty' => 2, 'product_id' => $this->product->id]);
+        $slabBonus = $this->rule(['rule_type' => 'slab_bonus', 'product_id' => $this->product->id, 'slabs' => [
+            ['min_qty' => 10, 'max_qty' => null, 'bonus_qty' => 1],
+        ]]);
+        $percent = $this->rule(['rule_type' => 'percent_discount', 'value' => 10, 'product_id' => $this->product->id]);
+        $fixed = $this->rule(['rule_type' => 'fixed_discount', 'value' => 150, 'product_id' => $this->product->id]);
+
+        // 20 units @ 100 -> gross 2000. qty_bonus: 20/10*2=4, slab: 20/10*1=2 => 6 bonus.
+        // Discounts: 10% of 2000 = 200, plus fixed 150 => 350.
+        $result = $this->engine->combine(
+            $this->product->id, $this->customer->id, 20, 100,
+            [$qtyBonus->id, $slabBonus->id, $percent->id, $fixed->id],
+        );
+
+        $this->assertEquals(6.0, $result['bonus_qty']);
+        $this->assertEquals(350.0, $result['incentive_discount']);
+        $this->assertEquals(100.0, $result['trade_price']);
+        $this->assertCount(4, $result['breakdown']);
+    }
+
+    public function test_combine_keeps_only_one_rule_per_type(): void
+    {
+        // The winner is deterministic by priority (higher first).
+        $winner = $this->rule(['name' => 'Priority 25%', 'rule_type' => 'percent_discount', 'value' => 25, 'product_id' => $this->product->id, 'priority' => 100]);
+        $loser = $this->rule(['name' => 'Low 10%', 'rule_type' => 'percent_discount', 'value' => 10, 'product_id' => $this->product->id, 'priority' => 1]);
+
+        $result = $this->engine->combine(
+            $this->product->id, $this->customer->id, 10, 100, [$loser->id, $winner->id],
+        );
+
+        // Two of the same type requested -> only one survives (25% of 1000 = 250).
+        $this->assertCount(1, $result['breakdown']);
+        $this->assertEquals($winner->id, $result['breakdown'][0]['rule_id']);
+        $this->assertEquals(250.0, $result['incentive_discount']);
+    }
+
+    public function test_combine_drops_rules_that_no_longer_apply(): void
+    {
+        $good = $this->rule(['rule_type' => 'percent_discount', 'value' => 10, 'product_id' => $this->product->id]);
+        $bigOnly = $this->rule(['rule_type' => 'fixed_discount', 'value' => 500, 'product_id' => $this->product->id, 'min_qty' => 100]);
+
+        // qty 10 is below the fixed rule's min_qty 100, so it is silently dropped.
+        $result = $this->engine->combine(
+            $this->product->id, $this->customer->id, 10, 100, [$good->id, $bigOnly->id],
+        );
+
+        $this->assertCount(1, $result['breakdown']);
+        $this->assertEquals(100.0, $result['incentive_discount']);
+    }
+
+    public function test_combine_price_override_sets_rate_and_value_given(): void
+    {
+        $override = $this->rule(['rule_type' => 'price_override', 'value' => 92.5, 'product_id' => $this->product->id]);
+
+        // Base price 100, override 92.5, qty 10 -> concession = (100-92.5)*10 = 75.
+        $result = $this->engine->combine(
+            $this->product->id, $this->customer->id, 10, 100, [$override->id],
+        );
+
+        $this->assertEquals(92.5, $result['trade_price']);
+        $this->assertEquals(75.0, $result['breakdown'][0]['value_given']);
+    }
+
     public function test_rules_scoped_to_other_entities_do_not_match(): void
     {
         $otherCompany = Company::create(['name' => 'Other Co']);

@@ -42,6 +42,13 @@ interface Position {
     status: string;
 }
 
+interface ItemIncentive {
+    id: number;
+    rule_name: string;
+    rule_type: string;
+    value_given: string;
+}
+
 interface InvoiceItem {
     id: number;
     quantity: string;
@@ -52,6 +59,7 @@ interface InvoiceItem {
     net_amount: string;
     product?: { name: string };
     batch?: { batch_number: string };
+    incentives?: ItemIncentive[];
 }
 
 interface Invoice {
@@ -154,9 +162,26 @@ export default function SalesSummary({ invoice, position }: Props) {
                                 <TableBody>
                                     {invoice.items.map((item) => (
                                         <TableRow key={item.id}>
-                                            <TableCell>{item.product?.name}</TableCell>
+                                            <TableCell>
+                                                {item.product?.name}
+                                                {!!item.incentives?.length && (
+                                                    <div className="mt-1 flex flex-wrap gap-1">
+                                                        {item.incentives.map((inc) => (
+                                                            <Badge key={inc.id} variant="secondary" className="text-[10px] font-normal">
+                                                                {inc.rule_name}
+                                                                {Number(inc.value_given) > 0 && ` · ${money(inc.value_given)}`}
+                                                            </Badge>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </TableCell>
                                             <TableCell className="text-muted-foreground">{item.batch?.batch_number ?? 'FIFO'}</TableCell>
-                                            <TableCell className="text-right tabular-nums">{qty(item.quantity)}</TableCell>
+                                            <TableCell className="text-right tabular-nums">
+                                                {qty(item.quantity)}
+                                                {Number(item.bonus_quantity) > 0 && (
+                                                    <span className="ml-1 text-xs text-emerald-600">+{qty(item.bonus_quantity)}</span>
+                                                )}
+                                            </TableCell>
                                             <TableCell className="text-right tabular-nums">{money(item.trade_price)}</TableCell>
                                             <TableCell className="text-right tabular-nums">{money(item.discount_amount)}</TableCell>
                                             <TableCell className="text-right tabular-nums">{money(item.gst_amount)}</TableCell>

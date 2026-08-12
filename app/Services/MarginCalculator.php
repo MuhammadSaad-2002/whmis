@@ -51,7 +51,9 @@ class MarginCalculator
      * cost of consumed stock, so it is applied after consumption.
      *
      * Input keys: quantity, trade_price, discount_percent, discount_amount,
-     *             gst_percent, gst_amount
+     *             incentive_discount, gst_percent, gst_amount
+     * The manual discount (percent or amount) and any incentive_discount stack,
+     * capped at the line gross.
      */
     public static function salesLine(array $line): array
     {
@@ -59,7 +61,9 @@ class MarginCalculator
         $rate = (float) ($line['trade_price'] ?? 0);
 
         $gross = round($qty * $rate, 2);
-        $discount = self::resolveAmount($gross, $line['discount_percent'] ?? 0, $line['discount_amount'] ?? null);
+        $manualDiscount = self::resolveAmount($gross, $line['discount_percent'] ?? 0, $line['discount_amount'] ?? null);
+        $incentiveDiscount = round((float) ($line['incentive_discount'] ?? 0), 2);
+        $discount = round(min($manualDiscount + $incentiveDiscount, $gross), 2);
         $taxable = $gross - $discount;
         $gst = self::resolveAmount($taxable, $line['gst_percent'] ?? 0, $line['gst_amount'] ?? null);
         $net = round($taxable + $gst, 2);

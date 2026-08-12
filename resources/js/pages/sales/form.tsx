@@ -16,11 +16,11 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { amount, dec2, money, qty as fmtQty, toNumber } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
-import { ruleBonus, type AppliedRule } from '@/lib/incentive';
+import { combineEffects } from '@/lib/incentive';
 import { computeLine, computeTotals } from '@/lib/invoice-math';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
-import { Plus, Printer, Save, Send, Trash2, XCircle } from 'lucide-react';
+import { Plus, Printer, Save, Send, Trash2, X, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -32,9 +32,7 @@ interface ItemRow {
     stock: number;
     quantity: string;
     bonus_quantity: string;
-    applied_rule_id: number | null;
-    applied_rule_name: string;
-    applied_rule: AppliedRule | null; // params for live bonus recompute (qty/slab rules)
+    incentives: RuleHit[]; // stacked incentive rules (≤1 per rule_type)
     trade_price: string;
     discount_percent: string;
     gst_percent: string;
@@ -63,12 +61,24 @@ interface InvoiceDto {
         batch?: { id: number; batch_number: string; expiry_date: string | null } | null;
         quantity: string;
         bonus_quantity: string;
-        applied_rule_id: number | null;
-        applied_rule?: { id: number; name: string } | null;
         trade_price: string;
         discount_percent: string;
         gst_percent: string;
         remarks: string | null;
+        incentives?: {
+            incentive_rule_id: number | null;
+            rule_type: string;
+            rule_name: string;
+            rule?: {
+                id: number;
+                name: string;
+                rule_type: string;
+                base_qty: string | number;
+                bonus_qty: string | number;
+                slabs: { min_qty: number | string; max_qty: number | string | null; bonus_qty: number | string }[] | null;
+                value: string | number;
+            } | null;
+        }[];
     }[];
 }
 
@@ -82,9 +92,29 @@ interface Props {
 
 const emptyRow = (): ItemRow => ({
     product_id: null, product_name: '', batch_id: '', batch_fallback: null, stock: 0,
-    quantity: '1', bonus_quantity: '0', applied_rule_id: null, applied_rule_name: '', applied_rule: null,
+    quantity: '1', bonus_quantity: '0', incentives: [],
     trade_price: '', discount_percent: '0.00', gst_percent: '0.00', remarks: '',
 });
+
+/** Rebuild the stacked RuleHit list from a saved item's incentive rows. */
+const hydrateIncentives = (item: InvoiceDto['items'][number]): RuleHit[] =>
+    (item.incentives ?? []).map((inc) => {
+        const rule = inc.rule;
+        return {
+            id: inc.incentive_rule_id ?? rule?.id ?? 0,
+            name: inc.rule_name,
+            rule_type: inc.rule_type,
+            base_qty: rule ? Number(rule.base_qty) : undefined,
+            bonus_qty: rule ? Number(rule.bonus_qty) : undefined,
+            slabs: rule?.slabs ?? undefined,
+            value: rule ? Number(rule.value) : undefined,
+            summary: '',
+            scope: '',
+            effect: {},
+        } satisfies RuleHit;
+    });
+
+const isBonusType = (t: string) => t === 'qty_bonus' || t === 'slab_bonus';
 
 // Editable columns in keyboard order: product, batch, qty, bonus, rule, price, disc, gst, remarks
 const COL_COUNT = 9;
@@ -125,9 +155,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                   stock: 0,
                   quantity: String(Number(item.quantity)),
                   bonus_quantity: String(Number(item.bonus_quantity)),
-                  applied_rule_id: item.applied_rule_id,
-                  applied_rule_name: item.applied_rule?.name ?? '',
-                  applied_rule: null,
+                  incentives: hydrateIncentives(item),
                   trade_price: dec2(item.trade_price),
                   discount_percent: dec2(item.discount_percent),
                   gst_percent: dec2(item.gst_percent),
@@ -215,17 +243,19 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
 
     const computed = useMemo(
         () =>
-            rows.map((row) =>
-                computeLine(
+            rows.map((row) => {
+                const eff = combineEffects(row.incentives, toNumber(row.quantity), toNumber(row.trade_price));
+                return computeLine(
                     {
                         quantity: row.quantity,
-                        rate: row.trade_price,
+                        rate: eff.trade_price,
                         discount_percent: row.discount_percent,
+                        incentive_discount: eff.incentive_discount,
                         gst_percent: row.gst_percent,
                     },
                     false,
-                ),
-            ),
+                );
+            }),
         [rows],
     );
 
@@ -253,9 +283,10 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
         setRows((r) => r.map((row, i) => {
             if (i !== rowIndex) return row;
             const next = { ...row, [key]: value };
-            // A qty/slab bonus rule recomputes its bonus live as the quantity changes.
-            if (key === 'quantity' && next.applied_rule) {
-                next.bonus_quantity = String(ruleBonus(next.applied_rule, toNumber(value)));
+            // Stacked qty/slab bonus rules recompute their bonus live as qty changes.
+            if (key === 'quantity' && next.incentives.some((inc) => isBonusType(inc.rule_type))) {
+                const eff = combineEffects(next.incentives, toNumber(value), toNumber(next.trade_price));
+                next.bonus_quantity = String(eff.bonus_qty);
             }
             return next;
         }));
@@ -274,9 +305,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                           batch_id: '',
                           batch_fallback: null,
                           stock: product.stock,
-                          applied_rule_id: null,
-                          applied_rule_name: '',
-                          applied_rule: null,
+                          incentives: [],
                           trade_price: dec2(product.trade_price),
                           gst_percent: dec2(product.tax_percent ?? 0),
                           discount_percent: dec2(product.default_discount_percent ?? 0),
@@ -292,29 +321,44 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
         setRows((r) => (r.length === 1 ? [emptyRow()] : r.filter((_, i) => i !== index)));
     };
 
-    const applyRule = (rowIndex: number, rule: RuleHit | null) => {
+    // Stack a rule on a line. At most one per rule_type; a bonus rule (re)derives
+    // the line's bonus qty. Discount/price effects are shown live via combineEffects
+    // and recomputed authoritatively by the server on save — trade_price stays the
+    // base price so a price_override can be removed without losing it.
+    const addRule = (rowIndex: number, rule: RuleHit) => {
         setRows((r) =>
             r.map((row, i) => {
                 if (i !== rowIndex) return row;
-                if (!rule) {
-                    return { ...row, applied_rule_id: null, applied_rule_name: '', applied_rule: null };
+                if (row.incentives.some((inc) => inc.id === rule.id)) return row;
+                if (row.incentives.some((inc) => inc.rule_type === rule.rule_type)) {
+                    toast.error(`This line already has a ${rule.rule_type.replace('_', ' ')} incentive.`);
+                    return row;
                 }
-                const isBonusRule = rule.rule_type === 'qty_bonus' || rule.rule_type === 'slab_bonus';
-                const applied: AppliedRule | null = isBonusRule
-                    ? { rule_type: rule.rule_type, base_qty: rule.base_qty, bonus_qty: rule.bonus_qty, slabs: rule.slabs }
-                    : null;
+                const incentives = [...row.incentives, rule];
+                const eff = combineEffects(incentives, toNumber(row.quantity), toNumber(row.trade_price));
                 return {
                     ...row,
-                    applied_rule_id: rule.id,
-                    applied_rule_name: rule.name,
-                    applied_rule: applied,
-                    bonus_quantity: applied ? String(ruleBonus(applied, toNumber(row.quantity))) : row.bonus_quantity,
-                    discount_percent: rule.effect.discount_percent !== undefined ? dec2(rule.effect.discount_percent) : row.discount_percent,
-                    trade_price: rule.effect.trade_price !== undefined ? dec2(rule.effect.trade_price) : row.trade_price,
+                    incentives,
+                    bonus_quantity: incentives.some((inc) => isBonusType(inc.rule_type))
+                        ? String(eff.bonus_qty)
+                        : row.bonus_quantity,
                 };
             }),
         );
-        grid.focusCell(rowIndex, 5); // move to Price after applying a rule
+    };
+
+    const removeRule = (rowIndex: number, rule: RuleHit) => {
+        setRows((r) =>
+            r.map((row, i) => {
+                if (i !== rowIndex) return row;
+                const incentives = row.incentives.filter((inc) => inc.id !== rule.id);
+                const eff = combineEffects(incentives, toNumber(row.quantity), toNumber(row.trade_price));
+                let bonus_quantity = row.bonus_quantity;
+                if (incentives.some((inc) => isBonusType(inc.rule_type))) bonus_quantity = String(eff.bonus_qty);
+                else if (isBonusType(rule.rule_type)) bonus_quantity = '0';
+                return { ...row, incentives, bonus_quantity };
+            }),
+        );
     };
 
     const payload = () => ({
@@ -332,7 +376,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                 batch_id: row.batch_id ? Number(row.batch_id) : null,
                 quantity: toNumber(row.quantity),
                 bonus_quantity: toNumber(row.bonus_quantity),
-                applied_rule_id: row.applied_rule_id,
+                incentive_rule_ids: row.incentives.map((inc) => inc.id),
                 trade_price: toNumber(row.trade_price),
                 discount_percent: toNumber(row.discount_percent),
                 gst_percent: toNumber(row.gst_percent),
@@ -665,29 +709,44 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                                         <td>{cellInput(rowIndex, 2, 'quantity', 'number', 'text-right')}</td>
                                         <td>{cellInput(rowIndex, 3, 'bonus_quantity', 'number', 'text-right')}</td>
                                         <td>
-                                            <button
-                                                type="button"
-                                                ref={grid.registerCell(rowIndex, 4) as never}
-                                                disabled={readonly || !row.batch_id}
-                                                onClick={() => {
-                                                    setActiveRow(rowIndex);
-                                                    setRuleOpen(true);
-                                                }}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                        e.preventDefault();
+                                            <div className="flex flex-wrap items-center gap-1 p-1">
+                                                {row.incentives.map((inc) => (
+                                                    <Badge key={inc.id} variant="outline" className="max-w-full gap-1 pr-1">
+                                                        <span className="truncate">{inc.name}</span>
+                                                        {!readonly && (
+                                                            <button
+                                                                type="button"
+                                                                tabIndex={-1}
+                                                                onClick={() => removeRule(rowIndex, inc)}
+                                                                className="rounded-sm hover:text-destructive"
+                                                            >
+                                                                <X className="size-3" />
+                                                            </button>
+                                                        )}
+                                                    </Badge>
+                                                ))}
+                                                <button
+                                                    type="button"
+                                                    ref={grid.registerCell(rowIndex, 4) as never}
+                                                    disabled={readonly || !row.batch_id}
+                                                    onClick={() => {
                                                         setActiveRow(rowIndex);
                                                         setRuleOpen(true);
-                                                        return;
-                                                    }
-                                                    grid.handleKeyDown(e, rowIndex, 4);
-                                                }}
-                                                className="h-8 w-full truncate px-2 text-left text-sm outline-none focus:ring-1 focus:ring-ring disabled:opacity-70"
-                                            >
-                                                {row.applied_rule_name
-                                                    ? <Badge variant="outline" className="max-w-full truncate">{row.applied_rule_name}</Badge>
-                                                    : <span className="text-muted-foreground">F4…</span>}
-                                            </button>
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            setActiveRow(rowIndex);
+                                                            setRuleOpen(true);
+                                                            return;
+                                                        }
+                                                        grid.handleKeyDown(e, rowIndex, 4);
+                                                    }}
+                                                    className="rounded px-1 text-sm text-muted-foreground outline-none focus:ring-1 focus:ring-ring disabled:opacity-70"
+                                                >
+                                                    {row.incentives.length ? '+ add' : 'F4…'}
+                                                </button>
+                                            </div>
                                         </td>
                                         <td>{cellInput(rowIndex, 5, 'trade_price', 'number', 'text-right')}</td>
                                         <td>{cellInput(rowIndex, 6, 'discount_percent', 'number', 'text-right')}</td>
@@ -735,8 +794,9 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                 customerId={header.customer_id ? Number(header.customer_id) : null}
                 qty={toNumber(rows[activeRow]?.quantity)}
                 price={toNumber(rows[activeRow]?.trade_price)}
-                appliedRuleId={rows[activeRow]?.applied_rule_id ?? null}
-                onApply={(rule) => applyRule(activeRow, rule)}
+                applied={rows[activeRow]?.incentives ?? []}
+                onAdd={(rule) => addRule(activeRow, rule)}
+                onRemove={(rule) => removeRule(activeRow, rule)}
             />
         </AppLayout>
     );

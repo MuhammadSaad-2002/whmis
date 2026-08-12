@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SalesInvoiceItem extends Model
 {
@@ -17,6 +18,7 @@ class SalesInvoiceItem extends Model
             'trade_price' => 'decimal:2',
             'discount_percent' => 'decimal:2',
             'discount_amount' => 'decimal:2',
+            'incentive_discount' => 'decimal:2',
             'gst_percent' => 'decimal:2',
             'gst_amount' => 'decimal:2',
             'net_amount' => 'decimal:2',
@@ -44,5 +46,10 @@ class SalesInvoiceItem extends Model
     public function appliedRule(): BelongsTo
     {
         return $this->belongsTo(IncentiveRule::class, 'applied_rule_id');
+    }
+
+    public function incentives(): HasMany
+    {
+        return $this->hasMany(SalesInvoiceItemIncentive::class)->orderBy('sort_order');
     }
 }

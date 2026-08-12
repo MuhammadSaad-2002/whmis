@@ -172,8 +172,10 @@ class InvoicePostingService
             $totalProfit = 0.0;
 
             foreach ($invoice->items as $item) {
+                // incentive_discount was verified + frozen when the draft was saved
+                // (syncItems re-runs the engine); posting must respect it.
                 $line = MarginCalculator::salesLine($item->only([
-                    'quantity', 'trade_price', 'discount_percent', 'gst_percent',
+                    'quantity', 'trade_price', 'discount_percent', 'incentive_discount', 'gst_percent',
                 ]) + ['discount_amount' => null, 'gst_amount' => null]);
 
                 // Bonus units ship for free but still consume stock at cost.

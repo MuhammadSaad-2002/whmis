@@ -63,6 +63,11 @@
                     <td>
                         <strong>{{ $item->product->name }}</strong>
                         @if($item->product->company)<br><span class="muted" style="font-size:8px;">{{ $item->product->company->name }}</span>@endif
+                        @if($item->relationLoaded('incentives') && $item->incentives->isNotEmpty())
+                            <br><span class="muted" style="font-size:8px;">Incentives:
+                            {{ $item->incentives->map(fn ($inc) => $inc->rule_name . ((float) $inc->value_given > 0 ? ' (Rs ' . number_format((float) $inc->value_given, 2) . ')' : ''))->implode(', ') }}
+                            </span>
+                        @endif
                     </td>
                     <td>{{ $item->batch?->batch_number ?? 'FIFO' }}</td>
                     <td class="num">{{ number_format((float) $item->quantity, 0) }}</td>
