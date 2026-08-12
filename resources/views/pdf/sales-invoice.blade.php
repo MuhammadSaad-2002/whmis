@@ -9,16 +9,22 @@
     <table class="header">
         <tr>
             <td>
-                <h1>{{ config('app.name') }}</h1>
-                <div class="meta">Sales Invoice</div>
+                <h1>MP Sub Office</h1>
+                <div class="meta">
+                    Sales Invoice
+                    @if($invoice->booking)
+                        <br>Booking #: {{ $invoice->booking->booking_number }}
+                        <br>Booking Date: {{ $invoice->booking->booking_date->format('d M Y') }}
+                        @if($invoice->booking->booker)<br>Booked by: {{ $invoice->booking->booker->name }}@endif
+                    @endif
+                </div>
             </td>
             <td style="text-align: right;">
                 <h1>{{ $invoice->invoice_number }}</h1>
                 <div class="meta">
                     Sale #: {{ $invoice->invoice_number }}<br>
-                    Sale Date: {{ $invoice->invoice_date->format('d M Y') }}<br>
-                    @if($invoice->due_date) Due: {{ $invoice->due_date->format('d M Y') }}<br> @endif
-                    Status: <span class="badge">{{ strtoupper($invoice->status) }}</span>
+                    Sale Date: {{ $invoice->invoice_date->format('d M Y') }}
+                    @if($invoice->due_date) <br>Due: {{ $invoice->due_date->format('d M Y') }} @endif
                 </div>
             </td>
         </tr>
@@ -37,12 +43,7 @@
             </td>
             <td style="text-align:right;" class="meta">
                 Type: {{ ucwords(str_replace('_', ' ', $invoice->sale_type)) }}<br>
-                Warehouse: {{ $invoice->warehouse->name }}<br>
-                @if($invoice->booking)
-                    Booking #: {{ $invoice->booking->booking_number }}<br>
-                    Booking Date: {{ $invoice->booking->booking_date->format('d M Y') }}<br>
-                    @if($invoice->booking->booker) Booked by: {{ $invoice->booking->booker->name }} @endif
-                @endif
+                Warehouse: {{ $invoice->warehouse->name }}
             </td>
         </tr>
     </table>
