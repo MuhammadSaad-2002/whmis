@@ -20,21 +20,29 @@ class ReturnController extends Controller
 
     public function salesIndex(Request $request)
     {
-        $returns = SalesReturn::query()
+        $query = SalesReturn::query()
             ->with(['customer:id,name,city', 'invoice:id,invoice_number'])
             ->when($request->search, function ($q, $search) {
                 $q->where('return_number', 'like', "%{$search}%")
                     ->orWhereHas('invoice', fn ($i) => $i->where('invoice_number', 'like', "%{$search}%"));
             })
             ->when($request->from, fn ($q, $from) => $q->whereDate('return_date', '>=', $from))
-            ->when($request->to, fn ($q, $to) => $q->whereDate('return_date', '<=', $to))
-            ->latest('return_date')->latest('id')
+            ->when($request->to, fn ($q, $to) => $q->whereDate('return_date', '<=', $to));
+
+        // Net credit issued = posted returns only (cancelled are reversed).
+        $posted = (clone $query)->where('status', SalesReturn::STATUS_POSTED);
+
+        $returns = $query->latest('return_date')->latest('id')
             ->paginate(15)
             ->withQueryString();
 
         return Inertia::render('returns/sales-index', [
             'returns' => $returns,
             'filters' => $request->only('search', 'from', 'to'),
+            'summary' => [
+                'total' => round((float) (clone $posted)->sum('total_amount'), 2),
+                'count' => (clone $posted)->count(),
+            ],
         ]);
     }
 
@@ -102,18 +110,26 @@ class ReturnController extends Controller
 
     public function purchaseIndex(Request $request)
     {
-        $returns = PurchaseReturn::query()
+        $query = PurchaseReturn::query()
             ->with('company:id,name')
             ->when($request->search, fn ($q, $search) => $q->where('return_number', 'like', "%{$search}%"))
             ->when($request->from, fn ($q, $from) => $q->whereDate('return_date', '>=', $from))
-            ->when($request->to, fn ($q, $to) => $q->whereDate('return_date', '<=', $to))
-            ->latest('return_date')->latest('id')
+            ->when($request->to, fn ($q, $to) => $q->whereDate('return_date', '<=', $to));
+
+        $summaryTotal = round((float) (clone $query)->sum('total_amount'), 2);
+        $summaryCount = (clone $query)->count();
+
+        $returns = $query->latest('return_date')->latest('id')
             ->paginate(15)
             ->withQueryString();
 
         return Inertia::render('returns/purchase-index', [
             'returns' => $returns,
             'filters' => $request->only('search', 'from', 'to'),
+            'summary' => [
+                'total' => $summaryTotal,
+                'count' => $summaryCount,
+            ],
         ]);
     }
 

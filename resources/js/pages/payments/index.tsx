@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { SummaryBar } from '@/components/summary-bar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
@@ -48,11 +49,12 @@ interface Props {
     customers: Option[];
     companies: Option[];
     filters: { direction?: string; method?: string; search?: string; from?: string; to?: string };
+    summary: { receipts: number; payments: number; net: number };
 }
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Payments', href: '/payments' }];
 
-export default function PaymentsIndex({ payments, customers, companies, filters }: Props) {
+export default function PaymentsIndex({ payments, customers, companies, filters, summary }: Props) {
     const { can } = usePermissions();
     const [dialogOpen, setDialogOpen] = useState(false);
     const [openInvoices, setOpenInvoices] = useState<OpenInvoice[]>([]);
@@ -145,6 +147,14 @@ export default function PaymentsIndex({ payments, customers, companies, filters 
                         </Button>
                     )}
                 </div>
+
+                <SummaryBar
+                    items={[
+                        { label: 'Total Receipts', value: summary.receipts, tone: 'positive' },
+                        { label: 'Total Payments', value: summary.payments, tone: 'negative' },
+                        { label: 'Net', value: summary.net, tone: summary.net >= 0 ? 'positive' : 'negative' },
+                    ]}
+                />
 
                 <div className="flex flex-wrap gap-2">
                     <Select

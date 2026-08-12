@@ -15,14 +15,21 @@ class PaymentController extends Controller
 
     public function index(Request $request)
     {
-        $payments = Payment::query()
+        $query = Payment::query()
             ->with('party')
             ->when($request->direction, fn ($q, $direction) => $q->where('direction', $direction))
             ->when($request->method, fn ($q, $method) => $q->where('method', $method))
             ->when($request->search, fn ($q, $search) => $q->where('payment_number', 'like', "%{$search}%"))
             ->when($request->from, fn ($q, $from) => $q->whereDate('payment_date', '>=', $from))
-            ->when($request->to, fn ($q, $to) => $q->whereDate('payment_date', '<=', $to))
-            ->latest('payment_date')->latest('id')
+            ->when($request->to, fn ($q, $to) => $q->whereDate('payment_date', '<=', $to));
+
+        // Net money movement over the full filtered set (completed only — cancelled
+        // payments are reversed, so they don't count).
+        $completed = (clone $query)->where('status', 'completed');
+        $receipts = round((float) (clone $completed)->where('direction', 'in')->sum('amount'), 2);
+        $paid = round((float) (clone $completed)->where('direction', 'out')->sum('amount'), 2);
+
+        $payments = $query->latest('payment_date')->latest('id')
             ->paginate(15)
             ->withQueryString();
 
@@ -31,6 +38,11 @@ class PaymentController extends Controller
             'customers' => Customer::active()->orderBy('name')->get(['id', 'name']),
             'companies' => Company::active()->orderBy('name')->get(['id', 'name']),
             'filters' => $request->only('direction', 'method', 'search', 'from', 'to'),
+            'summary' => [
+                'receipts' => $receipts,
+                'payments' => $paid,
+                'net' => round($receipts - $paid, 2),
+            ],
         ]);
     }
 

@@ -6,6 +6,7 @@ use App\Models\Batch;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\SalesInvoice;
+use App\Models\SalesReturn;
 use App\Models\Warehouse;
 use App\Services\InventoryService;
 use App\Services\InvoicePostingService;
@@ -59,15 +60,28 @@ class SalesInvoiceController extends Controller
 
     public function index(Request $request)
     {
-        $invoices = SalesInvoice::query()
+        $query = SalesInvoice::query()
             ->with('customer:id,name,city')
             ->when($request->search, fn ($q, $search) => $q->where('invoice_number', 'like', "%{$search}%"))
             ->when($request->customer_id, fn ($q, $id) => $q->where('customer_id', $id))
             ->when($request->status, fn ($q, $status) => $q->where('status', $status))
             ->when($request->sale_type, fn ($q, $type) => $q->where('sale_type', $type))
             ->when($request->from, fn ($q, $from) => $q->whereDate('invoice_date', '>=', $from))
-            ->when($request->to, fn ($q, $to) => $q->whereDate('invoice_date', '<=', $to))
-            ->latest('invoice_date')->latest('id')
+            ->when($request->to, fn ($q, $to) => $q->whereDate('invoice_date', '<=', $to));
+
+        // Net-of-returns summary over the full filtered set. Sales returns are
+        // invoice-linked with a status, so we net posted returns against exactly
+        // the invoices in this filter (regardless of the return's own date).
+        $gross = round((float) (clone $query)->sum('total_amount'), 2);
+        $grossProfit = round((float) (clone $query)->where('status', 'posted')->sum('total_profit'), 2);
+        $invoiceIds = (clone $query)->pluck('id');
+        $postedReturns = SalesReturn::where('status', SalesReturn::STATUS_POSTED)
+            ->whereIn('sales_invoice_id', $invoiceIds);
+        $returns = round((float) (clone $postedReturns)->sum('total_amount'), 2);
+        $returnProfit = round((float) (clone $postedReturns)->sum('total_amount')
+            - (float) (clone $postedReturns)->sum('total_cost'), 2);
+
+        $invoices = $query->latest('invoice_date')->latest('id')
             ->paginate(15)
             ->withQueryString();
 
@@ -79,6 +93,13 @@ class SalesInvoiceController extends Controller
             'invoices' => $invoices,
             'customers' => Customer::active()->orderBy('name')->get(['id', 'name']),
             'filters' => $request->only('search', 'customer_id', 'status', 'sale_type', 'from', 'to'),
+            'summary' => [
+                'gross' => $gross,
+                'returns' => $returns,
+                'net' => round($gross - $returns, 2),
+                'gross_profit' => $grossProfit,
+                'net_profit' => round($grossProfit - $returnProfit, 2),
+            ],
         ]);
     }
 

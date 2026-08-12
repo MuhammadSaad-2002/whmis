@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Company;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
+use App\Models\PurchaseReturn;
 use App\Models\Warehouse;
 use App\Services\InvoicePostingService;
 use App\Services\MarginCalculator;
@@ -24,7 +25,7 @@ class PurchaseInvoiceController extends Controller
 
     public function index(Request $request)
     {
-        $invoices = PurchaseInvoice::query()
+        $query = PurchaseInvoice::query()
             ->with('company:id,name')
             ->when($request->search, function ($q, $search) {
                 $q->where(fn ($w) => $w
@@ -34,8 +35,18 @@ class PurchaseInvoiceController extends Controller
             ->when($request->company_id, fn ($q, $id) => $q->where('company_id', $id))
             ->when($request->status, fn ($q, $status) => $q->where('status', $status))
             ->when($request->from, fn ($q, $from) => $q->whereDate('invoice_date', '>=', $from))
-            ->when($request->to, fn ($q, $to) => $q->whereDate('invoice_date', '<=', $to))
-            ->latest('invoice_date')->latest('id')
+            ->when($request->to, fn ($q, $to) => $q->whereDate('invoice_date', '<=', $to));
+
+        // Purchase returns aren't invoice-linked in the schema, so net them by the
+        // matching supplier + date filters (search/status don't map to returns).
+        $gross = round((float) (clone $query)->sum('total_amount'), 2);
+        $returns = round((float) PurchaseReturn::query()
+            ->when($request->company_id, fn ($q, $id) => $q->where('company_id', $id))
+            ->when($request->from, fn ($q, $from) => $q->whereDate('return_date', '>=', $from))
+            ->when($request->to, fn ($q, $to) => $q->whereDate('return_date', '<=', $to))
+            ->sum('total_amount'), 2);
+
+        $invoices = $query->latest('invoice_date')->latest('id')
             ->paginate(15)
             ->withQueryString();
 
@@ -43,6 +54,11 @@ class PurchaseInvoiceController extends Controller
             'invoices' => $invoices,
             'companies' => Company::active()->orderBy('name')->get(['id', 'name']),
             'filters' => $request->only('search', 'company_id', 'status', 'from', 'to'),
+            'summary' => [
+                'gross' => $gross,
+                'returns' => $returns,
+                'net' => round($gross - $returns, 2),
+            ],
         ]);
     }
 

@@ -1,4 +1,5 @@
 import { Paginator, type PaginatedData } from '@/components/paginator';
+import { SummaryBar } from '@/components/summary-bar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,11 +27,12 @@ interface ReturnRow {
 interface Props {
     returns: PaginatedData<ReturnRow>;
     filters: { search?: string; from?: string; to?: string };
+    summary: { total: number; count: number };
 }
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Sales Returns', href: '/returns/sales' }];
 
-export default function SalesReturnsIndex({ returns, filters }: Props) {
+export default function SalesReturnsIndex({ returns, filters, summary }: Props) {
     const { can } = usePermissions();
     const [search, setSearch] = useState(filters.search ?? '');
     const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
@@ -69,6 +71,12 @@ export default function SalesReturnsIndex({ returns, filters }: Props) {
                         )}
                     </div>
                 </div>
+
+                <SummaryBar
+                    items={[
+                        { label: 'Net Credit Notes', value: summary.total, tone: 'negative', hint: `${summary.count} posted` },
+                    ]}
+                />
 
                 <div className="flex flex-wrap gap-2">
                     <div className="relative w-full sm:w-64">

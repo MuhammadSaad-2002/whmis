@@ -1,4 +1,5 @@
 import { Paginator, type PaginatedData } from '@/components/paginator';
+import { SummaryBar } from '@/components/summary-bar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,6 +32,7 @@ interface Props {
     invoices: PaginatedData<InvoiceRow>;
     companies: { id: number; name: string }[];
     filters: { search?: string; company_id?: string; status?: string; from?: string; to?: string };
+    summary: { gross: number; returns: number; net: number };
 }
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Purchases', href: '/purchases' }];
@@ -38,7 +40,7 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Purchases', href: '/purchases' 
 const statusVariant = (status: string) =>
     status === 'posted' ? 'default' : status === 'cancelled' ? 'destructive' : 'secondary';
 
-export default function PurchasesIndex({ invoices, companies, filters }: Props) {
+export default function PurchasesIndex({ invoices, companies, filters, summary }: Props) {
     const { can } = usePermissions();
     const [search, setSearch] = useState(filters.search ?? '');
     const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
@@ -75,6 +77,14 @@ export default function PurchasesIndex({ invoices, companies, filters }: Props) 
                         </Button>
                     )}
                 </div>
+
+                <SummaryBar
+                    items={[
+                        { label: 'Gross Purchases', value: summary.gross },
+                        { label: 'Returns', value: summary.returns, tone: 'negative' },
+                        { label: 'Net Purchases', value: summary.net, tone: 'positive' },
+                    ]}
+                />
 
                 <div className="flex flex-wrap gap-2">
                     <div className="relative w-full sm:w-64">
