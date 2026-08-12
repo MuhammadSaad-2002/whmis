@@ -73,7 +73,11 @@
                     <td class="num">{{ number_format((float) $item->quantity, 0) }}</td>
                     <td class="num">{{ number_format((float) $item->bonus_quantity, 0) }}</td>
                     <td class="num">{{ number_format((float) $item->trade_price, 2) }}</td>
-                    <td class="num">{{ number_format((float) $item->discount_amount, 2) }}@if((float) $item->discount_percent > 0) ({{ (float) $item->discount_percent }}%)@endif</td>
+                    @php
+                        $lineGross = (float) $item->quantity * (float) $item->trade_price;
+                        $discPct = $lineGross > 0 ? round((float) $item->discount_amount / $lineGross * 100, 2) : 0;
+                    @endphp
+                    <td class="num">{{ number_format((float) $item->discount_amount, 2) }}@if((float) $item->discount_amount > 0) ({{ rtrim(rtrim(number_format($discPct, 2, '.', ''), '0'), '.') }}%)@endif</td>
                     <td class="num">{{ number_format((float) $item->gst_amount, 2) }}</td>
                     <td class="num">{{ number_format((float) $item->net_amount, 2) }}</td>
                 </tr>

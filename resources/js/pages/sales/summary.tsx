@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { money, qty, shortDate } from '@/lib/format';
+import { dec2, money, qty, shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link } from '@inertiajs/react';
 import { FileDown, Plus, Printer } from 'lucide-react';
@@ -183,7 +183,16 @@ export default function SalesSummary({ invoice, position }: Props) {
                                                 )}
                                             </TableCell>
                                             <TableCell className="text-right tabular-nums">{money(item.trade_price)}</TableCell>
-                                            <TableCell className="text-right tabular-nums">{money(item.discount_amount)}</TableCell>
+                                            <TableCell className="text-right tabular-nums">
+                                                {money(item.discount_amount)}
+                                                {(() => {
+                                                    const gross = Number(item.quantity) * Number(item.trade_price);
+                                                    const pct = gross > 0 ? (Number(item.discount_amount) / gross) * 100 : 0;
+                                                    return pct > 0 ? (
+                                                        <span className="ml-1 text-xs text-muted-foreground">({dec2(pct)}%)</span>
+                                                    ) : null;
+                                                })()}
+                                            </TableCell>
                                             <TableCell className="text-right tabular-nums">{money(item.gst_amount)}</TableCell>
                                             <TableCell className="text-right tabular-nums">{money(item.net_amount)}</TableCell>
                                         </TableRow>

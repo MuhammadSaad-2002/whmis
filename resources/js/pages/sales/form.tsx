@@ -17,7 +17,7 @@ import AppLayout from '@/layouts/app-layout';
 import { amount, dec2, money, qty as fmtQty, toNumber } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { combineEffects } from '@/lib/incentive';
-import { computeLine, computeTotals } from '@/lib/invoice-math';
+import { computeLine, computeTotals, effectiveDiscountPercent } from '@/lib/invoice-math';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
 import { Plus, Printer, Save, Send, Trash2, X, XCircle } from 'lucide-react';
@@ -115,6 +115,7 @@ const hydrateIncentives = (item: InvoiceDto['items'][number]): RuleHit[] =>
     });
 
 const isBonusType = (t: string) => t === 'qty_bonus' || t === 'slab_bonus';
+const isDiscountType = (t: string) => t === 'percent_discount' || t === 'fixed_discount';
 
 // Editable columns in keyboard order: product, batch, qty, bonus, rule, price, disc, gst, remarks
 const COL_COUNT = 9;
@@ -749,7 +750,24 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                                             </div>
                                         </td>
                                         <td>{cellInput(rowIndex, 5, 'trade_price', 'number', 'text-right')}</td>
-                                        <td>{cellInput(rowIndex, 6, 'discount_percent', 'number', 'text-right')}</td>
+                                        <td>
+                                            {row.incentives.some((inc) => isDiscountType(inc.rule_type)) ? (
+                                                // A discount incentive drives the line discount; the cell shows
+                                                // the effective combined percent (read-only) instead of the manual %.
+                                                <Input
+                                                    ref={grid.registerCell(rowIndex, 6) as never}
+                                                    type="text"
+                                                    readOnly
+                                                    tabIndex={0}
+                                                    value={dec2(effectiveDiscountPercent(computed[rowIndex].gross, computed[rowIndex].discount_amount))}
+                                                    title="Effective discount from applied incentive(s). Remove the incentive to edit manually."
+                                                    onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 6)}
+                                                    className="h-8 rounded-none border-0 bg-emerald-50 px-2 text-right text-sm text-emerald-700 focus-visible:ring-1 dark:bg-emerald-950/40 dark:text-emerald-400"
+                                                />
+                                            ) : (
+                                                cellInput(rowIndex, 6, 'discount_percent', 'number', 'text-right')
+                                            )}
+                                        </td>
                                         <td>{cellInput(rowIndex, 7, 'gst_percent', 'number', 'text-right')}</td>
                                         <td className="px-2 text-right tabular-nums">{amount(computed[rowIndex].net_amount)}</td>
                                         <td>{cellInput(rowIndex, 8, 'remarks')}</td>

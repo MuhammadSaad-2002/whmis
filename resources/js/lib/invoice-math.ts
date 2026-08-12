@@ -57,6 +57,15 @@ export function computeLine(input: LineInput, withMargin: boolean): LineComputed
     };
 }
 
+/**
+ * Effective discount percent of a line = discount_amount / gross × 100.
+ * Captures manual and incentive discounts together (a fixed-rupee incentive
+ * shows as its equivalent percent), for the grid cell and the printed invoice.
+ */
+export function effectiveDiscountPercent(gross: number, discountAmount: number): number {
+    return gross > 0 ? r2((discountAmount / gross) * 100) : 0;
+}
+
 export interface TotalsInput {
     discount_percent?: number | string;
     gst_percent?: number | string;
