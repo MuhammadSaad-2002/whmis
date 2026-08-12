@@ -258,6 +258,32 @@ class InventoryService
     }
 
     /**
+     * Reverse a sales return: the exact inverse of returnToBatch(). Removes the
+     * units a return added back (qty_sold up, qty_available down) and guards
+     * against the stock having been re-sold in the meantime.
+     */
+    public function withdrawReturnedStock(Batch $batch, float $quantity, Model $reference): void
+    {
+        if ($quantity <= 0) {
+            return;
+        }
+
+        $batch = Batch::whereKey($batch->id)->lockForUpdate()->firstOrFail();
+
+        if ((float) $batch->qty_available + 1e-9 < $quantity) {
+            throw new RuntimeException(
+                "Cannot cancel return: stock restored to batch {$batch->batch_number} has since been sold or adjusted."
+            );
+        }
+
+        $batch->qty_sold = (float) $batch->qty_sold + $quantity;
+        $batch->qty_available = (float) $batch->qty_available - $quantity;
+        $batch->save();
+
+        $this->recordMovement($batch, 'sale_return_cancel', -$quantity, $reference, (float) $batch->effective_cost);
+    }
+
+    /**
      * Manual adjustment. Positive quantity adds stock, negative removes.
      */
     public function adjust(Batch $batch, float $quantity, string $type, Model $reference, ?string $remarks = null): void

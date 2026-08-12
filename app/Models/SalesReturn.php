@@ -12,6 +12,9 @@ class SalesReturn extends Model implements AuditableContract
 {
     use Auditable;
 
+    public const STATUS_POSTED = 'posted';
+    public const STATUS_CANCELLED = 'cancelled';
+
     protected $guarded = [];
 
     protected function casts(): array
@@ -20,7 +23,18 @@ class SalesReturn extends Model implements AuditableContract
             'return_date' => 'date',
             'total_amount' => 'decimal:2',
             'total_cost' => 'decimal:2',
+            'cancelled_at' => 'datetime',
         ];
+    }
+
+    public function isPosted(): bool
+    {
+        return $this->status === self::STATUS_POSTED;
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->status === self::STATUS_CANCELLED;
     }
 
     public function invoice(): BelongsTo
@@ -46,5 +60,10 @@ class SalesReturn extends Model implements AuditableContract
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
     }
 }

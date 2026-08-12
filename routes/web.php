@@ -90,6 +90,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('sales/{sale}/cancel', [SalesInvoiceController::class, 'cancel'])
             ->middleware('can:sales.cancel')->name('sales.cancel');
         Route::get('sales/{sale}/print', [SalesInvoiceController::class, 'print'])->name('sales.print');
+        Route::get('sales/{sale}/summary', [SalesInvoiceController::class, 'summary'])->name('sales.summary');
+        Route::get('sales/{sale}/net-position/print', [SalesInvoiceController::class, 'netPositionPdf'])->name('sales.net-position');
     });
 
     // Bookings
@@ -120,6 +122,9 @@ Route::middleware(['auth'])->group(function () {
             ->middleware('can:returns.manage')->name('returns.sales.create');
         Route::post('sales', [ReturnController::class, 'salesStore'])
             ->middleware('can:returns.manage')->name('returns.sales.store');
+        Route::get('sales/{salesReturn}', [ReturnController::class, 'salesShow'])->name('returns.sales.show');
+        Route::post('sales/{salesReturn}/cancel', [ReturnController::class, 'salesCancel'])
+            ->middleware('can:returns.manage')->name('returns.sales.cancel');
         Route::get('purchases', [ReturnController::class, 'purchaseIndex'])->name('returns.purchases.index');
         Route::get('purchases/create', [ReturnController::class, 'purchaseCreate'])
             ->middleware('can:returns.manage')->name('returns.purchases.create');

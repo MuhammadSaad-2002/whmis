@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -15,6 +16,11 @@ class SalesInvoice extends Model implements AuditableContract
     public const STATUS_DRAFT = 'draft';
     public const STATUS_POSTED = 'posted';
     public const STATUS_CANCELLED = 'cancelled';
+
+    /** Derived return lifecycle for a posted invoice. */
+    public const RETURN_NONE = 'posted_no_returns';
+    public const RETURN_PARTIAL = 'partially_returned';
+    public const RETURN_FULL = 'fully_returned';
 
     protected $guarded = [];
 
@@ -66,6 +72,17 @@ class SalesInvoice extends Model implements AuditableContract
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function returns(): HasMany
+    {
+        return $this->hasMany(SalesReturn::class)->orderBy('return_date')->orderBy('id');
+    }
+
+    /** Only valid (non-cancelled) returns count toward the net position. */
+    public function postedReturns(): HasMany
+    {
+        return $this->returns()->where('status', SalesReturn::STATUS_POSTED);
+    }
+
     public function isDraft(): bool
     {
         return $this->status === self::STATUS_DRAFT;
@@ -74,5 +91,28 @@ class SalesInvoice extends Model implements AuditableContract
     public function isPosted(): bool
     {
         return $this->status === self::STATUS_POSTED;
+    }
+
+    /**
+     * Derived return lifecycle — computed from posted returns, never stored.
+     * Keys off quantity so header-level discount/GST can't distort it.
+     */
+    protected function returnStatus(): Attribute
+    {
+        return Attribute::make(get: function (): string {
+            $returnedQty = (float) $this->postedReturns()
+                ->join('sales_return_items', 'sales_return_items.sales_return_id', '=', 'sales_returns.id')
+                ->sum('sales_return_items.quantity');
+
+            if ($returnedQty <= 1e-9) {
+                return self::RETURN_NONE;
+            }
+
+            $soldQty = (float) $this->items()->sum('quantity');
+
+            return $returnedQty + 1e-9 >= $soldQty
+                ? self::RETURN_FULL
+                : self::RETURN_PARTIAL;
+        });
     }
 }

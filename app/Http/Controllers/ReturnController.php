@@ -72,6 +72,34 @@ class ReturnController extends Controller
             ->with('success', "Return {$return->return_number} posted — stock restored, credit note issued.");
     }
 
+    public function salesShow(SalesReturn $salesReturn)
+    {
+        $salesReturn->load([
+            'customer:id,name,city',
+            'warehouse:id,name',
+            'invoice:id,invoice_number,invoice_date,total_amount',
+            'items.product:id,name',
+            'items.batch:id,batch_number',
+            'creator:id,name',
+            'cancelledBy:id,name',
+        ]);
+
+        return Inertia::render('returns/sales-show', [
+            'salesReturn' => $salesReturn,
+        ]);
+    }
+
+    public function salesCancel(SalesReturn $salesReturn)
+    {
+        try {
+            $this->returns->cancelSalesReturn($salesReturn);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', "Return {$salesReturn->return_number} cancelled — stock withdrawn, credit note reversed.");
+    }
+
     public function purchaseIndex(Request $request)
     {
         $returns = PurchaseReturn::query()
@@ -159,6 +187,7 @@ class ReturnController extends Controller
 
         $returned = SalesReturnItem::query()
             ->whereIn('sales_invoice_item_id', $sale->items->pluck('id'))
+            ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED))
             ->selectRaw('sales_invoice_item_id, SUM(quantity) as total')
             ->groupBy('sales_invoice_item_id')
             ->pluck('total', 'sales_invoice_item_id');

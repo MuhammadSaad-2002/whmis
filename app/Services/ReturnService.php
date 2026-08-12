@@ -58,7 +58,9 @@ class ReturnService
 
                 $item = $invoice->items()->whereKey($line['sales_invoice_item_id'])->firstOrFail();
 
-                $alreadyReturned = (float) SalesReturnItem::where('sales_invoice_item_id', $item->id)->sum('quantity');
+                $alreadyReturned = (float) SalesReturnItem::where('sales_invoice_item_id', $item->id)
+                    ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED))
+                    ->sum('quantity');
                 $returnable = (float) $item->quantity - $alreadyReturned;
                 if ($qty > $returnable + 1e-9) {
                     throw new RuntimeException(sprintf(
@@ -116,6 +118,48 @@ class ReturnService
                 $return,
                 "Credit Note {$return->return_number} against {$invoice->invoice_number}",
             );
+
+            return $return->refresh();
+        });
+    }
+
+    /**
+     * Reverse a posted sales return: remove the restored stock (inverse of the
+     * batch restore) and post an opposite debit_note to re-raise the receivable.
+     * The return row is kept for audit, flagged cancelled, and dropped from all
+     * netting/capacity math.
+     */
+    public function cancelSalesReturn(SalesReturn $return): SalesReturn
+    {
+        return DB::transaction(function () use ($return) {
+            if (! $return->isPosted()) {
+                throw new RuntimeException('Only a posted return can be cancelled.');
+            }
+
+            $return->load(['items.batch', 'customer']);
+
+            foreach ($return->items as $item) {
+                if ($item->batch) {
+                    $this->inventory->withdrawReturnedStock($item->batch, (float) $item->quantity, $return);
+                }
+            }
+
+            // Opposite of the credit note posted on create — receivable goes back up.
+            $this->ledger->post(
+                $return->customer,
+                'debit_note',
+                now()->toDateString(),
+                round((float) $return->total_amount, 2),
+                0,
+                $return,
+                "Reversal of Credit Note {$return->return_number}",
+            );
+
+            $return->update([
+                'status' => SalesReturn::STATUS_CANCELLED,
+                'cancelled_at' => now(),
+                'cancelled_by' => Auth::id(),
+            ]);
 
             return $return->refresh();
         });
@@ -228,7 +272,8 @@ class ReturnService
 
         // Capacity per batch = consumed − already restored by earlier returns.
         $restored = SalesReturnItem::query()
-            ->whereHas('salesReturn', fn ($q) => $q->where('sales_invoice_id', $invoice->id))
+            ->whereHas('salesReturn', fn ($q) => $q->where('sales_invoice_id', $invoice->id)
+                ->where('status', SalesReturn::STATUS_POSTED))
             ->where('product_id', $productId)
             ->selectRaw('batch_id, SUM(quantity) as total')
             ->groupBy('batch_id')

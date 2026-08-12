@@ -1,4 +1,5 @@
 import { Paginator, type PaginatedData } from '@/components/paginator';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -15,6 +16,7 @@ interface ReturnRow {
     id: number;
     return_number: string;
     return_date: string;
+    status: string;
     total_amount: string;
     reason: string | null;
     customer?: { id: number; name: string; city: string | null };
@@ -33,10 +35,7 @@ export default function SalesReturnsIndex({ returns, filters }: Props) {
     const [search, setSearch] = useState(filters.search ?? '');
     const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
         rowCount: returns.data.length,
-        onActivate: (i) => {
-            const inv = returns.data[i].invoice;
-            if (inv) router.visit(route('sales.edit', inv.id));
-        },
+        onActivate: (i) => router.visit(route('returns.sales.show', returns.data[i].id)),
     });
 
     useEffect(() => {
@@ -94,6 +93,7 @@ export default function SalesReturnsIndex({ returns, filters }: Props) {
                                 <TableHead>Against Invoice</TableHead>
                                 <TableHead>Customer</TableHead>
                                 <TableHead>Date</TableHead>
+                                <TableHead>Status</TableHead>
                                 <TableHead>Reason</TableHead>
                                 <TableHead className="text-right">Credit Amount</TableHead>
                             </TableRow>
@@ -101,14 +101,18 @@ export default function SalesReturnsIndex({ returns, filters }: Props) {
                         <TableBody>
                             {returns.data.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                                    <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                                         No sales returns yet.
                                     </TableCell>
                                 </TableRow>
                             )}
                             {returns.data.map((row, index) => (
                                 <TableRow key={row.id} {...rowProps(index)}>
-                                    <TableCell className="font-medium">{row.return_number}</TableCell>
+                                    <TableCell className="font-medium">
+                                        <Link href={route('returns.sales.show', row.id)} className="hover:underline">
+                                            {row.return_number}
+                                        </Link>
+                                    </TableCell>
                                     <TableCell>
                                         {row.invoice ? (
                                             <Link href={route('sales.edit', row.invoice.id)} className="hover:underline">
@@ -121,8 +125,15 @@ export default function SalesReturnsIndex({ returns, filters }: Props) {
                                         <div className="text-xs text-muted-foreground">{row.customer?.city}</div>
                                     </TableCell>
                                     <TableCell>{shortDate(row.return_date)}</TableCell>
+                                    <TableCell>
+                                        <Badge variant={row.status === 'cancelled' ? 'destructive' : 'default'}>
+                                            {row.status}
+                                        </Badge>
+                                    </TableCell>
                                     <TableCell className="text-sm text-muted-foreground">{row.reason || '—'}</TableCell>
-                                    <TableCell className="text-right tabular-nums">{money(row.total_amount)}</TableCell>
+                                    <TableCell className={`text-right tabular-nums ${row.status === 'cancelled' ? 'text-muted-foreground line-through' : ''}`}>
+                                        {money(row.total_amount)}
+                                    </TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>

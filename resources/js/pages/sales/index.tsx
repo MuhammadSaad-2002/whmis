@@ -12,7 +12,7 @@ import { money, shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { Head, Link, router } from '@inertiajs/react';
-import { Plus, Printer, Search } from 'lucide-react';
+import { FileText, Plus, Printer, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface InvoiceRow {
@@ -21,6 +21,7 @@ interface InvoiceRow {
     invoice_date: string;
     sale_type: string;
     status: string;
+    return_status?: string;
     total_amount: string;
     total_profit: string;
     customer?: { id: number; name: string; city: string | null };
@@ -36,6 +37,11 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Sales', href: '/sales' }];
 
 const statusVariant = (status: string) =>
     status === 'posted' ? 'default' : status === 'cancelled' ? 'destructive' : 'secondary';
+
+const returnBadge: Record<string, string> = {
+    partially_returned: 'Partially Returned',
+    fully_returned: 'Fully Returned',
+};
 
 export default function SalesIndex({ invoices, customers, filters }: Props) {
     const { can } = usePermissions();
@@ -151,14 +157,30 @@ export default function SalesIndex({ invoices, customers, filters }: Props) {
                                         {invoice.status === 'posted' ? money(invoice.total_profit) : '—'}
                                     </TableCell>
                                     <TableCell>
-                                        <Badge variant={statusVariant(invoice.status)}>{invoice.status}</Badge>
+                                        <div className="flex flex-col items-start gap-1">
+                                            <Badge variant={statusVariant(invoice.status)}>{invoice.status}</Badge>
+                                            {invoice.status === 'posted' && invoice.return_status && returnBadge[invoice.return_status] && (
+                                                <Badge variant="outline" className="text-amber-600">
+                                                    {returnBadge[invoice.return_status]}
+                                                </Badge>
+                                            )}
+                                        </div>
                                     </TableCell>
                                     <TableCell>
-                                        <Button variant="ghost" size="icon" asChild title="Print">
-                                            <a href={route('sales.print', invoice.id)} target="_blank" rel="noreferrer">
-                                                <Printer className="size-4" />
-                                            </a>
-                                        </Button>
+                                        <div className="flex">
+                                            {invoice.status !== 'draft' && (
+                                                <Button variant="ghost" size="icon" asChild title="Summary">
+                                                    <Link href={route('sales.summary', invoice.id)}>
+                                                        <FileText className="size-4" />
+                                                    </Link>
+                                                </Button>
+                                            )}
+                                            <Button variant="ghost" size="icon" asChild title="Print">
+                                                <a href={route('sales.print', invoice.id)} target="_blank" rel="noreferrer">
+                                                    <Printer className="size-4" />
+                                                </a>
+                                            </Button>
+                                        </div>
                                     </TableCell>
                                 </TableRow>
                             ))}

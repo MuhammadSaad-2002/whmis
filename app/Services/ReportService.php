@@ -11,6 +11,8 @@ use App\Models\PurchaseInvoice;
 use App\Models\PurchaseInvoiceItem;
 use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceItem;
+use App\Models\SalesReturn;
+use App\Models\SalesReturnItem;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 
@@ -81,6 +83,14 @@ class ReportService
             ->whereDate('invoice_date', '<=', $to);
     }
 
+    /** Valid (non-cancelled) sales returns in a period, for netting reports. */
+    private function postedReturns(Carbon $from, Carbon $to)
+    {
+        return SalesReturn::where('status', SalesReturn::STATUS_POSTED)
+            ->whereDate('return_date', '>=', $from)
+            ->whereDate('return_date', '<=', $to);
+    }
+
     private function salesRegister(Carbon $from, Carbon $to, array $filters): array
     {
         $invoices = $this->postedSales($from, $to)
@@ -89,53 +99,97 @@ class ReportService
             ->orderBy('invoice_date')->orderBy('id')
             ->get();
 
+        // Net each listed invoice by all of its valid returns (regardless of the
+        // return's own date) so the register shows the true final sale.
+        $returns = SalesReturn::where('status', SalesReturn::STATUS_POSTED)
+            ->whereIn('sales_invoice_id', $invoices->pluck('id'))
+            ->get()
+            ->groupBy('sales_invoice_id');
+
+        $rows = $invoices->map(function ($invoice) use ($returns) {
+            $ret = $returns[$invoice->id] ?? collect();
+            $retAmount = (float) $ret->sum('total_amount');
+            $retCost = (float) $ret->sum('total_cost');
+            $gross = (float) $invoice->total_amount;
+
+            return [
+                'invoice_number' => $invoice->invoice_number,
+                'invoice_date' => $invoice->invoice_date->toDateString(),
+                'customer' => $invoice->customer?->name,
+                'sale_type' => ucwords(str_replace('_', ' ', $invoice->sale_type)),
+                'total_amount' => $gross,
+                'returns' => round($retAmount, 2),
+                'net_amount' => round($gross - $retAmount, 2),
+                'net_profit' => round((float) $invoice->total_profit - ($retAmount - $retCost), 2),
+            ];
+        });
+
         return [
             'columns' => [
                 ['key' => 'invoice_number', 'label' => 'Invoice #'],
                 ['key' => 'invoice_date', 'label' => 'Date', 'format' => 'date'],
                 ['key' => 'customer', 'label' => 'Customer'],
                 ['key' => 'sale_type', 'label' => 'Type'],
-                ['key' => 'total_amount', 'label' => 'Total', 'align' => 'right', 'format' => 'money'],
-                ['key' => 'total_profit', 'label' => 'Profit', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'total_amount', 'label' => 'Gross', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'returns', 'label' => 'Returns', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'net_amount', 'label' => 'Net', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'net_profit', 'label' => 'Net Profit', 'align' => 'right', 'format' => 'money'],
             ],
-            'rows' => $invoices->map(fn ($invoice) => [
-                'invoice_number' => $invoice->invoice_number,
-                'invoice_date' => $invoice->invoice_date->toDateString(),
-                'customer' => $invoice->customer?->name,
-                'sale_type' => ucwords(str_replace('_', ' ', $invoice->sale_type)),
-                'total_amount' => (float) $invoice->total_amount,
-                'total_profit' => (float) $invoice->total_profit,
-            ])->all(),
+            'rows' => $rows->all(),
             'totals' => [
-                'total_amount' => (float) $invoices->sum('total_amount'),
-                'total_profit' => (float) $invoices->sum('total_profit'),
+                'total_amount' => (float) $rows->sum('total_amount'),
+                'returns' => (float) $rows->sum('returns'),
+                'net_amount' => (float) $rows->sum('net_amount'),
+                'net_profit' => (float) $rows->sum('net_profit'),
             ],
         ];
     }
 
     private function productSales(Carbon $from, Carbon $to, array $filters): array
     {
-        $items = SalesInvoiceItem::query()
+        $companyId = $filters['company_id'] ?? null;
+
+        $sold = SalesInvoiceItem::query()
             ->whereHas('invoice', fn ($q) => $q->where('status', 'posted')
                 ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to))
-            ->when($filters['company_id'] ?? null, fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id)))
+            ->when($companyId, fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id)))
             ->with('product:id,name,company_id', 'product.company:id,name')
             ->get()
             ->groupBy('product_id');
 
-        $rows = $items->map(function ($group) {
-            $first = $group->first();
+        $returned = SalesReturnItem::query()
+            ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED)
+                ->whereDate('return_date', '>=', $from)->whereDate('return_date', '<=', $to))
+            ->when($companyId, fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id)))
+            ->with('product:id,name,company_id', 'product.company:id,name')
+            ->get()
+            ->groupBy('product_id');
+
+        $rows = $sold->keys()->merge($returned->keys())->unique()->map(function ($productId) use ($sold, $returned) {
+            $soldGroup = $sold[$productId] ?? collect();
+            $retGroup = $returned[$productId] ?? collect();
+            $product = ($soldGroup->first() ?? $retGroup->first())->product;
+
+            $grossQty = (float) $soldGroup->sum('quantity');
+            $retQty = (float) $retGroup->sum('quantity');
+            $grossRev = (float) $soldGroup->sum('net_amount');
+            $retRev = (float) $retGroup->sum('net_amount');
+            $retCost = (float) $retGroup->sum('cost_amount');
 
             return [
-                'product' => $first->product?->name,
-                'supplier' => $first->product?->company?->name,
-                'qty' => (float) $group->sum('quantity'),
-                'bonus' => (float) $group->sum('bonus_quantity'),
-                'revenue' => (float) $group->sum('net_amount'),
-                'cost' => round((float) $group->sum('cost_amount'), 2),
-                'profit' => (float) $group->sum('profit'),
+                'product' => $product?->name,
+                'supplier' => $product?->company?->name,
+                'qty' => $grossQty,
+                'bonus' => (float) $soldGroup->sum('bonus_quantity'),
+                'returned_qty' => $retQty,
+                'net_qty' => round($grossQty - $retQty, 2),
+                'revenue' => round($grossRev, 2),
+                'returns' => round($retRev, 2),
+                'net_revenue' => round($grossRev - $retRev, 2),
+                'net_cost' => round((float) $soldGroup->sum('cost_amount') - $retCost, 2),
+                'net_profit' => round((float) $soldGroup->sum('profit') - ($retRev - $retCost), 2),
             ];
-        })->sortByDesc('revenue')->values();
+        })->sortByDesc('net_revenue')->values();
 
         return [
             'columns' => [
@@ -143,17 +197,25 @@ class ReportService
                 ['key' => 'supplier', 'label' => 'Supplier'],
                 ['key' => 'qty', 'label' => 'Qty Sold', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'bonus', 'label' => 'Bonus Given', 'align' => 'right', 'format' => 'qty'],
-                ['key' => 'revenue', 'label' => 'Revenue', 'align' => 'right', 'format' => 'money'],
-                ['key' => 'cost', 'label' => 'Cost', 'align' => 'right', 'format' => 'money'],
-                ['key' => 'profit', 'label' => 'Profit', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'returned_qty', 'label' => 'Qty Returned', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'net_qty', 'label' => 'Net Qty', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'revenue', 'label' => 'Gross Revenue', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'returns', 'label' => 'Returns', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'net_revenue', 'label' => 'Net Revenue', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'net_cost', 'label' => 'Net Cost', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'net_profit', 'label' => 'Net Profit', 'align' => 'right', 'format' => 'money'],
             ],
             'rows' => $rows->all(),
             'totals' => [
                 'qty' => (float) $rows->sum('qty'),
                 'bonus' => (float) $rows->sum('bonus'),
+                'returned_qty' => (float) $rows->sum('returned_qty'),
+                'net_qty' => (float) $rows->sum('net_qty'),
                 'revenue' => (float) $rows->sum('revenue'),
-                'cost' => (float) $rows->sum('cost'),
-                'profit' => (float) $rows->sum('profit'),
+                'returns' => (float) $rows->sum('returns'),
+                'net_revenue' => (float) $rows->sum('net_revenue'),
+                'net_cost' => (float) $rows->sum('net_cost'),
+                'net_profit' => (float) $rows->sum('net_profit'),
             ],
         ];
     }
@@ -161,34 +223,50 @@ class ReportService
     private function customerSales(Carbon $from, Carbon $to): array
     {
         $invoices = $this->postedSales($from, $to)->with('customer:id,name,city')->get()->groupBy('customer_id');
+        $returns = $this->postedReturns($from, $to)->with('customer:id,name,city')->get()->groupBy('customer_id');
 
-        $rows = $invoices->map(function ($group) {
-            $customer = $group->first()->customer;
+        $customerIds = $invoices->keys()->merge($returns->keys())->filter()->unique();
+        $customers = Customer::whereIn('id', $customerIds)->get()->keyBy('id');
+
+        $rows = $customerIds->map(function ($customerId) use ($invoices, $returns, $customers) {
+            $invGroup = $invoices[$customerId] ?? collect();
+            $retGroup = $returns[$customerId] ?? collect();
+            $customer = $customers[$customerId] ?? $invGroup->first()?->customer ?? $retGroup->first()?->customer;
+
+            $grossRev = (float) $invGroup->sum('total_amount');
+            $retRev = (float) $retGroup->sum('total_amount');
+            $retCost = (float) $retGroup->sum('total_cost');
 
             return [
                 'customer' => $customer?->name,
                 'city' => $customer?->city,
-                'invoices' => $group->count(),
-                'revenue' => (float) $group->sum('total_amount'),
-                'profit' => (float) $group->sum('total_profit'),
+                'invoices' => $invGroup->count(),
+                'revenue' => round($grossRev, 2),
+                'returns' => round($retRev, 2),
+                'net_revenue' => round($grossRev - $retRev, 2),
+                'net_profit' => round((float) $invGroup->sum('total_profit') - ($retRev - $retCost), 2),
                 'outstanding' => $customer ? $this->ledger->outstanding($customer) : 0,
             ];
-        })->sortByDesc('revenue')->values();
+        })->sortByDesc('net_revenue')->values();
 
         return [
             'columns' => [
                 ['key' => 'customer', 'label' => 'Customer'],
                 ['key' => 'city', 'label' => 'City'],
                 ['key' => 'invoices', 'label' => 'Invoices', 'align' => 'right', 'format' => 'qty'],
-                ['key' => 'revenue', 'label' => 'Revenue', 'align' => 'right', 'format' => 'money'],
-                ['key' => 'profit', 'label' => 'Profit', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'revenue', 'label' => 'Gross Revenue', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'returns', 'label' => 'Returns', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'net_revenue', 'label' => 'Net Revenue', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'net_profit', 'label' => 'Net Profit', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'outstanding', 'label' => 'Outstanding', 'align' => 'right', 'format' => 'money'],
             ],
             'rows' => $rows->all(),
             'totals' => [
                 'invoices' => (int) $rows->sum('invoices'),
                 'revenue' => (float) $rows->sum('revenue'),
-                'profit' => (float) $rows->sum('profit'),
+                'returns' => (float) $rows->sum('returns'),
+                'net_revenue' => (float) $rows->sum('net_revenue'),
+                'net_profit' => (float) $rows->sum('net_profit'),
                 'outstanding' => (float) $rows->sum('outstanding'),
             ],
         ];
@@ -197,30 +275,49 @@ class ReportService
     private function bookerSales(Carbon $from, Carbon $to): array
     {
         $invoices = $this->postedSales($from, $to)->with('customer:id,name,booker_id')->get();
-        $bookers = User::whereIn('id', $invoices->pluck('customer.booker_id')->filter())->pluck('name', 'id');
+        $returns = $this->postedReturns($from, $to)->with('customer:id,booker_id')->get();
 
-        $rows = $invoices
-            ->groupBy(fn ($invoice) => $invoice->customer?->booker_id ?? 0)
-            ->map(fn ($group, $bookerId) => [
+        $bookerIds = $invoices->pluck('customer.booker_id')
+            ->merge($returns->pluck('customer.booker_id'))->filter()->unique();
+        $bookers = User::whereIn('id', $bookerIds)->pluck('name', 'id');
+
+        $invByBooker = $invoices->groupBy(fn ($invoice) => $invoice->customer?->booker_id ?? 0);
+        $retByBooker = $returns->groupBy(fn ($return) => $return->customer?->booker_id ?? 0);
+
+        $rows = $invByBooker->keys()->merge($retByBooker->keys())->unique()->map(function ($bookerId) use ($invByBooker, $retByBooker, $bookers) {
+            $invGroup = $invByBooker[$bookerId] ?? collect();
+            $retGroup = $retByBooker[$bookerId] ?? collect();
+
+            $grossRev = (float) $invGroup->sum('total_amount');
+            $retRev = (float) $retGroup->sum('total_amount');
+            $retCost = (float) $retGroup->sum('total_cost');
+
+            return [
                 'booker' => $bookerId ? ($bookers[$bookerId] ?? "User #{$bookerId}") : '— Unassigned —',
-                'invoices' => $group->count(),
-                'revenue' => (float) $group->sum('total_amount'),
-                'profit' => (float) $group->sum('total_profit'),
-            ])
-            ->sortByDesc('revenue')->values();
+                'invoices' => $invGroup->count(),
+                'revenue' => round($grossRev, 2),
+                'returns' => round($retRev, 2),
+                'net_revenue' => round($grossRev - $retRev, 2),
+                'net_profit' => round((float) $invGroup->sum('total_profit') - ($retRev - $retCost), 2),
+            ];
+        })->sortByDesc('net_revenue')->values();
 
         return [
             'columns' => [
                 ['key' => 'booker', 'label' => 'Booker'],
                 ['key' => 'invoices', 'label' => 'Invoices', 'align' => 'right', 'format' => 'qty'],
-                ['key' => 'revenue', 'label' => 'Revenue', 'align' => 'right', 'format' => 'money'],
-                ['key' => 'profit', 'label' => 'Profit', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'revenue', 'label' => 'Gross Revenue', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'returns', 'label' => 'Returns', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'net_revenue', 'label' => 'Net Revenue', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'net_profit', 'label' => 'Net Profit', 'align' => 'right', 'format' => 'money'],
             ],
             'rows' => $rows->all(),
             'totals' => [
                 'invoices' => (int) $rows->sum('invoices'),
                 'revenue' => (float) $rows->sum('revenue'),
-                'profit' => (float) $rows->sum('profit'),
+                'returns' => (float) $rows->sum('returns'),
+                'net_revenue' => (float) $rows->sum('net_revenue'),
+                'net_profit' => (float) $rows->sum('net_profit'),
             ],
         ];
     }
@@ -518,39 +615,56 @@ class ReportService
             ->get(['invoice_date', 'total_amount', 'total_cost', 'total_profit'])
             ->groupBy(fn ($invoice) => $invoice->invoice_date->format('Y-m'));
 
-        $rows = collect(range(0, 11))->map(function ($offset) use ($start, $invoices) {
+        $returns = SalesReturn::where('status', SalesReturn::STATUS_POSTED)
+            ->whereDate('return_date', '>=', $start)
+            ->get(['return_date', 'total_amount', 'total_cost'])
+            ->groupBy(fn ($return) => $return->return_date->format('Y-m'));
+
+        $rows = collect(range(0, 11))->map(function ($offset) use ($start, $invoices, $returns) {
             $month = $start->copy()->addMonths($offset);
             $key = $month->format('Y-m');
             $group = $invoices[$key] ?? collect();
-            $sales = (float) $group->sum('total_amount');
-            $profit = (float) $group->sum('total_profit');
+            $ret = $returns[$key] ?? collect();
+
+            $grossSales = (float) $group->sum('total_amount');
+            $retSales = (float) $ret->sum('total_amount');
+            $retCost = (float) $ret->sum('total_cost');
+
+            $netSales = round($grossSales - $retSales, 2);
+            $netProfit = round((float) $group->sum('total_profit') - ($retSales - $retCost), 2);
 
             return [
                 'month' => $month->format('M Y'),
-                'sales' => $sales,
-                'cost' => (float) $group->sum('total_cost'),
-                'profit' => $profit,
-                'margin_pct' => $sales > 0 ? round($profit / $sales * 100, 1) : 0,
+                'sales' => round($grossSales, 2),
+                'returns' => round($retSales, 2),
+                'net_sales' => $netSales,
+                'cost' => round((float) $group->sum('total_cost') - $retCost, 2),
+                'profit' => $netProfit,
+                'margin_pct' => $netSales > 0 ? round($netProfit / $netSales * 100, 1) : 0,
             ];
         });
 
         return [
             'columns' => [
                 ['key' => 'month', 'label' => 'Month'],
-                ['key' => 'sales', 'label' => 'Sales', 'align' => 'right', 'format' => 'money'],
-                ['key' => 'cost', 'label' => 'Cost', 'align' => 'right', 'format' => 'money'],
-                ['key' => 'profit', 'label' => 'Profit', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'sales', 'label' => 'Gross Sales', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'returns', 'label' => 'Returns', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'net_sales', 'label' => 'Net Sales', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'cost', 'label' => 'Net Cost', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'profit', 'label' => 'Net Profit', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'margin_pct', 'label' => 'Margin %', 'align' => 'right', 'format' => 'pct'],
             ],
             'rows' => $rows->all(),
             'totals' => [
                 'sales' => (float) $rows->sum('sales'),
+                'returns' => (float) $rows->sum('returns'),
+                'net_sales' => (float) $rows->sum('net_sales'),
                 'cost' => (float) $rows->sum('cost'),
                 'profit' => (float) $rows->sum('profit'),
             ],
             'chart' => $rows->map(fn ($row) => [
                 'label' => $row['month'],
-                'sales' => $row['sales'],
+                'sales' => $row['net_sales'],
                 'profit' => $row['profit'],
             ])->all(),
         ];

@@ -11,6 +11,7 @@ use App\Services\InventoryService;
 use App\Services\InvoicePostingService;
 use App\Services\MarginCalculator;
 use App\Services\NumberSeriesService;
+use App\Services\SaleNetPositionService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,7 @@ class SalesInvoiceController extends Controller
         private readonly NumberSeriesService $numbers,
         private readonly InvoicePostingService $posting,
         private readonly InventoryService $inventory,
+        private readonly SaleNetPositionService $netPosition,
     ) {}
 
     /** Reserve every line's batch stock for a freshly saved draft. */
@@ -68,6 +70,10 @@ class SalesInvoiceController extends Controller
             ->latest('invoice_date')->latest('id')
             ->paginate(15)
             ->withQueryString();
+
+        // Surface the derived return lifecycle so the list can badge posted
+        // invoices as partially / fully returned.
+        $invoices->getCollection()->each->append('return_status');
 
         return Inertia::render('sales/index', [
             'invoices' => $invoices,
@@ -215,6 +221,38 @@ class SalesInvoiceController extends Controller
         return Pdf::loadView('pdf.sales-invoice', ['invoice' => $sale])
             ->setPaper('a4')
             ->stream("{$sale->invoice_number}.pdf");
+    }
+
+    /** Read-only summary of a posted invoice: original → returns → net position. */
+    public function summary(SalesInvoice $sale)
+    {
+        abort_if($sale->isDraft(), 404);
+
+        $sale->load([
+            'items.product:id,name',
+            'items.batch:id,batch_number',
+            'customer:id,name,city',
+            'warehouse:id,name',
+            'returns.creator:id,name',
+            'returns.cancelledBy:id,name',
+        ]);
+
+        return Inertia::render('sales/summary', [
+            'invoice' => $sale,
+            'position' => $this->netPosition->positionFor($sale),
+        ]);
+    }
+
+    public function netPositionPdf(SalesInvoice $sale)
+    {
+        abort_if($sale->isDraft(), 404);
+
+        $sale->load(['items.product.company', 'items.batch', 'customer', 'warehouse', 'returns']);
+
+        return Pdf::loadView('pdf.sales-net-position', [
+            'invoice' => $sale,
+            'position' => $this->netPosition->positionFor($sale),
+        ])->setPaper('a4')->stream("{$sale->invoice_number}-net-position.pdf");
     }
 
     private function validated(Request $request, ?SalesInvoice $existing = null): array

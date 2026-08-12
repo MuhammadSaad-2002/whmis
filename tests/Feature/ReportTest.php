@@ -87,8 +87,8 @@ class ReportTest extends TestCase
             ->where('rows.0.qty', 20)
             ->where('rows.0.bonus', 2)
             ->where('rows.0.revenue', 2000)
-            ->where('rows.0.cost', 1760)
-            ->where('rows.0.profit', 240)
+            ->where('rows.0.net_cost', 1760)
+            ->where('rows.0.net_profit', 240)
             ->where('totals.revenue', 2000));
     }
 
