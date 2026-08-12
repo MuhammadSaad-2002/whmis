@@ -45,7 +45,7 @@ const navGroups: { label: string; items: PermittedNavItem[] }[] = [
         label: 'Finance',
         items: [
             { title: 'Payments', url: '/payments', icon: Banknote, permission: 'payments.view' },
-            { title: 'Outstanding', url: '/ledger/outstanding', icon: BookUser, permission: 'ledger.view' },
+            { title: 'Financial Position', url: '/ledger/position', icon: BookUser, permission: 'ledger.view' },
         ],
     },
     {

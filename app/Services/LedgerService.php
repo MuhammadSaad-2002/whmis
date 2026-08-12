@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\LedgerEntry;
+use App\Models\Payment;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -107,6 +108,111 @@ class LedgerService
         $buckets['total'] = round(array_sum($buckets), 2);
 
         return $buckets;
+    }
+
+    /**
+     * Consolidated two-sided money picture: receivables (customers owe us),
+     * payables (we owe suppliers), a chronological payments log, and totals.
+     *
+     * Balances are current/all-time (Σ debit − credit). Aging is as of $to.
+     * Per-party "paid" and the payments log cover [$from, $to].
+     */
+    public function financialPosition(?Carbon $from = null, ?Carbon $to = null): array
+    {
+        $to = ($to ?? now())->copy()->endOfDay();
+        $from = ($from ?? now()->startOfMonth())->copy()->startOfDay();
+
+        // One query for every completed payment in the window; used for both the
+        // log and each party's "paid in period" (grouped by party) — no N+1.
+        $payments = Payment::with('party')
+            ->where('status', 'completed')
+            ->whereBetween('payment_date', [$from, $to])
+            ->orderBy('payment_date')
+            ->orderBy('id')
+            ->get();
+
+        $paidByParty = $payments->groupBy(fn (Payment $p) => $p->party_type.':'.$p->party_id)
+            ->map(fn ($group) => (float) $group->sum('amount'));
+
+        $paidFor = fn (Customer|Company $party) => round(
+            $paidByParty->get($party->getMorphClass().':'.$party->getKey(), 0.0), 2
+        );
+
+        $receivables = Customer::active()
+            ->withSum('ledgerEntries as debit_sum', 'debit')
+            ->withSum('ledgerEntries as credit_sum', 'credit')
+            ->orderBy('name')
+            ->get()
+            ->map(function (Customer $customer) use ($to, $paidFor) {
+                $balance = round((float) $customer->debit_sum - (float) $customer->credit_sum, 2);
+
+                return [
+                    'id' => $customer->id,
+                    'name' => $customer->name,
+                    'city' => $customer->city,
+                    'phone' => $customer->phone,
+                    'credit_limit' => (float) $customer->credit_limit,
+                    'balance' => $balance,
+                    'aging' => $balance > 0 ? $this->aging($customer, $to) : null,
+                    'paid' => $paidFor($customer),
+                ];
+            })
+            ->filter(fn ($row) => $row['balance'] != 0.0)
+            ->sortByDesc('balance')
+            ->values();
+
+        $payables = Company::active()
+            ->withSum('ledgerEntries as debit_sum', 'debit')
+            ->withSum('ledgerEntries as credit_sum', 'credit')
+            ->orderBy('name')
+            ->get()
+            ->map(function (Company $company) use ($to, $paidFor) {
+                $balance = round((float) $company->credit_sum - (float) $company->debit_sum, 2);
+
+                return [
+                    'id' => $company->id,
+                    'name' => $company->name,
+                    'city' => $company->city,
+                    'balance' => $balance,
+                    'aging' => $balance > 0 ? $this->aging($company, $to) : null,
+                    'paid' => $paidFor($company),
+                ];
+            })
+            ->filter(fn ($row) => $row['balance'] != 0.0)
+            ->sortByDesc('balance')
+            ->values();
+
+        $log = $payments->map(fn (Payment $p) => [
+            'id' => $p->id,
+            'number' => $p->payment_number,
+            'date' => Carbon::parse($p->payment_date)->toDateString(),
+            'direction' => $p->direction, // 'in' = customer receipt, 'out' = supplier payment
+            'party_type' => $p->party_type,
+            'party_id' => $p->party_id,
+            'party_name' => $p->party?->name,
+            'method' => $p->method,
+            'amount' => (float) $p->amount,
+        ])->values();
+
+        $received = round((float) $payments->where('direction', Payment::DIRECTION_IN)->sum('amount'), 2);
+        $paid = round((float) $payments->where('direction', Payment::DIRECTION_OUT)->sum('amount'), 2);
+        $totalReceivable = round((float) $receivables->sum('balance'), 2);
+        $totalPayable = round((float) $payables->sum('balance'), 2);
+
+        return [
+            'receivables' => $receivables->all(),
+            'payables' => $payables->all(),
+            'payments' => $log->all(),
+            'totals' => [
+                'total_receivable' => $totalReceivable,
+                'total_payable' => $totalPayable,
+                'net' => round($totalReceivable - $totalPayable, 2),
+                'customer_count' => $receivables->count(),
+                'supplier_count' => $payables->count(),
+                'received' => $received,
+                'paid' => $paid,
+            ],
+        ];
     }
 
     /**

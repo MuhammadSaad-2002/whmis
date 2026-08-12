@@ -134,7 +134,7 @@ class HttpSmokeTest extends TestCase
             ['inventory.batches', [], 'inventory/batches'],
             ['inventory.movements', [], 'inventory/movements'],
             ['payments.index', [], 'payments/index'],
-            ['ledger.outstanding', [], 'ledger/outstanding'],
+            ['ledger.position', [], 'ledger/position'],
             ['ledger.customer', [$customer], 'ledger/party'],
             ['ledger.supplier', [$company], 'ledger/party'],
         ];
@@ -239,7 +239,7 @@ class HttpSmokeTest extends TestCase
         $warehouse->assignRole('Warehouse Staff');
         $this->actingAs($warehouse);
         $this->get(route('inventory.index'))->assertOk();
-        $this->get(route('ledger.outstanding'))->assertForbidden();
+        $this->get(route('ledger.position'))->assertForbidden();
     }
 
     public function test_draft_lifecycle_edit_and_cancel_rules(): void

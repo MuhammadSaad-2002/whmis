@@ -70,31 +70,26 @@ class LedgerController extends Controller
         ])->setPaper('a4')->stream("statement-{$company->id}.pdf");
     }
 
-    /** Outstanding receivables overview with aging per customer. */
-    public function outstanding()
+    /** Consolidated receivables + payables + payments log with totals. */
+    public function position(Request $request)
     {
-        $customers = Customer::active()
-            ->withSum('ledgerEntries as debit_sum', 'debit')
-            ->withSum('ledgerEntries as credit_sum', 'credit')
-            ->orderBy('name')
-            ->get()
-            ->map(function (Customer $customer) {
-                $balance = round((float) $customer->debit_sum - (float) $customer->credit_sum, 2);
+        [$from, $to] = $this->range($request);
 
-                return [
-                    'id' => $customer->id,
-                    'name' => $customer->name,
-                    'city' => $customer->city,
-                    'phone' => $customer->phone,
-                    'credit_limit' => (float) $customer->credit_limit,
-                    'balance' => $balance,
-                    'aging' => $balance > 0 ? $this->ledger->aging($customer) : null,
-                ];
-            })
-            ->filter(fn ($row) => $row['balance'] != 0.0)
-            ->values();
+        return Inertia::render('ledger/position', [
+            'data' => $this->ledger->financialPosition($from, $to),
+            'filters' => $request->only('from', 'to'),
+        ]);
+    }
 
-        return Inertia::render('ledger/outstanding', ['customers' => $customers]);
+    public function positionPdf(Request $request)
+    {
+        [$from, $to] = $this->range($request);
+
+        return Pdf::loadView('pdf.financial-position', [
+            'data' => $this->ledger->financialPosition($from, $to),
+            'from' => $from ?? Carbon::now()->startOfMonth(),
+            'to' => $to ?? Carbon::now(),
+        ])->setPaper('a4', 'landscape')->stream('financial-position.pdf');
     }
 
     private function range(Request $request): array

@@ -161,7 +161,8 @@ Route::middleware(['auth'])->group(function () {
     });
 
     Route::middleware('can:ledger.view')->group(function () {
-        Route::get('ledger/outstanding', [LedgerController::class, 'outstanding'])->name('ledger.outstanding');
+        Route::get('ledger/position', [LedgerController::class, 'position'])->name('ledger.position');
+        Route::get('ledger/position/pdf', [LedgerController::class, 'positionPdf'])->name('ledger.position.pdf');
         Route::get('ledger/customers/{customer}', [LedgerController::class, 'customer'])->name('ledger.customer');
         Route::get('ledger/customers/{customer}/pdf', [LedgerController::class, 'customerStatementPdf'])->name('ledger.customer.pdf');
         Route::get('ledger/suppliers/{company}', [LedgerController::class, 'company'])->name('ledger.supplier');
