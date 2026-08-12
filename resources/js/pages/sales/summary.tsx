@@ -98,7 +98,7 @@ export default function SalesSummary({ invoice, position }: Props) {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title={`${invoice.invoice_number} — Summary`} />
-            <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4">
+            <div className="flex h-full w-full flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2 border-b pb-4">
                     <div>
                         <div className="flex items-center gap-2">
