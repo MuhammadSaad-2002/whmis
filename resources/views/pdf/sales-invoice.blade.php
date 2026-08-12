@@ -67,7 +67,7 @@
                     <td class="num">{{ number_format((float) $item->quantity, 0) }}</td>
                     <td class="num">{{ number_format((float) $item->bonus_quantity, 0) }}</td>
                     <td class="num">{{ number_format((float) $item->trade_price, 2) }}</td>
-                    <td class="num">{{ number_format((float) $item->discount_amount, 2) }}</td>
+                    <td class="num">{{ number_format((float) $item->discount_amount, 2) }}@if((float) $item->discount_percent > 0) ({{ (float) $item->discount_percent }}%)@endif</td>
                     <td class="num">{{ number_format((float) $item->gst_amount, 2) }}</td>
                     <td class="num">{{ number_format((float) $item->net_amount, 2) }}</td>
                 </tr>
