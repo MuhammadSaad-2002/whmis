@@ -52,7 +52,7 @@
         <tbody>
             @forelse($data['receivables'] as $c)
                 <tr>
-                    <td>{{ $c['name'] }}</td>
+                    <td>{{ $c['name'] }}@if($c['balance'] == 0) <em>(settled)</em>@endif</td>
                     <td>{{ $c['city'] ?? '—' }}</td>
                     <td class="num">{{ number_format($c['balance'], 2) }}</td>
                     <td class="num">{{ $c['aging'] ? number_format($c['aging']['current'], 2) : '—' }}</td>
@@ -87,7 +87,7 @@
         <tbody>
             @forelse($data['payables'] as $s)
                 <tr>
-                    <td>{{ $s['name'] }}</td>
+                    <td>{{ $s['name'] }}@if($s['balance'] == 0) <em>(settled)</em>@endif</td>
                     <td>{{ $s['city'] ?? '—' }}</td>
                     <td class="num">{{ number_format($s['balance'], 2) }}</td>
                     <td class="num">{{ $s['aging'] ? number_format($s['aging']['current'], 2) : '—' }}</td>

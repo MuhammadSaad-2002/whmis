@@ -55,6 +55,8 @@ interface Totals {
     net: number;
     customer_count: number;
     supplier_count: number;
+    settled_customer_count: number;
+    settled_supplier_count: number;
     received: number;
     paid: number;
 }
@@ -114,12 +116,18 @@ export default function FinancialPosition({ data, filters }: Props) {
                     <div className="rounded-xl border p-4">
                         <div className="text-xs text-muted-foreground">Due from Customers</div>
                         <div className="text-2xl font-bold tabular-nums text-emerald-600">{money(totals.total_receivable)}</div>
-                        <div className="text-xs text-muted-foreground">{totals.customer_count} customers</div>
+                        <div className="text-xs text-muted-foreground">
+                            {totals.customer_count} customers
+                            {totals.settled_customer_count > 0 && ` · +${totals.settled_customer_count} settled`}
+                        </div>
                     </div>
                     <div className="rounded-xl border p-4">
                         <div className="text-xs text-muted-foreground">Owed to Suppliers</div>
                         <div className="text-2xl font-bold tabular-nums text-red-600">{money(totals.total_payable)}</div>
-                        <div className="text-xs text-muted-foreground">{totals.supplier_count} suppliers</div>
+                        <div className="text-xs text-muted-foreground">
+                            {totals.supplier_count} suppliers
+                            {totals.settled_supplier_count > 0 && ` · +${totals.settled_supplier_count} settled`}
+                        </div>
                     </div>
                     <div className="rounded-xl border p-4">
                         <div className="text-xs text-muted-foreground">Net Position</div>
@@ -163,14 +171,17 @@ export default function FinancialPosition({ data, filters }: Props) {
                                         return (
                                             <TableRow key={c.id}>
                                                 <TableCell>
-                                                    <Link href={route('ledger.customer', c.id)} className="font-medium hover:underline">
-                                                        {c.name}
-                                                    </Link>
+                                                    <div className="flex items-center gap-2">
+                                                        <Link href={route('ledger.customer', c.id)} className="font-medium hover:underline">
+                                                            {c.name}
+                                                        </Link>
+                                                        {c.balance === 0 && <Badge variant="secondary">Settled</Badge>}
+                                                    </div>
                                                     <div className="text-xs text-muted-foreground">{c.phone}</div>
                                                 </TableCell>
                                                 <TableCell>{c.city ?? '—'}</TableCell>
                                                 <TableCell className="text-right tabular-nums">
-                                                    <span className={overLimit ? 'font-semibold text-destructive' : 'font-medium'}>{amount(c.balance)}</span>
+                                                    <span className={overLimit ? 'font-semibold text-destructive' : 'font-medium'}>{c.balance === 0 ? '—' : amount(c.balance)}</span>
                                                 </TableCell>
                                                 <TableCell className="text-right tabular-nums">{c.aging ? amount(c.aging.current) : '—'}</TableCell>
                                                 <TableCell className="text-right tabular-nums">{c.aging ? amount(c.aging['31_60']) : '—'}</TableCell>
@@ -231,12 +242,15 @@ export default function FinancialPosition({ data, filters }: Props) {
                                     {payables.map((s) => (
                                         <TableRow key={s.id}>
                                             <TableCell>
-                                                <Link href={route('ledger.supplier', s.id)} className="font-medium hover:underline">
-                                                    {s.name}
-                                                </Link>
+                                                <div className="flex items-center gap-2">
+                                                    <Link href={route('ledger.supplier', s.id)} className="font-medium hover:underline">
+                                                        {s.name}
+                                                    </Link>
+                                                    {s.balance === 0 && <Badge variant="secondary">Settled</Badge>}
+                                                </div>
                                             </TableCell>
                                             <TableCell>{s.city ?? '—'}</TableCell>
-                                            <TableCell className="text-right font-medium tabular-nums">{amount(s.balance)}</TableCell>
+                                            <TableCell className="text-right font-medium tabular-nums">{s.balance === 0 ? '—' : amount(s.balance)}</TableCell>
                                             <TableCell className="text-right tabular-nums">{s.aging ? amount(s.aging.current) : '—'}</TableCell>
                                             <TableCell className="text-right tabular-nums">{s.aging ? amount(s.aging['31_60']) : '—'}</TableCell>
                                             <TableCell className="text-right tabular-nums">{s.aging ? amount(s.aging['61_90']) : '—'}</TableCell>

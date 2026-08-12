@@ -117,6 +117,77 @@ class FinancialPositionTest extends TestCase
         $this->assertEqualsWithDelta(3000.0, $pay['paid'], 0.01);
     }
 
+    /** Sale then full receipt in the period → balance 0, paid = full. */
+    private function settleCustomer(Customer $customer, float $qty = 10): void
+    {
+        $today = now()->toDateString();
+        $sale = SalesInvoice::create([
+            'invoice_number' => app(NumberSeriesService::class)->next('sales_invoice'),
+            'customer_id' => $customer->id, 'warehouse_id' => 1,
+            'invoice_date' => $today, 'sale_type' => 'credit',
+        ]);
+        $sale->items()->create([
+            'product_id' => $this->product->id, 'quantity' => $qty,
+            'trade_price' => 100, 'discount_percent' => 0, 'gst_percent' => 0,
+        ]);
+        app(InvoicePostingService::class)->postSale($sale->refresh());
+        app(PaymentService::class)->record($customer, [
+            'method' => 'cash', 'amount' => $qty * 100, 'payment_date' => $today,
+        ]);
+    }
+
+    public function test_settled_party_active_in_period_is_shown_but_counted_separately(): void
+    {
+        $this->seedMoney(); // City Pharmacy outstanding 1500; Getz payable 5000.
+
+        $settled = Customer::create(['name' => 'Paid Off Pharmacy']);
+        $this->settleCustomer($settled); // sale 1000, receipt 1000 → balance 0.
+
+        $data = app(LedgerService::class)->financialPosition(Carbon::now()->startOfMonth(), Carbon::now());
+
+        // Both customers listed: one outstanding, one settled.
+        $this->assertCount(2, $data['receivables']);
+
+        // Counts split outstanding vs settled.
+        $this->assertSame(1, $data['totals']['customer_count']);
+        $this->assertSame(1, $data['totals']['settled_customer_count']);
+
+        // Settled row: zero balance, full paid-in-period, no aging, sorted last.
+        $settledRow = collect($data['receivables'])->firstWhere('name', 'Paid Off Pharmacy');
+        $this->assertEqualsWithDelta(0.0, $settledRow['balance'], 0.01);
+        $this->assertEqualsWithDelta(1000.0, $settledRow['paid'], 0.01);
+        $this->assertNull($settledRow['aging']);
+        $this->assertSame('Paid Off Pharmacy', $data['receivables'][1]['name']);
+
+        // total_receivable unaffected by the settled row.
+        $this->assertEqualsWithDelta(1500.0, $data['totals']['total_receivable'], 0.01);
+    }
+
+    public function test_party_settled_before_the_period_is_excluded(): void
+    {
+        $settled = Customer::create(['name' => 'Paid Off Pharmacy']);
+        // Give it stock to sell, then settle today.
+        $purchase = PurchaseInvoice::create([
+            'invoice_number' => app(NumberSeriesService::class)->next('purchase_invoice'),
+            'company_id' => $this->company->id, 'warehouse_id' => 1,
+            'invoice_date' => now()->toDateString(), 'purchase_type' => 'cash',
+        ]);
+        $purchase->items()->create([
+            'product_id' => $this->product->id, 'batch_number' => 'B1',
+            'quantity' => 100, 'purchase_rate' => 80, 'trade_price' => 100,
+        ]);
+        app(InvoicePostingService::class)->postPurchase($purchase->refresh());
+        $this->settleCustomer($settled);
+
+        // Filter to next month: no payment in window, balance already 0 → excluded.
+        $from = Carbon::now()->addMonth()->startOfMonth();
+        $to = Carbon::now()->addMonth()->endOfMonth();
+        $data = app(LedgerService::class)->financialPosition($from, $to);
+
+        $this->assertCount(0, $data['receivables']);
+        $this->assertSame(0, $data['totals']['settled_customer_count']);
+    }
+
     public function test_payments_log_lists_both_directions(): void
     {
         $this->seedMoney();

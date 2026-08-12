@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\Customer;
 use App\Models\LedgerEntry;
 use App\Models\Payment;
+use App\Models\PurchaseInvoice;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -157,8 +158,10 @@ class LedgerService
                     'paid' => $paidFor($customer),
                 ];
             })
-            ->filter(fn ($row) => $row['balance'] != 0.0)
-            ->sortByDesc('balance')
+            // Keep outstanding parties plus any settled in the period (paid > 0).
+            ->filter(fn ($row) => $row['balance'] != 0.0 || $row['paid'] != 0.0)
+            // Outstanding first (largest balance), settled rows last.
+            ->sortBy(fn ($row) => [$row['balance'] == 0.0 ? 1 : 0, -$row['balance']])
             ->values();
 
         $payables = Company::active()
@@ -178,8 +181,10 @@ class LedgerService
                     'paid' => $paidFor($company),
                 ];
             })
-            ->filter(fn ($row) => $row['balance'] != 0.0)
-            ->sortByDesc('balance')
+            // Keep outstanding parties plus any settled in the period (paid > 0).
+            ->filter(fn ($row) => $row['balance'] != 0.0 || $row['paid'] != 0.0)
+            // Outstanding first (largest balance), settled rows last.
+            ->sortBy(fn ($row) => [$row['balance'] == 0.0 ? 1 : 0, -$row['balance']])
             ->values();
 
         $log = $payments->map(fn (Payment $p) => [
@@ -207,8 +212,11 @@ class LedgerService
                 'total_receivable' => $totalReceivable,
                 'total_payable' => $totalPayable,
                 'net' => round($totalReceivable - $totalPayable, 2),
-                'customer_count' => $receivables->count(),
-                'supplier_count' => $payables->count(),
+                // Counts cover outstanding parties only; settled shown separately.
+                'customer_count' => $receivables->where('balance', '!=', 0.0)->count(),
+                'supplier_count' => $payables->where('balance', '!=', 0.0)->count(),
+                'settled_customer_count' => $receivables->where('balance', '==', 0.0)->count(),
+                'settled_supplier_count' => $payables->where('balance', '==', 0.0)->count(),
                 'received' => $received,
                 'paid' => $paid,
             ],
@@ -242,11 +250,18 @@ class LedgerService
         $rows = $entries->map(function (LedgerEntry $entry) use (&$running) {
             $running += (float) $entry->debit - (float) $entry->credit;
 
+            // For purchases, prefer the supplier's own invoice number (the
+            // reference we entered) over our internal PI- number.
+            $ref = $entry->reference;
+            $description = ($ref instanceof PurchaseInvoice && filled($ref->supplier_invoice_number))
+                ? "Supplier Inv {$ref->supplier_invoice_number}"
+                : $entry->description;
+
             return [
                 'id' => $entry->id,
                 'date' => $entry->entry_date->toDateString(),
                 'type' => $entry->entry_type,
-                'description' => $entry->description,
+                'description' => $description,
                 'debit' => (float) $entry->debit,
                 'credit' => (float) $entry->credit,
                 'balance' => round($running, 2),
