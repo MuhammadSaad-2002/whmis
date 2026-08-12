@@ -556,7 +556,19 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                                             className="h-8 w-full truncate px-2 text-left text-sm outline-none focus:ring-1 focus:ring-ring disabled:opacity-70"
                                         >
                                             {row.applied_rule_name
-                                                ? <Badge variant="outline" className="max-w-full truncate">{row.applied_rule_name}</Badge>
+                                                ? <Badge variant="outline" className="max-w-full gap-1 pr-1">
+                                                      <span className="truncate">{row.applied_rule_name}</span>
+                                                      {!readonly && (
+                                                          <span
+                                                              role="button"
+                                                              tabIndex={-1}
+                                                              onClick={(e) => { e.stopPropagation(); applyRule(rowIndex, null); }}
+                                                              className="rounded-sm hover:text-destructive"
+                                                          >
+                                                              <X className="size-3" />
+                                                          </span>
+                                                      )}
+                                                  </Badge>
                                                 : <span className="text-muted-foreground">F4…</span>}
                                         </button>
                                     </td>
@@ -656,8 +668,12 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                 customerId={header.customer_id ? Number(header.customer_id) : null}
                 qty={toNumber(activeRowData?.quantity)}
                 price={toNumber(activeRowData?.trade_price)}
-                appliedRuleId={activeRowData?.applied_rule_id ?? null}
-                onApply={(rule) => applyRule(activeRow, rule)}
+                onAdd={(rule) => {
+                    // Bookings carry a single rule per line: picking one replaces it.
+                    applyRule(activeRow, rule);
+                    setRuleOpen(false);
+                }}
+                onRemove={() => applyRule(activeRow, null)}
             />
         </AppLayout>
     );

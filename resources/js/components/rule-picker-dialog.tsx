@@ -26,7 +26,7 @@ interface Props {
     customerId: number | null;
     qty: number;
     price: number;
-    applied: RuleHit[]; // rules already stacked on this line
+    applied?: RuleHit[]; // rules already stacked on this line (single-rule callers omit)
     onAdd: (rule: RuleHit) => void;
     onRemove: (rule: RuleHit) => void;
 }
@@ -40,7 +40,7 @@ function effectLabel(effect: RuleHit['effect']): string {
     return parts.join(' · ') || 'no effect at this qty';
 }
 
-export function RulePickerDialog({ open, onOpenChange, productId, customerId, qty, price, applied, onAdd, onRemove }: Props) {
+export function RulePickerDialog({ open, onOpenChange, productId, customerId, qty, price, applied = [], onAdd, onRemove }: Props) {
     const [rules, setRules] = useState<RuleHit[]>([]);
     const [loading, setLoading] = useState(false);
 
