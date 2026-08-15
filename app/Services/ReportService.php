@@ -35,6 +35,7 @@ class ReportService
         return [
             'sales-register' => ['title' => 'Sales Register', 'category' => 'Sales', 'description' => 'Every posted sales invoice in a period', 'filters' => ['date_range', 'customer']],
             'product-sales' => ['title' => 'Product Sales & Profitability', 'category' => 'Sales', 'description' => 'Qty, bonus given, revenue, cost, profit per product', 'filters' => ['date_range', 'supplier']],
+            'product-sales-daily' => ['title' => 'Daily Product Sales', 'category' => 'Sales', 'description' => 'Per product, per day: qty, bonus given, revenue, cost and profit (net of returns). Cost includes the bonus units shipped free, so profit is true.', 'filters' => ['date_range', 'supplier', 'product']],
             'customer-sales' => ['title' => 'Customer Sales & Profitability', 'category' => 'Sales', 'description' => 'Revenue, profit, and outstanding per pharmacy', 'filters' => ['date_range']],
             'booker-sales' => ['title' => 'Booker Sales', 'category' => 'Sales', 'description' => 'Sales attributed to each booker via assigned customers', 'filters' => ['date_range']],
             'incentives-given' => ['title' => 'Incentives Given', 'category' => 'Sales', 'description' => 'Incentive rules granted to customers: times applied, invoices, and Rs value', 'filters' => ['date_range', 'customer']],
@@ -58,6 +59,7 @@ class ReportService
         return match ($key) {
             'sales-register' => $this->salesRegister($from, $to, $filters),
             'product-sales' => $this->productSales($from, $to, $filters),
+            'product-sales-daily' => $this->productSalesDaily($from, $to, $filters),
             'customer-sales' => $this->customerSales($from, $to),
             'booker-sales' => $this->bookerSales($from, $to),
             'incentives-given' => $this->incentivesGiven($from, $to, $filters),
@@ -222,6 +224,103 @@ class ReportService
                 'net_revenue' => (float) $rows->sum('net_revenue'),
                 'net_cost' => (float) $rows->sum('net_cost'),
                 'net_profit' => (float) $rows->sum('net_profit'),
+            ],
+        ];
+    }
+
+    /**
+     * Daily Product Sales — one row per product per day, net of returns.
+     *
+     * Cost/profit come straight from the posted sale items, where cost_amount is
+     * the FIFO cost of quantity + bonus_quantity (bonus units ship free but are
+     * still costed in InvoicePostingService::postSale). So profit = net revenue −
+     * COGS of every unit shipped, and the free bonus units correctly pull profit
+     * down — they are never treated as zero-cost. Returns are netted by their own
+     * return_date bucket (bonus is not netted; returns rarely carry bonus units).
+     */
+    private function productSalesDaily(Carbon $from, Carbon $to, array $filters): array
+    {
+        $companyId = $filters['company_id'] ?? null;
+        $productId = $filters['product_id'] ?? null;
+
+        $byCompany = fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id));
+        $byProduct = fn ($q, $id) => $q->where('product_id', $id);
+
+        // Sales, bucketed by product × invoice date.
+        $sold = SalesInvoiceItem::query()
+            ->whereHas('invoice', fn ($q) => $q->where('status', 'posted')
+                ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to))
+            ->when($companyId, $byCompany)
+            ->when($productId, $byProduct)
+            ->with('invoice:id,invoice_date', 'product:id,name,company_id', 'product.company:id,name')
+            ->get()
+            ->groupBy(fn ($item) => $item->product_id.'|'.$item->invoice->invoice_date->toDateString());
+
+        // Returns, bucketed by product × return date.
+        $returned = SalesReturnItem::query()
+            ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED)
+                ->whereDate('return_date', '>=', $from)->whereDate('return_date', '<=', $to))
+            ->when($companyId, $byCompany)
+            ->when($productId, $byProduct)
+            ->with('salesReturn:id,return_date', 'product:id,name,company_id', 'product.company:id,name')
+            ->get()
+            ->groupBy(fn ($item) => $item->product_id.'|'.$item->salesReturn->return_date->toDateString());
+
+        $rows = $sold->keys()->merge($returned->keys())->unique()
+            ->map(function ($key) use ($sold, $returned) {
+                [$productId, $date] = explode('|', $key);
+                $soldGroup = $sold[$key] ?? collect();
+                $retGroup = $returned[$key] ?? collect();
+                $product = ($soldGroup->first() ?? $retGroup->first())->product;
+
+                $soldRev = (float) $soldGroup->sum('net_amount');
+                $retRev = (float) $retGroup->sum('net_amount');
+                $soldCost = (float) $soldGroup->sum('cost_amount');
+                $retCost = (float) $retGroup->sum('cost_amount');
+
+                $revenue = round($soldRev - $retRev, 2);
+                $cost = round($soldCost - $retCost, 2);
+                // Same netting the other profit reports use: return profit is
+                // (retRev − retCost), removed from the day's sale profit.
+                $profit = round((float) $soldGroup->sum('profit') - ($retRev - $retCost), 2);
+
+                return [
+                    'date' => $date,
+                    'product' => $product?->name,
+                    'supplier' => $product?->company?->name,
+                    'qty' => round((float) $soldGroup->sum('quantity') - (float) $retGroup->sum('quantity'), 2),
+                    'bonus' => (float) $soldGroup->sum('bonus_quantity'),
+                    'revenue' => $revenue,
+                    'cost' => $cost,
+                    'profit' => $profit,
+                    'margin_pct' => $revenue > 0 ? round($profit / $revenue * 100, 2) : 0.0,
+                ];
+            })
+            ->sortBy(fn ($row) => [$row['product'], $row['date']])->values();
+
+        $totalRevenue = round((float) $rows->sum('revenue'), 2);
+        $totalProfit = round((float) $rows->sum('profit'), 2);
+
+        return [
+            'columns' => [
+                ['key' => 'date', 'label' => 'Date', 'format' => 'date'],
+                ['key' => 'product', 'label' => 'Product'],
+                ['key' => 'supplier', 'label' => 'Supplier'],
+                ['key' => 'qty', 'label' => 'Qty', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'bonus', 'label' => 'Bonus', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'revenue', 'label' => 'Revenue', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'cost', 'label' => 'Cost', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'profit', 'label' => 'Profit', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'margin_pct', 'label' => 'Margin %', 'align' => 'right', 'format' => 'pct'],
+            ],
+            'rows' => $rows->all(),
+            'totals' => [
+                'qty' => round((float) $rows->sum('qty'), 2),
+                'bonus' => (float) $rows->sum('bonus'),
+                'revenue' => $totalRevenue,
+                'cost' => round((float) $rows->sum('cost'), 2),
+                'profit' => $totalProfit,
+                'margin_pct' => $totalRevenue > 0 ? round($totalProfit / $totalRevenue * 100, 2) : 0.0,
             ],
         ];
     }
