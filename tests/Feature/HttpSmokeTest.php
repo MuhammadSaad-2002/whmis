@@ -119,6 +119,7 @@ class HttpSmokeTest extends TestCase
 
         // --- Pages render with correct Inertia components
         $pages = [
+            ['workspace', [], 'workspace/index'],
             ['dashboard', [], 'dashboard'],
             ['suppliers.index', [], 'suppliers/index'],
             ['categories.index', [], 'categories/index'],

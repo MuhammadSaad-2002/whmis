@@ -21,10 +21,14 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SalesInvoiceController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
-Route::get('/', fn () => redirect()->route('dashboard'))->name('home');
+Route::get('/', fn () => redirect()->route('workspace'))->name('home');
 
 Route::middleware(['auth'])->group(function () {
+    // Tabbed workspace shell: hosts every page as an in-app browser tab.
+    Route::get('workspace', fn () => Inertia::render('workspace/index'))->name('workspace');
+
     Route::get('dashboard', DashboardController::class)
         ->middleware('can:dashboard.view')->name('dashboard');
 

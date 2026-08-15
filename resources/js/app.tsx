@@ -5,6 +5,7 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot } from 'react-dom/client';
 import { route as routeFn } from 'ziggy-js';
 import { initializeTheme } from './hooks/use-appearance';
+import { initEmbeddedNav } from './lib/embedded';
 import { installEnterToNext } from './lib/enter-to-next';
 
 declare global {
@@ -31,3 +32,7 @@ initializeTheme();
 
 // Enter moves to the next field in all forms (desktop accounting behavior).
 installEnterToNext();
+
+// When running inside a workspace tab (iframe), escalate cross-page navigations
+// to the shell so they open/focus a tab instead of navigating within the frame.
+initEmbeddedNav();
