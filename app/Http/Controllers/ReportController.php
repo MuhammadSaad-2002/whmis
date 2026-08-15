@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exports\ReportExport;
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\Product;
 use App\Services\ReportService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -31,7 +32,7 @@ class ReportController extends Controller
         abort_unless(isset($catalog[$key]), 404);
 
         $meta = $catalog[$key];
-        $filters = $request->only('from', 'to', 'customer_id', 'company_id', 'expiry_window', 'order');
+        $filters = $request->only('from', 'to', 'customer_id', 'company_id', 'product_id', 'expiry_window', 'order');
         $data = $this->reports->build($key, $filters);
 
         if ($request->format === 'xlsx') {
@@ -72,6 +73,8 @@ class ReportController extends Controller
                     ? Customer::active()->orderBy('name')->get(['id', 'name']) : [],
                 'suppliers' => in_array('supplier', $meta['filters'])
                     ? Company::active()->orderBy('name')->get(['id', 'name']) : [],
+                'products' => in_array('product', $meta['filters'])
+                    ? Product::orderBy('name')->get(['id', 'name']) : [],
             ],
         ]);
     }

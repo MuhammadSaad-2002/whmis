@@ -14,6 +14,7 @@ use App\Models\SalesInvoiceItem;
 use App\Models\SalesInvoiceItemIncentive;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnItem;
+use App\Models\StockMovement;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 
@@ -41,6 +42,7 @@ class ReportService
             'supplier-purchases' => ['title' => 'Supplier Purchases', 'category' => 'Purchases', 'description' => 'Purchase volume and margin per supplier', 'filters' => ['date_range']],
             'bonus-analysis' => ['title' => 'Bonus Analysis', 'category' => 'Purchases', 'description' => 'Bonus received vs bonus given away per product', 'filters' => ['date_range']],
             'stock-position' => ['title' => 'Stock Position', 'category' => 'Inventory', 'description' => 'Current stock and value at cost', 'filters' => ['supplier']],
+            'stock-movement' => ['title' => 'Stock Movement', 'category' => 'Inventory', 'description' => 'Per-product opening, in/out, bonus given & received, closing and value at cost', 'filters' => ['date_range', 'supplier', 'product']],
             'expiry' => ['title' => 'Expiry Report', 'category' => 'Inventory', 'description' => 'In-stock batches by expiry window', 'filters' => ['expiry_window']],
             'slow-fast-moving' => ['title' => 'Slow / Fast Moving', 'category' => 'Inventory', 'description' => 'Products ranked by quantity sold in a period', 'filters' => ['date_range', 'order']],
             'outstanding' => ['title' => 'Outstanding & Aging', 'category' => 'Financial', 'description' => 'Receivables per customer with aging buckets', 'filters' => []],
@@ -63,6 +65,7 @@ class ReportService
             'supplier-purchases' => $this->supplierPurchases($from, $to),
             'bonus-analysis' => $this->bonusAnalysis($from, $to),
             'stock-position' => $this->stockPosition($filters),
+            'stock-movement' => $this->stockMovement($from, $to, $filters),
             'expiry' => $this->expiry($filters),
             'slow-fast-moving' => $this->slowFastMoving($from, $to, $filters),
             'outstanding' => $this->outstanding(),
@@ -561,6 +564,137 @@ class ReportService
             'totals' => [
                 'qty' => (float) $batches->sum('qty_available'),
                 'value' => round($batches->sum(fn ($b) => (float) $b->qty_available * (float) $b->effective_cost), 2),
+            ],
+        ];
+    }
+
+    /**
+     * Per-product stock movement ("stock card"). stock_movements is the append-only
+     * truth and reconciles to qty_available, so opening/closing come from signed
+     * movement sums. Bonus is folded into each sale/purchase movement quantity, so
+     * the bonus_in/bonus_out columns are overlaid from the source invoice items to
+     * expose how much of the in/out flow was free — the user reads billed = sold −
+     * bonus_out and confirms the give-away is deducted from stock and costed.
+     *
+     * Note: `value` is the CURRENT on-hand value at cost (Σ qty_available ×
+     * effective_cost, same as Stock Position) — exact when run to today; `closing`
+     * qty is the movement-derived figure as of `to`.
+     */
+    private function stockMovement(Carbon $from, Carbon $to, array $filters): array
+    {
+        $companyId = $filters['company_id'] ?? null;
+        $productId = $filters['product_id'] ?? null;
+        $start = $from->copy()->startOfDay();
+        $end = $to->copy()->endOfDay();
+
+        $byCompany = fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id));
+
+        // Opening on-hand per product = signed sum of every movement before the window.
+        $opening = StockMovement::query()
+            ->where('created_at', '<', $start)
+            ->when($productId, fn ($q, $id) => $q->where('product_id', $id))
+            ->when($companyId, $byCompany)
+            ->selectRaw('product_id, SUM(quantity) as qty')
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        // In-range movements bucketed by type per product.
+        $inRange = StockMovement::query()
+            ->whereBetween('created_at', [$start, $end])
+            ->when($productId, fn ($q, $id) => $q->where('product_id', $id))
+            ->when($companyId, $byCompany)
+            ->selectRaw('product_id, type, SUM(quantity) as qty')
+            ->groupBy('product_id', 'type')
+            ->get()
+            ->groupBy('product_id');
+
+        // Bonus received (purchases) / given (sales) per product, from the source items.
+        $bonusIn = PurchaseInvoiceItem::query()
+            ->whereHas('invoice', fn ($q) => $q->where('status', 'posted')
+                ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to))
+            ->when($productId, fn ($q, $id) => $q->where('product_id', $id))
+            ->when($companyId, $byCompany)
+            ->selectRaw('product_id, SUM(bonus_quantity) as qty')
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $bonusOut = SalesInvoiceItem::query()
+            ->whereHas('invoice', fn ($q) => $q->where('status', 'posted')
+                ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to))
+            ->when($productId, fn ($q, $id) => $q->where('product_id', $id))
+            ->when($companyId, $byCompany)
+            ->selectRaw('product_id, SUM(bonus_quantity) as qty')
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        // Product meta + current value at cost (same subquery as stock-position).
+        $products = Product::query()
+            ->select('products.*')
+            ->with('company:id,name')
+            ->when($productId, fn ($q, $id) => $q->where('id', $id))
+            ->when($companyId, fn ($q, $id) => $q->where('company_id', $id))
+            ->addSelect([
+                'stock_value' => Batch::selectRaw('COALESCE(SUM(qty_available * effective_cost), 0)')
+                    ->whereColumn('batches.product_id', 'products.id'),
+            ])
+            ->get()
+            ->keyBy('id');
+
+        // One row per product with any opening balance or in-range movement, kept
+        // within the product/company filter set.
+        $rows = $opening->keys()->merge($inRange->keys())->unique()
+            ->filter(fn ($id) => $products->has($id))
+            ->map(function ($id) use ($opening, $inRange, $bonusIn, $bonusOut, $products) {
+                $product = $products[$id];
+                $open = (float) ($opening[$id] ?? 0);
+                $byType = ($inRange[$id] ?? collect())->keyBy('type');
+
+                $purchased = (float) ($byType->get('purchase')?->qty ?? 0);
+                $sold = -(float) ($byType->get('sale')?->qty ?? 0); // stored negative → show positive out
+                // Sale returns, purchase returns, manual adjustments and reservations
+                // all net here so closing foots to the movement truth.
+                $adjustments = (float) ($inRange[$id] ?? collect())
+                    ->whereNotIn('type', ['purchase', 'sale'])
+                    ->sum('qty');
+
+                return [
+                    'product' => $product->name,
+                    'supplier' => $product->company?->name,
+                    'opening' => round($open, 2),
+                    'purchased' => round($purchased, 2),
+                    'bonus_in' => (float) ($bonusIn[$id] ?? 0),
+                    'sold' => round($sold, 2),
+                    'bonus_out' => (float) ($bonusOut[$id] ?? 0),
+                    'adjustments' => round($adjustments, 2),
+                    'closing' => round($open + $purchased - $sold + $adjustments, 2),
+                    'value' => round((float) ($product->stock_value ?? 0), 2),
+                ];
+            })
+            ->sortBy('product')->values();
+
+        return [
+            'columns' => [
+                ['key' => 'product', 'label' => 'Product'],
+                ['key' => 'supplier', 'label' => 'Supplier'],
+                ['key' => 'opening', 'label' => 'Opening', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'purchased', 'label' => 'Purchased (In)', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'bonus_in', 'label' => 'Bonus In', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'sold', 'label' => 'Sold (Out)', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'bonus_out', 'label' => 'Bonus Out', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'adjustments', 'label' => 'Returns/Adj', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'closing', 'label' => 'Closing Qty', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'value', 'label' => 'Value at Cost', 'align' => 'right', 'format' => 'money'],
+            ],
+            'rows' => $rows->all(),
+            'totals' => [
+                'opening' => round((float) $rows->sum('opening'), 2),
+                'purchased' => round((float) $rows->sum('purchased'), 2),
+                'bonus_in' => (float) $rows->sum('bonus_in'),
+                'sold' => round((float) $rows->sum('sold'), 2),
+                'bonus_out' => (float) $rows->sum('bonus_out'),
+                'adjustments' => round((float) $rows->sum('adjustments'), 2),
+                'closing' => round((float) $rows->sum('closing'), 2),
+                'value' => round((float) $rows->sum('value'), 2),
             ],
         ];
     }

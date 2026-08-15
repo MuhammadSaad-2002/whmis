@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SearchableSelect } from '@/components/searchable-select';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -29,7 +30,7 @@ interface Props {
     totals: Record<string, number>;
     chart: TrendPoint[] | null;
     filterValues: Record<string, string | undefined>;
-    options: { customers: Option[]; suppliers: Option[] };
+    options: { customers: Option[]; suppliers: Option[]; products: Option[] };
 }
 
 function formatCell(value: string | number | null, format?: Column['format']): string {
@@ -133,6 +134,23 @@ export default function ReportShow({ report, columns, rows, totals, chart, filte
                                 ))}
                             </SelectContent>
                         </Select>
+                    )}
+                    {has('product') && (
+                        <div className="w-64">
+                            <SearchableSelect
+                                value={filterValues.product_id ?? 'all'}
+                                onValueChange={(v) => applyFilter({ product_id: v === 'all' ? undefined : v })}
+                                options={[
+                                    { value: 'all', label: 'All products' },
+                                    ...options.products.map((option) => ({
+                                        value: String(option.id),
+                                        label: option.name,
+                                    })),
+                                ]}
+                                placeholder="Product"
+                                searchPlaceholder="Search products…"
+                            />
+                        </div>
                     )}
                     {has('expiry_window') && (
                         <Select

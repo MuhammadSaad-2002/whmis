@@ -32,7 +32,7 @@ export default function LedgerParty({ party, partyType, statement, aging, outsta
     const baseUrl = isCustomer ? `/ledger/customers/${party.id}` : `/ledger/suppliers/${party.id}`;
 
     const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Ledger', href: '/ledger/outstanding' },
+        { title: 'Ledger', href: route('ledger.position') },
         { title: party.name, href: baseUrl },
     ];
 
