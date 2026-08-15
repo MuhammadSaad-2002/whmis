@@ -118,11 +118,11 @@ class ReportStockMovementTest extends TestCase
         $this->assertEqualsWithDelta(0.0, $row['opening'], 0.001);
         $this->assertEqualsWithDelta(12.0, $row['purchased'], 0.001);
         $this->assertEqualsWithDelta(2.0, $row['bonus_in'], 0.001);
-        $this->assertEqualsWithDelta(12.0, $row['sold'], 0.001);
+        // 12 units left stock via the sale, split into 10 billed + 2 free bonus.
+        $this->assertEqualsWithDelta(10.0, $row['billed'], 0.001);
         $this->assertEqualsWithDelta(2.0, $row['bonus_out'], 0.001);
+        $this->assertEqualsWithDelta(12.0, $row['billed'] + $row['bonus_out'], 0.001);
         $this->assertEqualsWithDelta(0.0, $row['closing'], 0.001);
-        // Billed units the customer paid for = sold − bonus out.
-        $this->assertEqualsWithDelta(10.0, $row['sold'] - $row['bonus_out'], 0.001);
         // Everything left the batch, so on-hand value at cost is zero.
         $this->assertEqualsWithDelta(0.0, $row['value'], 0.001);
     }
@@ -157,7 +157,8 @@ class ReportStockMovementTest extends TestCase
 
         $row = $this->report()['rows'][0];
         $this->assertEqualsWithDelta(100.0, $row['purchased'], 0.001);
-        $this->assertEqualsWithDelta(10.0, $row['sold'], 0.001);
+        $this->assertEqualsWithDelta(10.0, $row['billed'], 0.001);
+        $this->assertEqualsWithDelta(0.0, $row['bonus_out'], 0.001);
         // The cancellation counter-entry lands in adjustments and offsets the sale
         // so closing still foots to the 100 units on hand.
         $this->assertEqualsWithDelta(100.0, $row['closing'], 0.001);

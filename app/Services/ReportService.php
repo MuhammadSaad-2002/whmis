@@ -42,7 +42,7 @@ class ReportService
             'supplier-purchases' => ['title' => 'Supplier Purchases', 'category' => 'Purchases', 'description' => 'Purchase volume and margin per supplier', 'filters' => ['date_range']],
             'bonus-analysis' => ['title' => 'Bonus Analysis', 'category' => 'Purchases', 'description' => 'Bonus received vs bonus given away per product', 'filters' => ['date_range']],
             'stock-position' => ['title' => 'Stock Position', 'category' => 'Inventory', 'description' => 'Current stock and value at cost', 'filters' => ['supplier']],
-            'stock-movement' => ['title' => 'Stock Movement', 'category' => 'Inventory', 'description' => 'Per-product opening, in/out, bonus given & received, closing and value at cost', 'filters' => ['date_range', 'supplier', 'product']],
+            'stock-movement' => ['title' => 'Stock Movement', 'category' => 'Inventory', 'description' => 'Per-product opening, purchases, billed vs bonus units sold, closing and value at cost', 'filters' => ['date_range', 'supplier', 'product']],
             'expiry' => ['title' => 'Expiry Report', 'category' => 'Inventory', 'description' => 'In-stock batches by expiry window', 'filters' => ['expiry_window']],
             'slow-fast-moving' => ['title' => 'Slow / Fast Moving', 'category' => 'Inventory', 'description' => 'Products ranked by quantity sold in a period', 'filters' => ['date_range', 'order']],
             'outstanding' => ['title' => 'Outstanding & Aging', 'category' => 'Financial', 'description' => 'Receivables per customer with aging buckets', 'filters' => []],
@@ -572,9 +572,10 @@ class ReportService
      * Per-product stock movement ("stock card"). stock_movements is the append-only
      * truth and reconciles to qty_available, so opening/closing come from signed
      * movement sums. Bonus is folded into each sale/purchase movement quantity, so
-     * the bonus_in/bonus_out columns are overlaid from the source invoice items to
-     * expose how much of the in/out flow was free — the user reads billed = sold −
-     * bonus_out and confirms the give-away is deducted from stock and costed.
+     * the bonus columns are overlaid from the source invoice items to expose how
+     * much of the in/out flow was free. Out is split into Billed (Out) + Bonus (Out)
+     * so the two add up to the units that left stock: the bonus give-away is deducted
+     * from stock (inside the sale movement) yet billed to no one.
      *
      * Note: `value` is the CURRENT on-hand value at cost (Σ qty_available ×
      * effective_cost, same as Stock Position) — exact when run to today; `closing`
@@ -657,15 +658,23 @@ class ReportService
                     ->whereNotIn('type', ['purchase', 'sale'])
                     ->sum('qty');
 
+                // Bonus is folded into the sale movement, so `sold` = billed + bonus
+                // that physically left stock. Split it: Billed (Out) is what the
+                // customer paid for, Bonus (Out) is the free units given away.
+                $bonusUnitsOut = (float) ($bonusOut[$id] ?? 0);
+                $billed = $sold - $bonusUnitsOut;
+
                 return [
                     'product' => $product->name,
                     'supplier' => $product->company?->name,
                     'opening' => round($open, 2),
                     'purchased' => round($purchased, 2),
                     'bonus_in' => (float) ($bonusIn[$id] ?? 0),
-                    'sold' => round($sold, 2),
-                    'bonus_out' => (float) ($bonusOut[$id] ?? 0),
+                    'billed' => round($billed, 2),
+                    'bonus_out' => $bonusUnitsOut,
                     'adjustments' => round($adjustments, 2),
+                    // Billed + Bonus = every unit that left via sales, so closing
+                    // still foots to the movement truth (qty_available).
                     'closing' => round($open + $purchased - $sold + $adjustments, 2),
                     'value' => round((float) ($product->stock_value ?? 0), 2),
                 ];
@@ -679,8 +688,8 @@ class ReportService
                 ['key' => 'opening', 'label' => 'Opening', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'purchased', 'label' => 'Purchased (In)', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'bonus_in', 'label' => 'Bonus In', 'align' => 'right', 'format' => 'qty'],
-                ['key' => 'sold', 'label' => 'Sold (Out)', 'align' => 'right', 'format' => 'qty'],
-                ['key' => 'bonus_out', 'label' => 'Bonus Out', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'billed', 'label' => 'Billed (Out)', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'bonus_out', 'label' => 'Bonus (Out)', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'adjustments', 'label' => 'Returns/Adj', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'closing', 'label' => 'Closing Qty', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'value', 'label' => 'Value at Cost', 'align' => 'right', 'format' => 'money'],
@@ -690,7 +699,7 @@ class ReportService
                 'opening' => round((float) $rows->sum('opening'), 2),
                 'purchased' => round((float) $rows->sum('purchased'), 2),
                 'bonus_in' => (float) $rows->sum('bonus_in'),
-                'sold' => round((float) $rows->sum('sold'), 2),
+                'billed' => round((float) $rows->sum('billed'), 2),
                 'bonus_out' => (float) $rows->sum('bonus_out'),
                 'adjustments' => round((float) $rows->sum('adjustments'), 2),
                 'closing' => round((float) $rows->sum('closing'), 2),
