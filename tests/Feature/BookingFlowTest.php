@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Booking;
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\IncentiveRule;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
 use App\Models\SalesInvoice;
@@ -214,6 +215,84 @@ class BookingFlowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('0.name', '10+2 Panadol')
             ->assertJsonPath('0.effect.bonus_qty', 4);
+    }
+
+    public function test_stacking_rules_on_a_booking_line_folds_discount_bonus_and_records_child_rows(): void
+    {
+        $percent = IncentiveRule::create([
+            'name' => '10% off', 'rule_type' => 'percent_discount', 'value' => 10,
+            'product_id' => $this->product->id, 'active' => true,
+        ]);
+        $bonus = IncentiveRule::create([
+            'name' => '10+2', 'rule_type' => 'qty_bonus', 'base_qty' => 10, 'bonus_qty' => 2,
+            'product_id' => $this->product->id, 'active' => true,
+        ]);
+
+        $this->actingAs($this->booker);
+        $this->post(route('bookings.store'), [
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => 1,
+            'booking_date' => now()->toDateString(),
+            'items' => [[
+                'product_id' => $this->product->id,
+                'quantity' => 20,
+                'trade_price' => 100,
+                'discount_percent' => 0,
+                'incentive_rule_ids' => [$percent->id, $bonus->id],
+            ]],
+        ])->assertRedirect()->assertSessionHas('success');
+
+        $item = Booking::latest('id')->firstOrFail()->items()->firstOrFail();
+
+        // 20 @ 100 = gross 2000. 10% discount = 200. Bonus: 20/10*2 = 4.
+        $this->assertEqualsWithDelta(200.0, (float) $item->incentive_discount, 0.001);
+        $this->assertEqualsWithDelta(200.0, (float) $item->discount_amount, 0.001);
+        $this->assertEqualsWithDelta(1800.0, (float) $item->net_amount, 0.001);
+        $this->assertEqualsWithDelta(4.0, (float) $item->requested_bonus, 0.001);
+
+        $this->assertSame(2, $item->incentives()->count());
+        $bonusRow = $item->incentives()->where('rule_type', 'qty_bonus')->firstOrFail();
+        $this->assertEqualsWithDelta(400.0, (float) $bonusRow->value_given, 0.001); // 4 * 100
+    }
+
+    public function test_conversion_carries_stacked_incentives_onto_the_sale(): void
+    {
+        $percent = IncentiveRule::create([
+            'name' => '10% off', 'rule_type' => 'percent_discount', 'value' => 10,
+            'product_id' => $this->product->id, 'active' => true,
+        ]);
+        $bonus = IncentiveRule::create([
+            'name' => '10+2', 'rule_type' => 'qty_bonus', 'base_qty' => 10, 'bonus_qty' => 2,
+            'product_id' => $this->product->id, 'active' => true,
+        ]);
+
+        $this->actingAs($this->booker);
+        $this->post(route('bookings.store'), [
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => 1,
+            'booking_date' => now()->toDateString(),
+            'items' => [[
+                'product_id' => $this->product->id,
+                'quantity' => 20,
+                'trade_price' => 100,
+                'discount_percent' => 0,
+                'incentive_rule_ids' => [$percent->id, $bonus->id],
+            ]],
+        ]);
+        $booking = Booking::latest('id')->firstOrFail();
+        $this->post(route('bookings.submit', $booking));
+
+        $this->actingAs($this->admin);
+        $this->post(route('bookings.approve', $booking));
+        $this->post(route('bookings.convert', $booking))->assertRedirect();
+
+        $invoice = SalesInvoice::firstOrFail();
+        $line = $invoice->items()->firstOrFail();
+
+        $this->assertSame(2, $line->incentives()->count());
+        $this->assertEqualsWithDelta(200.0, (float) $line->incentive_discount, 0.001);
+        $this->assertEqualsWithDelta(4.0, (float) $line->bonus_quantity, 0.001);
+        $this->assertEqualsWithDelta(1800.0, (float) $invoice->total_amount, 0.01);
     }
 
     public function test_duplicate_product_on_one_booking_is_rejected(): void

@@ -14,8 +14,8 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { amount, dec2, money, toNumber } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
-import { ruleBonus, type AppliedRule } from '@/lib/incentive';
-import { computeLine, computeTotals } from '@/lib/invoice-math';
+import { combineEffects } from '@/lib/incentive';
+import { computeLine, computeTotals, effectiveDiscountPercent } from '@/lib/invoice-math';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
 import { ArrowRight, Check, Plus, Save, Send, Trash2, X, XCircle } from 'lucide-react';
@@ -27,9 +27,7 @@ interface ItemRow {
     product_name: string;
     quantity: string;
     requested_bonus: string;
-    applied_rule_id: number | null;
-    applied_rule_name: string;
-    applied_rule: AppliedRule | null;
+    incentives: RuleHit[]; // stacked incentive rules (≤1 per rule_type)
     trade_price: string;
     discount_percent: string;
     gst_percent: string;
@@ -53,12 +51,24 @@ interface BookingDto {
         product?: { id: number; name: string };
         quantity: string;
         requested_bonus: string;
-        applied_rule_id: number | null;
-        applied_rule?: { id: number; name: string } | null;
         trade_price: string;
         discount_percent: string;
         gst_percent: string;
         remarks: string | null;
+        incentives?: {
+            incentive_rule_id: number | null;
+            rule_type: string;
+            rule_name: string;
+            rule?: {
+                id: number;
+                name: string;
+                rule_type: string;
+                base_qty: string | number;
+                bonus_qty: string | number;
+                slabs: { min_qty: number | string; max_qty: number | string | null; bonus_qty: number | string }[] | null;
+                value: string | number;
+            } | null;
+        }[];
     }[];
 }
 
@@ -70,9 +80,30 @@ interface Props {
 
 const emptyRow = (): ItemRow => ({
     product_id: null, product_name: '', quantity: '1', requested_bonus: '0',
-    applied_rule_id: null, applied_rule_name: '', applied_rule: null, trade_price: '',
+    incentives: [], trade_price: '',
     discount_percent: '0.00', gst_percent: '0.00', remarks: '',
 });
+
+/** Rebuild the stacked RuleHit list from a saved booking item's incentive rows. */
+const hydrateIncentives = (item: BookingDto['items'][number]): RuleHit[] =>
+    (item.incentives ?? []).map((inc) => {
+        const rule = inc.rule;
+        return {
+            id: inc.incentive_rule_id ?? rule?.id ?? 0,
+            name: inc.rule_name,
+            rule_type: inc.rule_type,
+            base_qty: rule ? Number(rule.base_qty) : undefined,
+            bonus_qty: rule ? Number(rule.bonus_qty) : undefined,
+            slabs: rule?.slabs ?? undefined,
+            value: rule ? Number(rule.value) : undefined,
+            summary: '',
+            scope: '',
+            effect: {},
+        } satisfies RuleHit;
+    });
+
+const isBonusType = (t: string) => t === 'qty_bonus' || t === 'slab_bonus';
+const isDiscountType = (t: string) => t === 'percent_discount' || t === 'fixed_discount';
 
 // Keyboard columns: 0 product, 1 qty, 2 bonus, 3 rule, 4 price, 5 disc, 6 gst, 7 remarks
 const COL_COUNT = 8;
@@ -103,9 +134,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                   product_name: item.product?.name ?? `#${item.product_id}`,
                   quantity: String(Number(item.quantity)),
                   requested_bonus: String(Number(item.requested_bonus)),
-                  applied_rule_id: item.applied_rule_id,
-                  applied_rule_name: item.applied_rule?.name ?? '',
-                  applied_rule: null,
+                  incentives: hydrateIncentives(item),
                   trade_price: dec2(item.trade_price),
                   discount_percent: dec2(item.discount_percent),
                   gst_percent: dec2(item.gst_percent),
@@ -192,17 +221,19 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
 
     const computed = useMemo(
         () =>
-            rows.map((row) =>
-                computeLine(
+            rows.map((row) => {
+                const eff = combineEffects(row.incentives, toNumber(row.quantity), toNumber(row.trade_price));
+                return computeLine(
                     {
                         quantity: row.quantity,
-                        rate: row.trade_price,
+                        rate: eff.trade_price,
                         discount_percent: row.discount_percent,
+                        incentive_discount: eff.incentive_discount,
                         gst_percent: row.gst_percent,
                     },
                     false,
-                ),
-            ),
+                );
+            }),
         [rows],
     );
 
@@ -231,8 +262,10 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
             r.map((row, i) => {
                 if (i !== rowIndex) return row;
                 const next = { ...row, [key]: value };
-                if (key === 'quantity' && next.applied_rule) {
-                    next.requested_bonus = String(ruleBonus(next.applied_rule, toNumber(value)));
+                // Stacked qty/slab bonus rules recompute their bonus live as qty changes.
+                if (key === 'quantity' && next.incentives.some((inc) => isBonusType(inc.rule_type))) {
+                    const eff = combineEffects(next.incentives, toNumber(value), toNumber(next.trade_price));
+                    next.requested_bonus = String(eff.bonus_qty);
                 }
                 return next;
             }),
@@ -252,9 +285,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                           ...row,
                           product_id: product.id,
                           product_name: product.name,
-                          applied_rule_id: null,
-                          applied_rule_name: '',
-                          applied_rule: null,
+                          incentives: [],
                           trade_price: dec2(product.trade_price),
                           gst_percent: dec2(product.tax_percent ?? 0),
                           discount_percent: dec2(product.default_discount_percent ?? 0),
@@ -266,30 +297,44 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
         grid.focusCell(rowIndex, 1);
     };
 
-    const applyRule = (rowIndex: number, rule: RuleHit | null) => {
+    // Stack a rule on a line. At most one per rule_type; a bonus rule (re)derives
+    // the line's bonus qty. Discount/price effects are shown live via combineEffects
+    // and recomputed authoritatively by the server on save — trade_price stays the
+    // base price so a price_override can be removed without losing it.
+    const addRule = (rowIndex: number, rule: RuleHit) => {
         setRows((r) =>
             r.map((row, i) => {
                 if (i !== rowIndex) return row;
-                if (!rule) {
-                    return { ...row, applied_rule_id: null, applied_rule_name: '', applied_rule: null };
+                if (row.incentives.some((inc) => inc.id === rule.id)) return row;
+                if (row.incentives.some((inc) => inc.rule_type === rule.rule_type)) {
+                    toast.error(`This line already has a ${rule.rule_type.replace('_', ' ')} incentive.`);
+                    return row;
                 }
-                // Keep bonus rules' params on the row so the bonus recomputes live as qty changes.
-                const applied: AppliedRule | null =
-                    rule.rule_type === 'qty_bonus' || rule.rule_type === 'slab_bonus'
-                        ? { rule_type: rule.rule_type, base_qty: rule.base_qty, bonus_qty: rule.bonus_qty, slabs: rule.slabs }
-                        : null;
+                const incentives = [...row.incentives, rule];
+                const eff = combineEffects(incentives, toNumber(row.quantity), toNumber(row.trade_price));
                 return {
                     ...row,
-                    applied_rule_id: rule.id,
-                    applied_rule_name: rule.name,
-                    applied_rule: applied,
-                    requested_bonus: applied ? String(ruleBonus(applied, toNumber(row.quantity))) : row.requested_bonus,
-                    discount_percent: rule.effect.discount_percent !== undefined ? dec2(rule.effect.discount_percent) : row.discount_percent,
-                    trade_price: rule.effect.trade_price !== undefined ? dec2(rule.effect.trade_price) : row.trade_price,
+                    incentives,
+                    requested_bonus: incentives.some((inc) => isBonusType(inc.rule_type))
+                        ? String(eff.bonus_qty)
+                        : row.requested_bonus,
                 };
             }),
         );
-        grid.focusCell(rowIndex, 4); // move to Price after applying a rule
+    };
+
+    const removeRule = (rowIndex: number, rule: RuleHit) => {
+        setRows((r) =>
+            r.map((row, i) => {
+                if (i !== rowIndex) return row;
+                const incentives = row.incentives.filter((inc) => inc.id !== rule.id);
+                const eff = combineEffects(incentives, toNumber(row.quantity), toNumber(row.trade_price));
+                let requested_bonus = row.requested_bonus;
+                if (incentives.some((inc) => isBonusType(inc.rule_type))) requested_bonus = String(eff.bonus_qty);
+                else if (isBonusType(rule.rule_type)) requested_bonus = '0';
+                return { ...row, incentives, requested_bonus };
+            }),
+        );
     };
 
     const removeRow = (index: number) => {
@@ -306,7 +351,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                 product_id: row.product_id,
                 quantity: toNumber(row.quantity),
                 requested_bonus: toNumber(row.requested_bonus),
-                applied_rule_id: row.applied_rule_id,
+                incentive_rule_ids: row.incentives.map((inc) => inc.id),
                 trade_price: toNumber(row.trade_price),
                 discount_percent: toNumber(row.discount_percent),
                 gst_percent: toNumber(row.gst_percent),
@@ -536,41 +581,44 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                                         />
                                     </td>
                                     <td>
-                                        <button
-                                            type="button"
-                                            ref={grid.registerCell(rowIndex, 3) as never}
-                                            disabled={readonly || !row.product_id}
-                                            onClick={() => {
-                                                setActiveRow(rowIndex);
-                                                setRuleOpen(true);
-                                            }}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    e.preventDefault();
+                                        <div className="flex flex-wrap items-center gap-1 p-1">
+                                            {row.incentives.map((inc) => (
+                                                <Badge key={inc.id} variant="outline" className="max-w-full gap-1 pr-1">
+                                                    <span className="truncate">{inc.name}</span>
+                                                    {!readonly && (
+                                                        <button
+                                                            type="button"
+                                                            tabIndex={-1}
+                                                            onClick={() => removeRule(rowIndex, inc)}
+                                                            className="rounded-sm hover:text-destructive"
+                                                        >
+                                                            <X className="size-3" />
+                                                        </button>
+                                                    )}
+                                                </Badge>
+                                            ))}
+                                            <button
+                                                type="button"
+                                                ref={grid.registerCell(rowIndex, 3) as never}
+                                                disabled={readonly || !row.product_id}
+                                                onClick={() => {
                                                     setActiveRow(rowIndex);
                                                     setRuleOpen(true);
-                                                    return;
-                                                }
-                                                grid.handleKeyDown(e, rowIndex, 3);
-                                            }}
-                                            className="h-8 w-full truncate px-2 text-left text-sm outline-none focus:ring-1 focus:ring-ring disabled:opacity-70"
-                                        >
-                                            {row.applied_rule_name
-                                                ? <Badge variant="outline" className="max-w-full gap-1 pr-1">
-                                                      <span className="truncate">{row.applied_rule_name}</span>
-                                                      {!readonly && (
-                                                          <span
-                                                              role="button"
-                                                              tabIndex={-1}
-                                                              onClick={(e) => { e.stopPropagation(); applyRule(rowIndex, null); }}
-                                                              className="rounded-sm hover:text-destructive"
-                                                          >
-                                                              <X className="size-3" />
-                                                          </span>
-                                                      )}
-                                                  </Badge>
-                                                : <span className="text-muted-foreground">F4…</span>}
-                                        </button>
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        setActiveRow(rowIndex);
+                                                        setRuleOpen(true);
+                                                        return;
+                                                    }
+                                                    grid.handleKeyDown(e, rowIndex, 3);
+                                                }}
+                                                className="rounded px-1 text-sm text-muted-foreground outline-none focus:ring-1 focus:ring-ring disabled:opacity-70"
+                                            >
+                                                {row.incentives.length ? '+ add' : 'F4…'}
+                                            </button>
+                                        </div>
                                     </td>
                                     <td>
                                         <Input
@@ -589,20 +637,35 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                                         />
                                     </td>
                                     <td>
-                                        <Input
-                                            ref={grid.registerCell(rowIndex, 5) as never}
-                                            type="number" value={row.discount_percent} disabled={readonly}
-                                            title={rowErrors[rowIndex]?.discount_percent}
-                                            aria-invalid={!!rowErrors[rowIndex]?.discount_percent}
-                                            onChange={(e) => { setCell(rowIndex, 'discount_percent', e.target.value); if (rowErrors[rowIndex]?.discount_percent) setRowError(rowIndex, 'discount_percent', null); }}
-                                            onBlur={(e) => {
-                                                const v = dec2(e.target.value);
-                                                setCell(rowIndex, 'discount_percent', v);
-                                                if (row.product_id) setRowError(rowIndex, 'discount_percent', cellRule('discount_percent', v));
-                                            }}
-                                            onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 5)}
-                                            className={`h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1 ${ringClass(rowIndex, 'discount_percent')}`}
-                                        />
+                                        {row.incentives.some((inc) => isDiscountType(inc.rule_type)) ? (
+                                            // A discount incentive drives the line discount; the cell shows
+                                            // the effective combined percent (read-only) instead of the manual %.
+                                            <Input
+                                                ref={grid.registerCell(rowIndex, 5) as never}
+                                                type="text"
+                                                readOnly
+                                                tabIndex={0}
+                                                value={dec2(effectiveDiscountPercent(computed[rowIndex].gross, computed[rowIndex].discount_amount))}
+                                                title="Effective discount from applied incentive(s). Remove the incentive to edit manually."
+                                                onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 5)}
+                                                className="h-8 rounded-none border-0 bg-emerald-50 px-2 text-right text-sm text-emerald-700 focus-visible:ring-1 dark:bg-emerald-950/40 dark:text-emerald-400"
+                                            />
+                                        ) : (
+                                            <Input
+                                                ref={grid.registerCell(rowIndex, 5) as never}
+                                                type="number" value={row.discount_percent} disabled={readonly}
+                                                title={rowErrors[rowIndex]?.discount_percent}
+                                                aria-invalid={!!rowErrors[rowIndex]?.discount_percent}
+                                                onChange={(e) => { setCell(rowIndex, 'discount_percent', e.target.value); if (rowErrors[rowIndex]?.discount_percent) setRowError(rowIndex, 'discount_percent', null); }}
+                                                onBlur={(e) => {
+                                                    const v = dec2(e.target.value);
+                                                    setCell(rowIndex, 'discount_percent', v);
+                                                    if (row.product_id) setRowError(rowIndex, 'discount_percent', cellRule('discount_percent', v));
+                                                }}
+                                                onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 5)}
+                                                className={`h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1 ${ringClass(rowIndex, 'discount_percent')}`}
+                                            />
+                                        )}
                                     </td>
                                     <td>
                                         <Input
@@ -668,12 +731,9 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                 customerId={header.customer_id ? Number(header.customer_id) : null}
                 qty={toNumber(activeRowData?.quantity)}
                 price={toNumber(activeRowData?.trade_price)}
-                onAdd={(rule) => {
-                    // Bookings carry a single rule per line: picking one replaces it.
-                    applyRule(activeRow, rule);
-                    setRuleOpen(false);
-                }}
-                onRemove={() => applyRule(activeRow, null)}
+                applied={activeRowData?.incentives ?? []}
+                onAdd={(rule) => addRule(activeRow, rule)}
+                onRemove={(rule) => removeRule(activeRow, rule)}
             />
         </AppLayout>
     );

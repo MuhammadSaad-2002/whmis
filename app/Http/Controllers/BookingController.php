@@ -6,10 +6,13 @@ use App\Models\Booking;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Warehouse;
+use App\Models\IncentiveRule;
 use App\Services\BookingService;
+use App\Services\IncentiveEngine;
 use App\Services\MarginCalculator;
 use App\Services\NumberSeriesService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use RuntimeException;
@@ -19,6 +22,7 @@ class BookingController extends Controller
     public function __construct(
         private readonly NumberSeriesService $numbers,
         private readonly BookingService $bookings,
+        private readonly IncentiveEngine $incentives,
     ) {}
 
     /** Bookers see only their own bookings; approvers see all. */
@@ -86,7 +90,11 @@ class BookingController extends Controller
     {
         $this->authorizeView($request, $booking);
 
-        $booking->load(['items.product:id,name,generic_name', 'items.appliedRule:id,name', 'customer:id,name,city', 'booker:id,name', 'approver:id,name']);
+        $booking->load([
+            'items.product:id,name,generic_name',
+            'items.incentives.rule:id,name,rule_type,base_qty,bonus_qty,slabs,value',
+            'customer:id,name,city', 'booker:id,name', 'approver:id,name',
+        ]);
 
         return Inertia::render('bookings/form', [
             'customers' => $this->customerOptions($request),
@@ -236,7 +244,8 @@ class BookingController extends Controller
             'items.*.product_id' => ['required', 'exists:products,id'],
             'items.*.quantity' => ['required', 'numeric', 'min:1'],
             'items.*.requested_bonus' => ['nullable', 'numeric', 'min:0'],
-            'items.*.applied_rule_id' => ['nullable', 'exists:incentive_rules,id'],
+            'items.*.incentive_rule_ids' => ['nullable', 'array'],
+            'items.*.incentive_rule_ids.*' => ['integer', 'exists:incentive_rules,id'],
             'items.*.trade_price' => ['required', 'numeric', 'min:0'],
             'items.*.discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'items.*.gst_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
@@ -263,21 +272,46 @@ class BookingController extends Controller
 
     private function syncItems(Booking $booking, array $items): void
     {
-        $payload = array_map(fn ($item) => [
-            'product_id' => $item['product_id'],
-            'quantity' => $item['quantity'],
-            'requested_bonus' => $item['requested_bonus'] ?? 0,
-            'applied_rule_id' => $item['applied_rule_id'] ?? null,
-            'trade_price' => $item['trade_price'],
-            'discount_percent' => $item['discount_percent'] ?? 0,
-            'gst_percent' => $item['gst_percent'] ?? 0,
-            'remarks' => $item['remarks'] ?? null,
-        ], array_values($items));
+        $date = Carbon::parse($booking->booking_date);
+        $breakdowns = [];
+        $payload = [];
+
+        foreach (array_values($items) as $i => $item) {
+            // Re-run the engine so the picked rules are verified and their effects
+            // recomputed authoritatively (the client is never trusted for totals).
+            $combined = $this->incentives->combine(
+                (int) $item['product_id'],
+                $booking->customer_id ? (int) $booking->customer_id : null,
+                (float) $item['quantity'],
+                (float) $item['trade_price'],
+                $item['incentive_rule_ids'] ?? [],
+                $date,
+            );
+            $breakdown = $combined['breakdown'];
+            $hasBonusRule = collect($breakdown)
+                ->whereIn('rule_type', [IncentiveRule::TYPE_QTY_BONUS, IncentiveRule::TYPE_SLAB_BONUS])
+                ->isNotEmpty();
+
+            $payload[] = [
+                'product_id' => $item['product_id'],
+                'quantity' => $item['quantity'],
+                // A bonus rule owns the requested bonus; without one a manual bonus stands.
+                'requested_bonus' => $hasBonusRule ? $combined['bonus_qty'] : ($item['requested_bonus'] ?? 0),
+                'applied_rule_id' => $breakdown[0]['rule_id'] ?? null,
+                'trade_price' => $combined['trade_price'],
+                'discount_percent' => $item['discount_percent'] ?? 0,
+                'incentive_discount' => $combined['incentive_discount'],
+                'gst_percent' => $item['gst_percent'] ?? 0,
+                'remarks' => $item['remarks'] ?? null,
+            ];
+            $breakdowns[$i] = $breakdown;
+        }
 
         $computed = MarginCalculator::computeSalesItems($payload, ['discount_percent' => 0, 'gst_percent' => 0]);
 
-        foreach ($computed['items'] as $item) {
-            $booking->items()->create($item);
+        foreach ($computed['items'] as $i => $itemData) {
+            $line = $booking->items()->create($itemData);
+            $this->recordIncentives($booking, $line, $breakdowns[$i]);
         }
 
         $booking->update([
@@ -286,5 +320,25 @@ class BookingController extends Controller
             'item_gst_total' => $computed['totals']['item_gst_total'],
             'total_amount' => $computed['totals']['total_amount'],
         ]);
+    }
+
+    /** Persist the per-line incentive record (the durable "what was promised" ledger). */
+    private function recordIncentives(Booking $booking, $line, array $breakdown): void
+    {
+        foreach ($breakdown as $b) {
+            $line->incentives()->create([
+                'booking_id' => $booking->id,
+                'customer_id' => $booking->customer_id,
+                'product_id' => $line->product_id,
+                'incentive_rule_id' => $b['rule_id'],
+                'rule_type' => $b['rule_type'],
+                'rule_name' => $b['rule_name'],
+                'bonus_qty' => $b['bonus_qty'],
+                'discount_amount' => $b['discount_amount'],
+                'trade_price' => $b['trade_price'],
+                'value_given' => $b['value_given'],
+                'sort_order' => $b['sort_order'],
+            ]);
+        }
     }
 }
