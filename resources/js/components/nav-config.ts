@@ -7,6 +7,8 @@ import {
     Boxes,
     Building2,
     ClipboardList,
+    FlaskConical,
+    Gift,
     LayoutGrid,
     Pill,
     ScrollText,
@@ -35,6 +37,13 @@ export const navGroups: { label: string; items: PermittedNavItem[] }[] = [
             { title: 'Sales Invoices', url: '/sales', icon: TrendingUp, permission: 'sales.view' },
             { title: 'Purchase Invoices', url: '/purchases', icon: ShoppingCart, permission: 'purchases.view' },
             { title: 'Returns', url: '/returns/sales', icon: Undo2, permission: 'returns.view' },
+        ],
+    },
+    {
+        label: 'Samples',
+        items: [
+            { title: 'Sample Receipts', url: '/samples/receipts', icon: FlaskConical, permission: 'samples.view' },
+            { title: 'Sample Issues', url: '/samples/issues', icon: Gift, permission: 'samples.view' },
         ],
     },
     {

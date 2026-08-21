@@ -14,6 +14,8 @@ use App\Models\SalesInvoiceItem;
 use App\Models\SalesInvoiceItemIncentive;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnItem;
+use App\Models\SampleIssue;
+use App\Models\SampleIssueItem;
 use App\Models\StockMovement;
 use App\Models\User;
 use Illuminate\Support\Carbon;
@@ -45,6 +47,10 @@ class ReportService
             'stock-position' => ['title' => 'Stock Position', 'category' => 'Inventory', 'description' => 'Current stock and value at cost', 'filters' => ['supplier']],
             'stock-movement' => ['title' => 'Stock Movement', 'category' => 'Inventory', 'description' => 'Per-product opening, purchases, billed vs bonus units sold, closing and value at cost', 'filters' => ['date_range', 'supplier', 'product']],
             'expiry' => ['title' => 'Expiry Report', 'category' => 'Inventory', 'description' => 'In-stock batches by expiry window', 'filters' => ['expiry_window']],
+            'sample-stock' => ['title' => 'Sample Stock', 'category' => 'Samples', 'description' => 'Free-sample stock on hand per product and batch (segregated from actual stock)', 'filters' => ['supplier', 'product']],
+            'sample-movement' => ['title' => 'Sample Stock Movement', 'category' => 'Samples', 'description' => 'Per product: opening, samples received, issued from sample stock, and closing sample balance', 'filters' => ['date_range', 'supplier', 'product']],
+            'sample-issue-product' => ['title' => 'Sample Issues by Product', 'category' => 'Samples', 'description' => 'Samples given away per product: quantity and cost value (Rs 0 when drawn from sample stock)', 'filters' => ['date_range', 'supplier', 'product']],
+            'sample-issue-recipient' => ['title' => 'Sample Issues by Recipient', 'category' => 'Samples', 'description' => 'Samples given away per customer / recipient: quantity and cost value', 'filters' => ['date_range', 'customer']],
             'slow-fast-moving' => ['title' => 'Slow / Fast Moving', 'category' => 'Inventory', 'description' => 'Products ranked by quantity sold in a period', 'filters' => ['date_range', 'order']],
             'outstanding' => ['title' => 'Outstanding & Aging', 'category' => 'Financial', 'description' => 'Receivables per customer with aging buckets', 'filters' => []],
             'supplier-payables' => ['title' => 'Supplier Payables', 'category' => 'Financial', 'description' => 'What you owe each supplier', 'filters' => []],
@@ -69,6 +75,10 @@ class ReportService
             'stock-position' => $this->stockPosition($filters),
             'stock-movement' => $this->stockMovement($from, $to, $filters),
             'expiry' => $this->expiry($filters),
+            'sample-stock' => $this->sampleStock($filters),
+            'sample-movement' => $this->sampleMovement($from, $to, $filters),
+            'sample-issue-product' => $this->sampleIssueByProduct($from, $to, $filters),
+            'sample-issue-recipient' => $this->sampleIssueByRecipient($from, $to, $filters),
             'slow-fast-moving' => $this->slowFastMoving($from, $to, $filters),
             'outstanding' => $this->outstanding(),
             'supplier-payables' => $this->supplierPayables(),
@@ -601,11 +611,13 @@ class ReportService
     {
         $products = Product::query()
             ->with('company:id,name')
-            ->withSum('batches as stock', 'qty_available')
+            // Free-sample stock is reported separately; keep actual stock clean.
+            ->withSum(['batches as stock' => fn ($q) => $q->where('is_sample', false)], 'qty_available')
             ->when($filters['company_id'] ?? null, fn ($q, $id) => $q->where('company_id', $id))
             ->addSelect([
                 'stock_value' => Batch::selectRaw('COALESCE(SUM(qty_available * effective_cost), 0)')
-                    ->whereColumn('batches.product_id', 'products.id'),
+                    ->whereColumn('batches.product_id', 'products.id')
+                    ->where('is_sample', false),
             ])
             ->orderBy('name')
             ->get()
@@ -638,6 +650,7 @@ class ReportService
 
         $batches = Batch::with(['product:id,name', 'warehouse:id,name'])
             ->inStock()
+            ->normal() // free samples have their own stock report
             ->whereNotNull('expiry_date')
             ->when($window === 'expired',
                 fn ($q) => $q->whereDate('expiry_date', '<', now()),
@@ -667,6 +680,214 @@ class ReportService
         ];
     }
 
+    /** Free-sample stock on hand, per product and batch (segregated from actual stock). */
+    private function sampleStock(array $filters): array
+    {
+        $productId = $filters['product_id'] ?? null;
+        $companyId = $filters['company_id'] ?? null;
+
+        $batches = Batch::with(['product:id,name,company_id', 'product.company:id,name'])
+            ->samples()
+            ->inStock()
+            ->when($productId, fn ($q, $id) => $q->where('product_id', $id))
+            ->when($companyId, fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id)))
+            ->orderBy('product_id')
+            ->orderByRaw('expiry_date IS NULL, expiry_date ASC')
+            ->get();
+
+        $rows = $batches->map(fn ($b) => [
+            'product' => $b->product?->name,
+            'supplier' => $b->product?->company?->name,
+            'batch_number' => $b->batch_number,
+            'expiry_date' => $b->expiry_date?->toDateString(),
+            'qty' => (float) $b->qty_available,
+        ])->values();
+
+        return [
+            'columns' => [
+                ['key' => 'product', 'label' => 'Product'],
+                ['key' => 'supplier', 'label' => 'Supplier'],
+                ['key' => 'batch_number', 'label' => 'Batch'],
+                ['key' => 'expiry_date', 'label' => 'Expiry', 'format' => 'date'],
+                ['key' => 'qty', 'label' => 'Sample Qty', 'align' => 'right', 'format' => 'qty'],
+            ],
+            'rows' => $rows->all(),
+            'totals' => ['qty' => (float) $rows->sum('qty')],
+        ];
+    }
+
+    /**
+     * Sample-stock card: opening, received, issued (from sample stock) and closing
+     * sample balance per product. Tracks movements on sample batches only, so it
+     * foots to sample on-hand. A sample issue that fell back to normal stock is a
+     * movement on a normal batch and belongs to the actual-stock reports instead.
+     */
+    private function sampleMovement(Carbon $from, Carbon $to, array $filters): array
+    {
+        $companyId = $filters['company_id'] ?? null;
+        $productId = $filters['product_id'] ?? null;
+        $start = $from->copy()->startOfDay();
+        $end = $to->copy()->endOfDay();
+
+        $byCompany = fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id));
+        $sampleBatch = fn ($q) => $q->whereHas('batch', fn ($b) => $b->where('is_sample', true));
+
+        $opening = StockMovement::query()
+            ->where('created_at', '<', $start)
+            ->where($sampleBatch)
+            ->when($productId, fn ($q, $id) => $q->where('product_id', $id))
+            ->when($companyId, $byCompany)
+            ->selectRaw('product_id, SUM(quantity) as qty')
+            ->groupBy('product_id')
+            ->pluck('qty', 'product_id');
+
+        $inRange = StockMovement::query()
+            ->whereBetween('created_at', [$start, $end])
+            ->where($sampleBatch)
+            ->when($productId, fn ($q, $id) => $q->where('product_id', $id))
+            ->when($companyId, $byCompany)
+            ->selectRaw('product_id, type, SUM(quantity) as qty')
+            ->groupBy('product_id', 'type')
+            ->get()
+            ->groupBy('product_id');
+
+        $products = Product::query()
+            ->with('company:id,name')
+            ->when($productId, fn ($q, $id) => $q->where('id', $id))
+            ->when($companyId, fn ($q, $id) => $q->where('company_id', $id))
+            ->get()
+            ->keyBy('id');
+
+        $rows = $opening->keys()->merge($inRange->keys())->unique()
+            ->filter(fn ($id) => $products->has($id))
+            ->map(function ($id) use ($opening, $inRange, $products) {
+                $product = $products[$id];
+                $open = (float) ($opening[$id] ?? 0);
+                $byType = ($inRange[$id] ?? collect())->keyBy('type');
+
+                $received = (float) ($byType->get('sample_in')?->qty ?? 0);
+                $issued = -(float) ($byType->get('sample_out')?->qty ?? 0); // stored negative → show positive out
+                $adjustments = (float) ($inRange[$id] ?? collect())
+                    ->whereNotIn('type', ['sample_in', 'sample_out'])
+                    ->sum('qty');
+
+                return [
+                    'product' => $product->name,
+                    'supplier' => $product->company?->name,
+                    'opening' => round($open, 2),
+                    'received' => round($received, 2),
+                    'issued' => round($issued, 2),
+                    'adjustments' => round($adjustments, 2),
+                    'closing' => round($open + $received - $issued + $adjustments, 2),
+                ];
+            })
+            ->sortBy('product')->values();
+
+        return [
+            'columns' => [
+                ['key' => 'product', 'label' => 'Product'],
+                ['key' => 'supplier', 'label' => 'Supplier'],
+                ['key' => 'opening', 'label' => 'Opening', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'received', 'label' => 'Received (In)', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'issued', 'label' => 'Issued (Out)', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'adjustments', 'label' => 'Adjustments', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'closing', 'label' => 'Closing Qty', 'align' => 'right', 'format' => 'qty'],
+            ],
+            'rows' => $rows->all(),
+            'totals' => [
+                'opening' => round((float) $rows->sum('opening'), 2),
+                'received' => round((float) $rows->sum('received'), 2),
+                'issued' => round((float) $rows->sum('issued'), 2),
+                'adjustments' => round((float) $rows->sum('adjustments'), 2),
+                'closing' => round((float) $rows->sum('closing'), 2),
+            ],
+        ];
+    }
+
+    /** Samples given away per product: quantity and cost value (Rs 0 when drawn from sample stock). */
+    private function sampleIssueByProduct(Carbon $from, Carbon $to, array $filters): array
+    {
+        $companyId = $filters['company_id'] ?? null;
+        $productId = $filters['product_id'] ?? null;
+
+        $items = SampleIssueItem::query()
+            ->whereHas('issue', fn ($q) => $q->where('status', SampleIssue::STATUS_POSTED)
+                ->whereDate('issue_date', '>=', $from)->whereDate('issue_date', '<=', $to))
+            ->when($productId, fn ($q, $id) => $q->where('product_id', $id))
+            ->when($companyId, fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id)))
+            ->with('product:id,name,company_id', 'product.company:id,name')
+            ->get()
+            ->groupBy('product_id');
+
+        $rows = $items->map(function ($group) {
+            $product = $group->first()->product;
+
+            return [
+                'product' => $product?->name,
+                'supplier' => $product?->company?->name,
+                'qty' => (float) $group->sum('quantity'),
+                'cost' => round((float) $group->sum('cost_amount'), 2),
+            ];
+        })->sortByDesc('qty')->values();
+
+        return [
+            'columns' => [
+                ['key' => 'product', 'label' => 'Product'],
+                ['key' => 'supplier', 'label' => 'Supplier'],
+                ['key' => 'qty', 'label' => 'Qty Issued', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'cost', 'label' => 'Cost Value', 'align' => 'right', 'format' => 'money'],
+            ],
+            'rows' => $rows->all(),
+            'totals' => [
+                'qty' => (float) $rows->sum('qty'),
+                'cost' => round((float) $rows->sum('cost'), 2),
+            ],
+        ];
+    }
+
+    /** Samples given away per customer / recipient: number of issues, quantity and cost value. */
+    private function sampleIssueByRecipient(Carbon $from, Carbon $to, array $filters): array
+    {
+        $customerId = $filters['customer_id'] ?? null;
+
+        $issues = SampleIssue::query()
+            ->where('status', SampleIssue::STATUS_POSTED)
+            ->whereDate('issue_date', '>=', $from)->whereDate('issue_date', '<=', $to)
+            ->when($customerId, fn ($q, $id) => $q->where('customer_id', $id))
+            ->with('customer:id,name,city')
+            ->get();
+
+        $rows = $issues->groupBy(fn ($i) => $i->customer_id.'|'.($i->recipient_name ?? ''))
+            ->map(function ($group) {
+                $first = $group->first();
+
+                return [
+                    'customer' => $first->customer?->name,
+                    'recipient' => $first->recipient_name,
+                    'issues' => $group->count(),
+                    'qty' => round((float) $group->sum('total_quantity'), 2),
+                    'cost' => round((float) $group->sum('total_cost'), 2),
+                ];
+            })
+            ->sortByDesc('qty')->values();
+
+        return [
+            'columns' => [
+                ['key' => 'customer', 'label' => 'Customer'],
+                ['key' => 'recipient', 'label' => 'Recipient / Doctor'],
+                ['key' => 'issues', 'label' => 'Issues', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'qty', 'label' => 'Qty Issued', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'cost', 'label' => 'Cost Value', 'align' => 'right', 'format' => 'money'],
+            ],
+            'rows' => $rows->all(),
+            'totals' => [
+                'issues' => (int) $rows->sum('issues'),
+                'qty' => (float) $rows->sum('qty'),
+                'cost' => round((float) $rows->sum('cost'), 2),
+            ],
+        ];
+    }
+
     /**
      * Per-product stock movement ("stock card"). stock_movements is the append-only
      * truth and reconciles to qty_available, so opening/closing come from signed
@@ -689,9 +910,16 @@ class ReportService
 
         $byCompany = fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id));
 
+        // Free-sample batches are reported by the Samples reports; exclude their
+        // movements here so "actual stock" foots to normal on-hand. (A sample issue
+        // that fell back to NORMAL stock is a movement on a normal batch, so it is
+        // kept — that stock genuinely left.)
+        $normalBatch = fn ($q) => $q->whereHas('batch', fn ($b) => $b->where('is_sample', false));
+
         // Opening on-hand per product = signed sum of every movement before the window.
         $opening = StockMovement::query()
             ->where('created_at', '<', $start)
+            ->where($normalBatch)
             ->when($productId, fn ($q, $id) => $q->where('product_id', $id))
             ->when($companyId, $byCompany)
             ->selectRaw('product_id, SUM(quantity) as qty')
@@ -701,6 +929,7 @@ class ReportService
         // In-range movements bucketed by type per product.
         $inRange = StockMovement::query()
             ->whereBetween('created_at', [$start, $end])
+            ->where($normalBatch)
             ->when($productId, fn ($q, $id) => $q->where('product_id', $id))
             ->when($companyId, $byCompany)
             ->selectRaw('product_id, type, SUM(quantity) as qty')
@@ -735,7 +964,8 @@ class ReportService
             ->when($companyId, fn ($q, $id) => $q->where('company_id', $id))
             ->addSelect([
                 'stock_value' => Batch::selectRaw('COALESCE(SUM(qty_available * effective_cost), 0)')
-                    ->whereColumn('batches.product_id', 'products.id'),
+                    ->whereColumn('batches.product_id', 'products.id')
+                    ->where('is_sample', false),
             ])
             ->get()
             ->keyBy('id');

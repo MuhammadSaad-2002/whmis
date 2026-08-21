@@ -25,5 +25,7 @@ class NumberSeries extends Model
         'booking' => 'BK',
         'sales_return' => 'SR',
         'purchase_return' => 'PR',
+        'sample_receipt' => 'SMR',
+        'sample_issue' => 'SMP',
     ];
 }

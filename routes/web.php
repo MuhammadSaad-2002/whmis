@@ -19,6 +19,8 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ReturnController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SalesInvoiceController;
+use App\Http\Controllers\SampleIssueController;
+use App\Http\Controllers\SampleReceiptController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -117,6 +119,44 @@ Route::middleware(['auth'])->group(function () {
         Route::post('bookings/{booking}/cancel', [BookingController::class, 'cancel'])->name('bookings.cancel');
         Route::post('bookings/{booking}/convert', [BookingController::class, 'convert'])
             ->middleware('can:bookings.convert')->name('bookings.convert');
+    });
+
+    // Samples — free-of-charge stock in (receipts) and out (issues), segregated
+    // from normal trade. No money, no ledger; separate from bonus.
+    Route::middleware('can:samples.view')->prefix('samples')->group(function () {
+        // Sample receipts (FOC stock in from a supplier)
+        Route::get('receipts', [SampleReceiptController::class, 'index'])->name('samples.receipts.index');
+        Route::get('receipts/create', [SampleReceiptController::class, 'create'])
+            ->middleware('can:samples.receive')->name('samples.receipts.create');
+        Route::post('receipts', [SampleReceiptController::class, 'store'])
+            ->middleware('can:samples.receive')->name('samples.receipts.store');
+        Route::get('receipts/{receipt}', [SampleReceiptController::class, 'edit'])->name('samples.receipts.edit');
+        Route::put('receipts/{receipt}', [SampleReceiptController::class, 'update'])
+            ->middleware('can:samples.receive')->name('samples.receipts.update');
+        Route::delete('receipts/{receipt}', [SampleReceiptController::class, 'destroy'])
+            ->middleware('can:samples.receive')->name('samples.receipts.destroy');
+        Route::post('receipts/{receipt}/post', [SampleReceiptController::class, 'post'])
+            ->middleware('can:samples.post')->name('samples.receipts.post');
+        Route::post('receipts/{receipt}/cancel', [SampleReceiptController::class, 'cancel'])
+            ->middleware('can:samples.cancel')->name('samples.receipts.cancel');
+        Route::get('receipts/{receipt}/print', [SampleReceiptController::class, 'print'])->name('samples.receipts.print');
+
+        // Sample issues (FOC stock out to a customer)
+        Route::get('issues', [SampleIssueController::class, 'index'])->name('samples.issues.index');
+        Route::get('issues/create', [SampleIssueController::class, 'create'])
+            ->middleware('can:samples.issue')->name('samples.issues.create');
+        Route::post('issues', [SampleIssueController::class, 'store'])
+            ->middleware('can:samples.issue')->name('samples.issues.store');
+        Route::get('issues/{issue}', [SampleIssueController::class, 'edit'])->name('samples.issues.edit');
+        Route::put('issues/{issue}', [SampleIssueController::class, 'update'])
+            ->middleware('can:samples.issue')->name('samples.issues.update');
+        Route::delete('issues/{issue}', [SampleIssueController::class, 'destroy'])
+            ->middleware('can:samples.issue')->name('samples.issues.destroy');
+        Route::post('issues/{issue}/post', [SampleIssueController::class, 'post'])
+            ->middleware('can:samples.post')->name('samples.issues.post');
+        Route::post('issues/{issue}/cancel', [SampleIssueController::class, 'cancel'])
+            ->middleware('can:samples.cancel')->name('samples.issues.cancel');
+        Route::get('issues/{issue}/print', [SampleIssueController::class, 'print'])->name('samples.issues.print');
     });
 
     // Returns

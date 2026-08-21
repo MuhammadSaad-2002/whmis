@@ -14,6 +14,7 @@ class Batch extends Model
     {
         return [
             'expiry_date' => 'date',
+            'is_sample' => 'boolean',
             'purchase_rate' => 'decimal:4',
             'effective_cost' => 'decimal:4',
             'trade_price' => 'decimal:2',
@@ -44,6 +45,18 @@ class Batch extends Model
     public function scopeInStock($query)
     {
         return $query->where('qty_available', '>', 0);
+    }
+
+    /** Free-sample stock only. */
+    public function scopeSamples($query)
+    {
+        return $query->where('is_sample', true);
+    }
+
+    /** Normal purchased stock only (excludes free samples). */
+    public function scopeNormal($query)
+    {
+        return $query->where('is_sample', false);
     }
 
     public function scopeNotExpired($query)

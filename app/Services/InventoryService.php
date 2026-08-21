@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\Batch;
 use App\Models\Product;
 use App\Models\PurchaseInvoiceItem;
+use App\Models\SampleReceipt;
+use App\Models\SampleReceiptItem;
 use App\Models\StockMovement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
@@ -42,6 +44,56 @@ class InventoryService
         $this->recordMovement($batch, 'purchase', $totalUnits, $invoice, $effectiveCost);
 
         return $batch;
+    }
+
+    /**
+     * Stock in a free-of-charge sample from a posted sample receipt. Creates a
+     * dedicated sample batch (is_sample = true) at zero cost, so it is segregated
+     * from purchased stock and never contributes to COGS.
+     */
+    public function receiveSample(SampleReceiptItem $item, SampleReceipt $receipt): Batch
+    {
+        $quantity = (float) $item->quantity;
+
+        $batch = Batch::create([
+            'product_id' => $item->product_id,
+            'warehouse_id' => $receipt->warehouse_id,
+            'is_sample' => true,
+            'batch_number' => $item->batch_number ?: 'SAMPLE',
+            'expiry_date' => $item->expiry_date,
+            'purchase_rate' => 0,
+            'effective_cost' => 0,
+            'trade_price' => 0,
+            'retail_price' => 0,
+            'qty_purchased' => $quantity,
+            'qty_bonus' => 0,
+            'qty_available' => $quantity,
+        ]);
+
+        $this->recordMovement($batch, 'sample_in', $quantity, $receipt, 0);
+
+        return $batch;
+    }
+
+    /**
+     * Reverse a sample receipt (cancellation). Removes the received units from
+     * the sample batch; fails if any of it has already been issued.
+     */
+    public function reverseSampleReceipt(Batch $batch, float $quantity, Model $reference): void
+    {
+        $batch = Batch::whereKey($batch->id)->lockForUpdate()->firstOrFail();
+
+        if ((float) $batch->qty_available + 1e-9 < $quantity) {
+            throw new RuntimeException(
+                "Cannot cancel: sample stock from batch {$batch->batch_number} has already been issued."
+            );
+        }
+
+        $batch->qty_available = (float) $batch->qty_available - $quantity;
+        $batch->qty_purchased = max(0, (float) $batch->qty_purchased - $quantity);
+        $batch->save();
+
+        $this->recordMovement($batch, 'sample_in_cancel', -$quantity, $reference, 0);
     }
 
     /**
@@ -110,6 +162,11 @@ class InventoryService
      * earliest expiry then arrival. Returns allocations:
      * [['batch' => Batch, 'quantity' => float, 'cost' => float], ...]
      *
+     * Normal sales (default) consume ONLY normal purchased stock — free-sample
+     * batches are excluded so the two are fully segregated. A sample issue
+     * ($sampleIssue = true) drains sample stock first, then falls back to normal
+     * stock (still FIFO within each group).
+     *
      * @throws RuntimeException when available stock is insufficient
      */
     public function consumeFifo(
@@ -119,6 +176,7 @@ class InventoryService
         Model $reference,
         ?int $batchId = null,
         string $type = 'sale',
+        bool $sampleIssue = false,
     ): array {
         if ($quantity <= 0) {
             return [];
@@ -126,8 +184,17 @@ class InventoryService
 
         $query = Batch::where('product_id', $productId)
             ->where('warehouse_id', $warehouseId)
-            ->where('qty_available', '>', 0)
-            ->orderByRaw('expiry_date IS NULL, expiry_date ASC')
+            ->where('qty_available', '>', 0);
+
+        if ($sampleIssue) {
+            // Sample-first: free-sample batches (is_sample = 1) drain before normal stock.
+            $query->orderByRaw('is_sample DESC');
+        } else {
+            // Normal consumption never touches free-sample stock.
+            $query->where('is_sample', false);
+        }
+
+        $query->orderByRaw('expiry_date IS NULL, expiry_date ASC')
             ->orderBy('id')
             ->lockForUpdate();
 

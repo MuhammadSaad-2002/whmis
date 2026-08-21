@@ -22,6 +22,7 @@ class RolePermissionSeeder extends Seeder
             'purchases.view', 'purchases.create', 'purchases.post', 'purchases.cancel',
             'sales.view', 'sales.create', 'sales.post', 'sales.cancel',
             'bookings.view', 'bookings.create', 'bookings.approve', 'bookings.convert',
+            'samples.view', 'samples.receive', 'samples.issue', 'samples.post', 'samples.cancel',
             'incentives.view', 'incentives.manage',
             'returns.view', 'returns.manage',
             'inventory.view', 'inventory.adjust',
@@ -49,6 +50,7 @@ class RolePermissionSeeder extends Seeder
                 'purchases.view', 'purchases.create', 'purchases.post', 'purchases.cancel',
                 'sales.view', 'sales.create', 'sales.post', 'sales.cancel',
                 'bookings.view', 'bookings.create', 'bookings.approve', 'bookings.convert',
+                'samples.view', 'samples.receive', 'samples.issue', 'samples.post', 'samples.cancel',
                 'incentives.view',
                 'returns.view', 'returns.manage',
                 'inventory.view', 'inventory.adjust',
@@ -70,6 +72,7 @@ class RolePermissionSeeder extends Seeder
             'Warehouse Staff' => [
                 'inventory.view', 'inventory.adjust', 'products.view',
                 'purchases.view', 'sales.view', 'dashboard.view',
+                'samples.view', 'samples.receive', 'samples.issue', 'samples.post', 'samples.cancel',
             ],
         ];
 

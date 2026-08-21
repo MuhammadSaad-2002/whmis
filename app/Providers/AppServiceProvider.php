@@ -14,6 +14,8 @@ use App\Models\PurchaseReturn;
 use App\Models\Role;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
+use App\Models\SampleIssue;
+use App\Models\SampleReceipt;
 use App\Models\StockAdjustment;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -47,6 +49,8 @@ class AppServiceProvider extends ServiceProvider
             'incentive_rule' => IncentiveRule::class,
             'sales_return' => SalesReturn::class,
             'purchase_return' => PurchaseReturn::class,
+            'sample_receipt' => SampleReceipt::class,
+            'sample_issue' => SampleIssue::class,
             'role' => Role::class,
             'permission' => Permission::class,
         ]);
