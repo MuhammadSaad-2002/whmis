@@ -1,0 +1,1 @@
+import{K as r}from"./app-DJ4juOo6.js";function c(){const{auth:s}=r().props,o=(s==null?void 0:s.permissions)??[];return{can:n=>o.includes(n),canAny:(...n)=>n.some(e=>o.includes(e)),roles:(s==null?void 0:s.roles)??[]}}export{c as u};

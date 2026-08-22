@@ -73,6 +73,7 @@ const DECIMAL_FIELDS = ['purchase_price', 'trade_price', 'retail_price', 'mrp', 
 
 export default function ProductsIndex({ products, companies, categories, filters }: Props) {
     const { can } = usePermissions();
+    const showCost = can('products.view_cost');
     const [dialogOpen, setDialogOpen] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
     const [editing, setEditing] = useState<Product | null>(null);
@@ -265,7 +266,7 @@ export default function ProductsIndex({ products, companies, categories, filters
                             <TableRow>
                                 <TableHead>Product</TableHead>
                                 <TableHead>Supplier</TableHead>
-                                <TableHead className="text-right">Purchase</TableHead>
+                                {showCost && <TableHead className="text-right">Purchase</TableHead>}
                                 <TableHead className="text-right">Trade</TableHead>
                                 <TableHead className="text-right">Retail</TableHead>
                                 <TableHead className="text-right">GST %</TableHead>
@@ -277,7 +278,7 @@ export default function ProductsIndex({ products, companies, categories, filters
                         <TableBody>
                             {products.data.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
+                                    <TableCell colSpan={showCost ? 9 : 8} className="py-10 text-center text-muted-foreground">
                                         No products found.
                                     </TableCell>
                                 </TableRow>
@@ -294,7 +295,7 @@ export default function ProductsIndex({ products, companies, categories, filters
                                             </div>
                                         </TableCell>
                                         <TableCell>{product.company?.name}</TableCell>
-                                        <TableCell className="text-right tabular-nums">{amount(product.purchase_price)}</TableCell>
+                                        {showCost && <TableCell className="text-right tabular-nums">{amount(product.purchase_price)}</TableCell>}
                                         <TableCell className="text-right tabular-nums">{amount(product.trade_price)}</TableCell>
                                         <TableCell className="text-right tabular-nums">{amount(product.retail_price)}</TableCell>
                                         <TableCell className="text-right tabular-nums">{Number(product.tax_percent)}</TableCell>

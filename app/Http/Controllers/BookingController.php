@@ -222,12 +222,12 @@ class BookingController extends Controller
 
     private function customerOptions(Request $request)
     {
-        // Bookers only book for their assigned pharmacies (if any are assigned).
+        // Bookers only book for pharmacies assigned to them (primary booker OR
+        // one of their pivot assignments); approvers/admin see every customer.
         return Customer::active()
             ->when(
-                ! $request->user()->can('bookings.approve')
-                    && Customer::where('booker_id', $request->user()->id)->exists(),
-                fn ($q) => $q->where('booker_id', $request->user()->id),
+                ! $request->user()->can('bookings.approve'),
+                fn ($q) => $q->forBooker($request->user()->id),
             )
             ->orderBy('name')
             ->get(['id', 'name', 'city']);

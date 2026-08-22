@@ -2,6 +2,7 @@ import { ImportDialog } from '@/components/import-dialog';
 import { Paginator, type PaginatedData } from '@/components/paginator';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -47,6 +48,8 @@ interface Customer {
     notes: string | null;
     debit_sum: string | null;
     credit_sum: string | null;
+    booker_id: number | null;
+    booker_ids: number[];
 }
 
 interface Props {
@@ -62,6 +65,7 @@ const emptyForm = {
     name: '', drug_license_no: '', registration_no: '', ntn: '', strn: '', owner_name: '',
     contact_person: '', cnic: '', phone: '', whatsapp: '', email: '', website: '', address: '',
     city: '', region: '', credit_limit: 0, payment_terms: '', credit_days: 0, booker_id: '',
+    booker_ids: [] as number[],
     status: 'active', notes: '', opening_balance: 0,
 };
 
@@ -138,9 +142,8 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
             credit_limit: Number(customer.credit_limit ?? 0),
             payment_terms: customer.payment_terms ?? '',
             credit_days: customer.credit_days ?? 0,
-            booker_id: (customer as Customer & { booker_id?: number | null }).booker_id
-                ? String((customer as Customer & { booker_id?: number | null }).booker_id)
-                : '',
+            booker_id: customer.booker_id ? String(customer.booker_id) : '',
+            booker_ids: customer.booker_ids ?? [],
             status: customer.status,
             notes: customer.notes ?? '',
         });
@@ -375,7 +378,7 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                             </Select>
                         </div>
                         <div>
-                            <Label>Assigned Booker</Label>
+                            <Label>Primary Booker</Label>
                             <Select
                                 value={form.data.booker_id || 'none'}
                                 onValueChange={(v) => form.setData('booker_id', v === 'none' ? '' : v)}
@@ -388,7 +391,41 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                                     ))}
                                 </SelectContent>
                             </Select>
+                            <p className="text-xs text-muted-foreground">Credited for this customer's sales</p>
                         </div>
+                        {can('bookers.assign') && (
+                            <div className="col-span-3">
+                                <Label>Assigned Bookers (can book for this pharmacy)</Label>
+                                {bookers.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground">No bookers exist yet.</p>
+                                ) : (
+                                    <div className="grid grid-cols-2 gap-2 rounded-lg border p-3 sm:grid-cols-3">
+                                        {bookers.map((booker) => {
+                                            const checked = form.data.booker_ids.includes(booker.id);
+                                            return (
+                                                <label key={booker.id} className="flex items-center gap-2 text-sm">
+                                                    <Checkbox
+                                                        checked={checked}
+                                                        onCheckedChange={(v) =>
+                                                            form.setData(
+                                                                'booker_ids',
+                                                                v
+                                                                    ? [...form.data.booker_ids, booker.id]
+                                                                    : form.data.booker_ids.filter((id) => id !== booker.id),
+                                                            )
+                                                        }
+                                                    />
+                                                    {booker.name}
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                                <p className="text-xs text-muted-foreground">
+                                    Every change is recorded in the assignment audit log.
+                                </p>
+                            </div>
+                        )}
                         {!editing && (
                             <div>
                                 <Label htmlFor="opening_balance">Opening Balance (Rs)</Label>

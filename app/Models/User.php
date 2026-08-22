@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use OwenIt\Auditing\Auditable as AuditableTrait;
@@ -59,5 +60,13 @@ class User extends Authenticatable implements Auditable
             'password' => 'hashed',
             'is_active' => 'boolean',
         ];
+    }
+
+    /** Customers this user (as a booker) is assigned to. */
+    public function assignedCustomers(): BelongsToMany
+    {
+        return $this->belongsToMany(Customer::class, 'booker_customer', 'booker_id', 'customer_id')
+            ->withPivot('assigned_by')
+            ->withTimestamps();
     }
 }

@@ -45,12 +45,32 @@ interface TopCustomer {
     customer?: { id: number; name: string };
 }
 
+interface BookerKpis {
+    assigned_pharmacies: number;
+    orders_total: number;
+    orders_this_month: number;
+    orders_pending: number;
+    orders_approved: number;
+    orders_draft: number;
+    orders_converted: number;
+}
+
+interface RecentBooking {
+    id: number;
+    booking_number: string;
+    booking_date: string;
+    status: string;
+    customer?: { id: number; name: string };
+}
+
 interface Props {
-    kpis: Kpis;
-    monthlyTrend: TrendPoint[];
-    expiringSoon: ExpiringBatch[];
-    recentSales: RecentSale[];
-    topCustomers: TopCustomer[];
+    scope?: 'booker';
+    kpis: Kpis | BookerKpis;
+    monthlyTrend?: TrendPoint[];
+    expiringSoon?: ExpiringBatch[];
+    recentSales?: RecentSale[];
+    topCustomers?: TopCustomer[];
+    recentBookings?: RecentBooking[];
 }
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Dashboard', href: '/dashboard' }];
@@ -71,27 +91,95 @@ function Kpi({ label, value, hint, href }: { label: string; value: string; hint?
     return href ? <Link href={href}>{card}</Link> : card;
 }
 
-export default function Dashboard({ kpis, monthlyTrend, expiringSoon, recentSales, topCustomers }: Props) {
+function BookerDashboard({ kpis, recentBookings }: { kpis: BookerKpis; recentBookings: RecentBooking[] }) {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Dashboard" />
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="grid gap-3 md:grid-cols-4">
-                    <Kpi label="Today's Sales" value={money(kpis.today_sales)} hint={`${kpis.today_sales_count} invoices`} />
-                    <Kpi label="Today's Purchases" value={money(kpis.today_purchases)} />
-                    <Kpi label="This Month — Sales" value={money(kpis.month_sales)} />
-                    <Kpi label="This Month — Profit" value={money(kpis.month_profit)} />
-                    <Kpi label="Receivable from Customers" value={money(kpis.receivable)} />
-                    <Kpi label="Payable to Suppliers" value={money(kpis.payable)} />
-                    <Kpi label="Inventory Value (cost)" value={money(kpis.inventory_value)} />
+                    <Kpi label="Assigned Pharmacies" value={String(kpis.assigned_pharmacies)} hint="customers assigned to you" href="/customers" />
+                    <Kpi label="Orders Taken" value={String(kpis.orders_total)} hint="all your bookings" href="/bookings" />
+                    <Kpi label="Orders This Month" value={String(kpis.orders_this_month)} />
+                    <Kpi
+                        label="Pending / Approved"
+                        value={`${kpis.orders_pending} / ${kpis.orders_approved}`}
+                        hint={`${kpis.orders_draft} draft · ${kpis.orders_converted} converted`}
+                    />
+                </div>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-base">My Recent Bookings</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Booking</TableHead>
+                                    <TableHead>Customer</TableHead>
+                                    <TableHead>Date</TableHead>
+                                    <TableHead>Status</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {recentBookings.length === 0 && (
+                                    <TableRow>
+                                        <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
+                                            No bookings yet — create your first order.
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                                {recentBookings.map((booking) => (
+                                    <TableRow key={booking.id}>
+                                        <TableCell>
+                                            <Link href={route('bookings.edit', booking.id)} className="font-medium hover:underline">
+                                                {booking.booking_number}
+                                            </Link>
+                                        </TableCell>
+                                        <TableCell>{booking.customer?.name}</TableCell>
+                                        <TableCell>{shortDate(booking.booking_date)}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={booking.status === 'approved' || booking.status === 'converted' ? 'default' : booking.status === 'rejected' || booking.status === 'cancelled' ? 'destructive' : 'secondary'}>
+                                                {booking.status}
+                                            </Badge>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                </Card>
+            </div>
+        </AppLayout>
+    );
+}
+
+export default function Dashboard({ scope, kpis, monthlyTrend, expiringSoon, recentSales, topCustomers, recentBookings }: Props) {
+    if (scope === 'booker') {
+        return <BookerDashboard kpis={kpis as BookerKpis} recentBookings={recentBookings ?? []} />;
+    }
+
+    const fullKpis = kpis as Kpis;
+    return (
+        <AppLayout breadcrumbs={breadcrumbs}>
+            <Head title="Dashboard" />
+            <div className="flex h-full flex-col gap-4 p-4">
+                <div className="grid gap-3 md:grid-cols-4">
+                    <Kpi label="Today's Sales" value={money(fullKpis.today_sales)} hint={`${fullKpis.today_sales_count} invoices`} />
+                    <Kpi label="Today's Purchases" value={money(fullKpis.today_purchases)} />
+                    <Kpi label="This Month — Sales" value={money(fullKpis.month_sales)} />
+                    <Kpi label="This Month — Profit" value={money(fullKpis.month_profit)} />
+                    <Kpi label="Receivable from Customers" value={money(fullKpis.receivable)} />
+                    <Kpi label="Payable to Suppliers" value={money(fullKpis.payable)} />
+                    <Kpi label="Inventory Value (cost)" value={money(fullKpis.inventory_value)} />
                     <Kpi
                         label="Draft Invoices"
-                        value={String(kpis.draft_sales + kpis.draft_purchases)}
-                        hint={`${kpis.draft_sales} sales · ${kpis.draft_purchases} purchases`}
+                        value={String(fullKpis.draft_sales + fullKpis.draft_purchases)}
+                        hint={`${fullKpis.draft_sales} sales · ${fullKpis.draft_purchases} purchases`}
                     />
                     <Kpi
                         label="Pending Bookings"
-                        value={String(kpis.pending_bookings)}
+                        value={String(fullKpis.pending_bookings)}
                         hint="awaiting approval"
                         href="/bookings?status=pending"
                     />
@@ -102,7 +190,7 @@ export default function Dashboard({ kpis, monthlyTrend, expiringSoon, recentSale
                         <CardTitle className="text-base">Sales & Profit — last 12 months</CardTitle>
                     </CardHeader>
                     <CardContent className="pt-2">
-                        <TrendChart data={monthlyTrend} />
+                        <TrendChart data={monthlyTrend ?? []} />
                     </CardContent>
                 </Card>
 
@@ -123,14 +211,14 @@ export default function Dashboard({ kpis, monthlyTrend, expiringSoon, recentSale
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {recentSales.length === 0 && (
+                                    {(recentSales ?? []).length === 0 && (
                                         <TableRow>
                                             <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
                                                 No sales yet — create your first invoice.
                                             </TableCell>
                                         </TableRow>
                                     )}
-                                    {recentSales.map((sale) => (
+                                    {(recentSales ?? []).map((sale) => (
                                         <TableRow key={sale.id}>
                                             <TableCell>
                                                 <Link href={route('sales.edit', sale.id)} className="font-medium hover:underline">
@@ -168,14 +256,14 @@ export default function Dashboard({ kpis, monthlyTrend, expiringSoon, recentSale
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {expiringSoon.length === 0 && (
+                                        {(expiringSoon ?? []).length === 0 && (
                                             <TableRow>
                                                 <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
                                                     Nothing expiring soon.
                                                 </TableCell>
                                             </TableRow>
                                         )}
-                                        {expiringSoon.map((batch) => (
+                                        {(expiringSoon ?? []).map((batch) => (
                                             <TableRow key={batch.id}>
                                                 <TableCell className="font-medium">{batch.product}</TableCell>
                                                 <TableCell className="font-mono text-sm">{batch.batch_number}</TableCell>
@@ -202,14 +290,14 @@ export default function Dashboard({ kpis, monthlyTrend, expiringSoon, recentSale
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {topCustomers.length === 0 && (
+                                        {(topCustomers ?? []).length === 0 && (
                                             <TableRow>
                                                 <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">
                                                     No posted sales in the last 30 days.
                                                 </TableCell>
                                             </TableRow>
                                         )}
-                                        {topCustomers.map((row) => (
+                                        {(topCustomers ?? []).map((row) => (
                                             <TableRow key={row.customer_id}>
                                                 <TableCell>
                                                     <Link href={route('ledger.customer', row.customer_id)} className="font-medium hover:underline">

@@ -1,5 +1,6 @@
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import { usePermissions } from '@/hooks/use-permissions';
 import { amount, qty } from '@/lib/format';
 import { useEffect, useRef, useState } from 'react';
 
@@ -9,7 +10,8 @@ export interface ProductHit {
     generic_name: string | null;
     company: string | null;
     pack_size: string | null;
-    purchase_price: number;
+    /** Omitted by the API for roles without products.view_cost (e.g. Bookers). */
+    purchase_price?: number;
     trade_price: number;
     retail_price: number;
     tax_percent: number;
@@ -31,8 +33,6 @@ interface Props {
     inputRef: (el: HTMLElement | null) => void;
 }
 
-const GRID_COLS = 'grid grid-cols-[minmax(14rem,1fr)_5rem_11rem_6rem_6rem] items-center gap-2 px-3';
-
 /**
  * Desktop-ERP style product combobox: type in the grid cell itself, results
  * appear as a table dropdown under it. ↑↓ move the highlight, Enter selects,
@@ -41,6 +41,12 @@ const GRID_COLS = 'grid grid-cols-[minmax(14rem,1fr)_5rem_11rem_6rem_6rem] items
 export function ProductSearchCell({
     value, warehouseId, companyId, disabled, openSignal, onSelect, onGridKeyDown, inputRef,
 }: Props) {
+    const { can } = usePermissions();
+    const showCost = can('products.view_cost');
+    // Stacks into a single card row on phones; becomes a table grid from `sm` up.
+    const gridCols = showCost
+        ? 'sm:grid sm:grid-cols-[minmax(13rem,1fr)_4.5rem_9rem_5.5rem_5.5rem_5.5rem] sm:items-center sm:gap-2 px-3'
+        : 'sm:grid sm:grid-cols-[minmax(14rem,1fr)_5rem_10rem_6rem_6rem] sm:items-center sm:gap-2 px-3';
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<ProductHit[]>([]);
@@ -168,19 +174,20 @@ export function ProductSearchCell({
             <PopoverContent
                 align="start"
                 sideOffset={2}
-                className="w-[44rem] max-w-[90vw] p-0"
+                className="w-[min(44rem,calc(100vw-1.5rem))] p-0"
                 onOpenAutoFocus={(e) => e.preventDefault()}
                 onInteractOutside={() => {
                     setOpen(false);
                     setQuery('');
                 }}
             >
-                <div className={`${GRID_COLS} border-b bg-muted/50 py-1.5 text-[11px] font-semibold uppercase text-muted-foreground`}>
+                <div className={`${gridCols} hidden border-b bg-muted/50 py-1.5 text-[11px] font-semibold uppercase text-muted-foreground sm:grid`}>
                     <span>Product Name</span>
                     <span className="text-right">Stock</span>
                     <span>Supplier</span>
-                    <span className="text-right">Pur Price</span>
-                    <span className="text-right">Sale Price</span>
+                    {showCost && <span className="text-right">Pur Price</span>}
+                    <span className="text-right">Trade</span>
+                    <span className="text-right">Retail</span>
                 </div>
                 <div ref={listRef} className="max-h-72 overflow-y-auto">
                     {results.length === 0 && (
@@ -197,7 +204,7 @@ export function ProductSearchCell({
                             onMouseDown={(e) => e.preventDefault()} // keep focus in the cell
                             onClick={() => select(product)}
                             onMouseEnter={() => setHighlight(index)}
-                            className={`${GRID_COLS} cursor-pointer border-b py-1.5 text-sm last:border-0 ${
+                            className={`${gridCols} cursor-pointer border-b py-2 text-sm last:border-0 ${
                                 index === highlight ? 'bg-accent text-accent-foreground' : ''
                             }`}
                         >
@@ -209,12 +216,21 @@ export function ProductSearchCell({
                                     </span>
                                 )}
                             </span>
-                            <span className={`text-right tabular-nums ${product.stock <= 0 ? 'text-destructive' : ''}`}>
+                            <span className={`hidden text-right tabular-nums sm:block ${product.stock <= 0 ? 'text-destructive' : ''}`}>
                                 {qty(product.stock)}
                             </span>
-                            <span className="truncate text-muted-foreground">{product.company ?? '—'}</span>
-                            <span className="text-right tabular-nums">{amount(product.purchase_price)}</span>
-                            <span className="text-right tabular-nums">{amount(product.trade_price)}</span>
+                            <span className="hidden truncate text-muted-foreground sm:block">{product.company ?? '—'}</span>
+                            {showCost && <span className="hidden text-right tabular-nums sm:block">{amount(product.purchase_price ?? 0)}</span>}
+                            <span className="hidden text-right tabular-nums sm:block">{amount(product.trade_price)}</span>
+                            <span className="hidden text-right tabular-nums sm:block">{amount(product.retail_price)}</span>
+                            {/* Phone-only summary line — the grid columns above are hidden below sm. */}
+                            <span className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground sm:hidden">
+                                <span className={product.stock <= 0 ? 'text-destructive' : ''}>Stock {qty(product.stock)}</span>
+                                <span>{product.company ?? '—'}</span>
+                                {showCost && <span>Cost {amount(product.purchase_price ?? 0)}</span>}
+                                <span>TP {amount(product.trade_price)}</span>
+                                <span>RP {amount(product.retail_price)}</span>
+                            </span>
                         </div>
                     ))}
                 </div>

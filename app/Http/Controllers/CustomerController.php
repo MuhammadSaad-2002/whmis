@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BookerAssignmentLog;
 use App\Models\Customer;
 use App\Services\LedgerService;
 use Illuminate\Http\Request;
@@ -23,11 +24,25 @@ class CustomerController extends Controller
             })
             ->when($request->city, fn ($q, $city) => $q->where('city', $city))
             ->when($request->status, fn ($q, $status) => $q->where('status', $status))
+            // Bookers (no company-wide visibility) see only their assigned pharmacies.
+            ->when(
+                ! $request->user()->can('dashboard.view_all'),
+                fn ($q) => $q->forBooker($request->user()->id),
+            )
             ->withSum('ledgerEntries as debit_sum', 'debit')
             ->withSum('ledgerEntries as credit_sum', 'credit')
+            ->with('bookers:id')
             ->orderBy('name')
             ->paginate(15)
             ->withQueryString();
+
+        // Expose the assigned booker ids as a flat array for the edit form.
+        $customers->getCollection()->transform(function (Customer $customer) {
+            $customer->setAttribute('booker_ids', $customer->bookers->pluck('id')->values());
+            $customer->unsetRelation('bookers');
+
+            return $customer;
+        });
 
         return Inertia::render('customers/index', [
             'customers' => $customers,
@@ -41,9 +56,11 @@ class CustomerController extends Controller
     {
         $data = $this->validated($request);
         $openingBalance = (float) ($data['opening_balance'] ?? 0);
-        unset($data['opening_balance']);
+        $bookerIds = $data['booker_ids'] ?? [];
+        unset($data['opening_balance'], $data['booker_ids']);
 
         $customer = Customer::create($data);
+        $this->syncBookers($request, $customer, $bookerIds);
 
         if ($openingBalance != 0.0) {
             $this->ledger->post(
@@ -63,10 +80,39 @@ class CustomerController extends Controller
     public function update(Request $request, Customer $customer)
     {
         $data = $this->validated($request);
-        unset($data['opening_balance']);
+        $bookerIds = $data['booker_ids'] ?? [];
+        unset($data['opening_balance'], $data['booker_ids']);
         $customer->update($data);
+        $this->syncBookers($request, $customer, $bookerIds);
 
         return back()->with('success', 'Customer updated.');
+    }
+
+    /**
+     * Reconcile a customer's assigned bookers and append an audit-log row for
+     * every booker added (assigned) or removed (unassigned). Pivot sync() fires
+     * no model events, so we log the diff explicitly here.
+     */
+    private function syncBookers(Request $request, Customer $customer, array $bookerIds): void
+    {
+        $bookerIds = collect($bookerIds)->map(fn ($id) => (int) $id)->unique();
+        $before = $customer->bookers()->pluck('users.id');
+
+        $customer->bookers()->sync(
+            $bookerIds->mapWithKeys(fn ($id) => [$id => ['assigned_by' => $request->user()->id]])->all()
+        );
+
+        $added = $bookerIds->diff($before);
+        $removed = $before->diff($bookerIds);
+
+        foreach ($added->merge($removed) as $bookerId) {
+            BookerAssignmentLog::create([
+                'customer_id' => $customer->id,
+                'booker_id' => $bookerId,
+                'action' => $added->contains($bookerId) ? 'assigned' : 'unassigned',
+                'changed_by' => $request->user()->id,
+            ]);
+        }
     }
 
     public function import(Request $request)
@@ -130,6 +176,8 @@ class CustomerController extends Controller
             'payment_terms' => ['nullable', 'string', 'max:255'],
             'credit_days' => ['nullable', 'integer', 'min:0'],
             'booker_id' => ['nullable', 'exists:users,id'],
+            'booker_ids' => ['nullable', 'array'],
+            'booker_ids.*' => ['integer', 'exists:users,id'],
             'status' => ['required', 'in:active,inactive'],
             'notes' => ['nullable', 'string'],
             'opening_balance' => ['nullable', 'numeric'],

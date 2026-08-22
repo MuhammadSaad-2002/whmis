@@ -17,8 +17,9 @@ class RolePermissionSeeder extends Seeder
         $permissions = [
             'suppliers.view', 'suppliers.manage',
             'categories.view', 'categories.manage',
-            'products.view', 'products.manage',
+            'products.view', 'products.manage', 'products.view_cost',
             'customers.view', 'customers.manage',
+            'bookers.assign',
             'purchases.view', 'purchases.create', 'purchases.post', 'purchases.cancel',
             'sales.view', 'sales.create', 'sales.post', 'sales.cancel',
             'bookings.view', 'bookings.create', 'bookings.approve', 'bookings.convert',
@@ -29,7 +30,7 @@ class RolePermissionSeeder extends Seeder
             'payments.view', 'payments.manage',
             'ledger.view',
             'reports.view',
-            'dashboard.view',
+            'dashboard.view', 'dashboard.view_all',
             'users.manage',
             'roles.manage',
             'audit.view',
@@ -45,8 +46,9 @@ class RolePermissionSeeder extends Seeder
             'Admin' => [
                 'suppliers.view', 'suppliers.manage',
                 'categories.view', 'categories.manage',
-                'products.view', 'products.manage',
+                'products.view', 'products.manage', 'products.view_cost',
                 'customers.view', 'customers.manage',
+                'bookers.assign',
                 'purchases.view', 'purchases.create', 'purchases.post', 'purchases.cancel',
                 'sales.view', 'sales.create', 'sales.post', 'sales.cancel',
                 'bookings.view', 'bookings.create', 'bookings.approve', 'bookings.convert',
@@ -55,7 +57,7 @@ class RolePermissionSeeder extends Seeder
                 'returns.view', 'returns.manage',
                 'inventory.view', 'inventory.adjust',
                 'payments.view', 'payments.manage',
-                'ledger.view', 'reports.view', 'dashboard.view',
+                'ledger.view', 'reports.view', 'dashboard.view', 'dashboard.view_all',
                 'audit.view',
             ],
             'Booker' => [
@@ -65,13 +67,13 @@ class RolePermissionSeeder extends Seeder
             ],
             'Accountant' => [
                 'ledger.view', 'payments.view', 'payments.manage',
-                'reports.view', 'dashboard.view',
+                'reports.view', 'dashboard.view', 'dashboard.view_all',
                 'sales.view', 'purchases.view', 'bookings.view', 'returns.view',
-                'customers.view', 'suppliers.view',
+                'customers.view', 'suppliers.view', 'products.view_cost',
             ],
             'Warehouse Staff' => [
-                'inventory.view', 'inventory.adjust', 'products.view',
-                'purchases.view', 'sales.view', 'dashboard.view',
+                'inventory.view', 'inventory.adjust', 'products.view', 'products.view_cost',
+                'purchases.view', 'sales.view', 'dashboard.view', 'dashboard.view_all',
                 'samples.view', 'samples.receive', 'samples.issue', 'samples.post', 'samples.cancel',
             ],
         ];

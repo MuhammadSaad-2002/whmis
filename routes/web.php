@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuditController;
+use App\Http\Controllers\BookerAssignmentController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\CustomerController;
@@ -231,6 +232,8 @@ Route::middleware(['auth'])->group(function () {
     });
     Route::get('audit-log', [AuditController::class, 'index'])
         ->middleware('can:audit.view')->name('audit.index');
+    Route::get('booker-assignments', [BookerAssignmentController::class, 'index'])
+        ->middleware('can:audit.view')->name('booker-assignments.index');
 
     // Notifications (bell)
     Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');

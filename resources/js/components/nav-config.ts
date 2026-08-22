@@ -18,6 +18,7 @@ import {
     Tags,
     TrendingUp,
     Undo2,
+    UserCog,
     Users,
 } from 'lucide-react';
 
@@ -79,6 +80,7 @@ export const navGroups: { label: string; items: PermittedNavItem[] }[] = [
             { title: 'Users', url: '/users', icon: Users, permission: 'users.manage' },
             { title: 'Roles & Permissions', url: '/roles', icon: ShieldCheck, permission: 'roles.manage' },
             { title: 'Audit Log', url: '/audit-log', icon: ScrollText, permission: 'audit.view' },
+            { title: 'Booker Assignments', url: '/booker-assignments', icon: UserCog, permission: 'audit.view' },
         ],
     },
 ];

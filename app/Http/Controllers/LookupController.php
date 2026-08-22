@@ -42,19 +42,30 @@ class LookupController extends Controller
             ->limit(20)
             ->get();
 
-        return response()->json($products->map(fn (Product $product) => [
-            'id' => $product->id,
-            'name' => $product->name,
-            'generic_name' => $product->generic_name,
-            'company' => $product->company?->name,
-            'pack_size' => $product->pack_size,
-            'purchase_price' => (float) $product->purchase_price,
-            'trade_price' => (float) $product->trade_price,
-            'retail_price' => (float) $product->retail_price,
-            'tax_percent' => (float) $product->tax_percent,
-            'default_discount_percent' => (float) $product->default_discount_percent,
-            'stock' => (float) ($product->stock ?? 0),
-        ]));
+        // Purchase price (cost) is hidden from roles without products.view_cost
+        // (e.g. Bookers) — the key is simply omitted from the payload.
+        $showCost = $request->user()->can('products.view_cost');
+
+        return response()->json($products->map(function (Product $product) use ($showCost) {
+            $row = [
+                'id' => $product->id,
+                'name' => $product->name,
+                'generic_name' => $product->generic_name,
+                'company' => $product->company?->name,
+                'pack_size' => $product->pack_size,
+                'trade_price' => (float) $product->trade_price,
+                'retail_price' => (float) $product->retail_price,
+                'tax_percent' => (float) $product->tax_percent,
+                'default_discount_percent' => (float) $product->default_discount_percent,
+                'stock' => (float) ($product->stock ?? 0),
+            ];
+
+            if ($showCost) {
+                $row['purchase_price'] = (float) $product->purchase_price;
+            }
+
+            return $row;
+        }));
     }
 
     public function batches(Request $request, Product $product)

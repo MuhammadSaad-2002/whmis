@@ -10,9 +10,10 @@ import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useInvoiceHotkeys, useKeyboardGrid } from '@/hooks/use-keyboard-grid';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { amount, dec2, money, toNumber } from '@/lib/format';
+import { amount, dec2, money, qty, toNumber } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { combineEffects } from '@/lib/incentive';
 import { computeLine, computeTotals, effectiveDiscountPercent } from '@/lib/invoice-math';
@@ -32,6 +33,11 @@ interface ItemRow {
     discount_percent: string;
     gst_percent: string;
     remarks: string;
+    // Display-only (from the product picker): supplier, live stock, retail price.
+    // Helps the booker take the order; never sent back / recomputed on the server.
+    retail_price: string;
+    company: string | null;
+    stock: number;
 }
 
 interface BookingDto {
@@ -82,6 +88,7 @@ const emptyRow = (): ItemRow => ({
     product_id: null, product_name: '', quantity: '1', requested_bonus: '0',
     incentives: [], trade_price: '',
     discount_percent: '0.00', gst_percent: '0.00', remarks: '',
+    retail_price: '', company: null, stock: 0,
 });
 
 /** Rebuild the stacked RuleHit list from a saved booking item's incentive rows. */
@@ -118,6 +125,7 @@ const statusVariant = (status: string) =>
 
 export default function BookingForm({ customers, warehouse, booking }: Props) {
     const { can } = usePermissions();
+    const isMobile = useIsMobile();
     const isDraft = !booking || booking.status === 'draft';
     const readonly = !isDraft;
 
@@ -139,6 +147,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                   discount_percent: dec2(item.discount_percent),
                   gst_percent: dec2(item.gst_percent),
                   remarks: item.remarks ?? '',
+                  retail_price: '', company: null, stock: 0,
               }))
             : [emptyRow()],
     );
@@ -289,6 +298,9 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                           trade_price: dec2(product.trade_price),
                           gst_percent: dec2(product.tax_percent ?? 0),
                           discount_percent: dec2(product.default_discount_percent ?? 0),
+                          retail_price: dec2(product.retail_price),
+                          company: product.company,
+                          stock: product.stock,
                       }
                     : row,
             ),
@@ -405,7 +417,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
                     <div className="flex items-center gap-3">
-                        <h1 className="text-4xl font-bold">
+                        <h1 className="text-2xl font-bold sm:text-3xl md:text-4xl">
                             {booking ? `Booking ${booking.booking_number}` : 'New Booking'}
                         </h1>
                         {booking && <Badge variant={statusVariant(booking.status)}>{booking.status}</Badge>}
@@ -464,7 +476,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                     </div>
                 </div>
 
-                <div data-enter-nav className="grid grid-cols-2 gap-3 rounded-xl border p-4 md:grid-cols-4">
+                <div data-enter-nav className="grid grid-cols-1 gap-3 rounded-xl border p-4 sm:grid-cols-2 md:grid-cols-4">
                     <div>
                         <Label>Customer *</Label>
                         <SearchableSelect
@@ -503,7 +515,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                         <Label>Warehouse</Label>
                         <Input value={warehouse.name} disabled />
                     </div>
-                    <div className="col-span-2">
+                    <div className="col-span-1 sm:col-span-2">
                         <Label>Remarks</Label>
                         <Input
                             value={header.notes} disabled={readonly}
@@ -520,16 +532,179 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                 </div>
 
                 <div className="rounded-xl border">
+                    {isMobile && (
+                        <div className="space-y-3 p-3">
+                            {rows.map((row, rowIndex) => {
+                                const line = computed[rowIndex];
+                                const hasDiscountIncentive = row.incentives.some((inc) => isDiscountType(inc.rule_type));
+                                return (
+                                    <div key={rowIndex} className="space-y-3 rounded-lg border p-3">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-semibold uppercase text-muted-foreground">Line {rowIndex + 1}</span>
+                                            {!readonly && (
+                                                <button type="button" onClick={() => removeRow(rowIndex)} className="text-muted-foreground hover:text-destructive">
+                                                    <Trash2 className="size-4" />
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <Label className="text-xs text-muted-foreground">Product</Label>
+                                            <div className={`rounded-md border ${rowErrors[rowIndex]?.product_id ? 'ring-1 ring-destructive' : ''}`}>
+                                                <ProductSearchCell
+                                                    value={row.product_name}
+                                                    warehouseId={warehouse.id}
+                                                    disabled={readonly}
+                                                    onSelect={(product) => applyProduct(rowIndex, product)}
+                                                    onGridKeyDown={() => {}}
+                                                    inputRef={() => {}}
+                                                />
+                                            </div>
+                                            {rowErrors[rowIndex]?.product_id && (
+                                                <p className="mt-1 text-xs text-destructive">{rowErrors[rowIndex].product_id}</p>
+                                            )}
+                                            {row.product_id && (
+                                                <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                                                    <span>{row.company ?? '—'}</span>
+                                                    <span className={row.stock <= 0 ? 'text-destructive' : ''}>Stock {qty(row.stock)}</span>
+                                                    {row.retail_price && <span>Retail {amount(row.retail_price)}</span>}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <div>
+                                                <Label className="text-xs text-muted-foreground">Qty</Label>
+                                                <Input
+                                                    type="number" min={1} inputMode="numeric" value={row.quantity} disabled={readonly}
+                                                    aria-invalid={!!rowErrors[rowIndex]?.quantity}
+                                                    onChange={(e) => { setCell(rowIndex, 'quantity', e.target.value); if (rowErrors[rowIndex]?.quantity) setRowError(rowIndex, 'quantity', null); }}
+                                                    onBlur={(e) => {
+                                                        const v = String(Math.max(1, toNumber(e.target.value)));
+                                                        setCell(rowIndex, 'quantity', v);
+                                                        if (row.product_id) setRowError(rowIndex, 'quantity', cellRule('quantity', v));
+                                                    }}
+                                                    className={`text-right ${rowErrors[rowIndex]?.quantity ? 'border-destructive' : ''}`}
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label className="text-xs text-muted-foreground">Bonus</Label>
+                                                <Input
+                                                    type="number" inputMode="numeric" value={row.requested_bonus} disabled={readonly}
+                                                    onChange={(e) => setCell(rowIndex, 'requested_bonus', e.target.value)}
+                                                    className="text-right"
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label className="text-xs text-muted-foreground">Price</Label>
+                                                <Input
+                                                    type="number" inputMode="decimal" value={row.trade_price} disabled={readonly}
+                                                    aria-invalid={!!rowErrors[rowIndex]?.trade_price}
+                                                    onChange={(e) => { setCell(rowIndex, 'trade_price', e.target.value); if (rowErrors[rowIndex]?.trade_price) setRowError(rowIndex, 'trade_price', null); }}
+                                                    onBlur={(e) => {
+                                                        const v = dec2(e.target.value);
+                                                        setCell(rowIndex, 'trade_price', v);
+                                                        if (row.product_id) setRowError(rowIndex, 'trade_price', cellRule('trade_price', v));
+                                                    }}
+                                                    className={`text-right ${rowErrors[rowIndex]?.trade_price ? 'border-destructive' : ''}`}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <div>
+                                                <Label className="text-xs text-muted-foreground">Disc %</Label>
+                                                {hasDiscountIncentive ? (
+                                                    <Input
+                                                        readOnly
+                                                        value={dec2(effectiveDiscountPercent(line.gross, line.discount_amount))}
+                                                        className="bg-emerald-50 text-right text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                                                    />
+                                                ) : (
+                                                    <Input
+                                                        type="number" inputMode="decimal" value={row.discount_percent} disabled={readonly}
+                                                        aria-invalid={!!rowErrors[rowIndex]?.discount_percent}
+                                                        onChange={(e) => { setCell(rowIndex, 'discount_percent', e.target.value); if (rowErrors[rowIndex]?.discount_percent) setRowError(rowIndex, 'discount_percent', null); }}
+                                                        onBlur={(e) => {
+                                                            const v = dec2(e.target.value);
+                                                            setCell(rowIndex, 'discount_percent', v);
+                                                            if (row.product_id) setRowError(rowIndex, 'discount_percent', cellRule('discount_percent', v));
+                                                        }}
+                                                        className={`text-right ${rowErrors[rowIndex]?.discount_percent ? 'border-destructive' : ''}`}
+                                                    />
+                                                )}
+                                            </div>
+                                            <div>
+                                                <Label className="text-xs text-muted-foreground">GST %</Label>
+                                                <Input
+                                                    type="number" inputMode="decimal" value={row.gst_percent} disabled={readonly}
+                                                    onChange={(e) => { setCell(rowIndex, 'gst_percent', e.target.value); if (rowErrors[rowIndex]?.gst_percent) setRowError(rowIndex, 'gst_percent', null); }}
+                                                    onBlur={(e) => {
+                                                        const v = dec2(e.target.value);
+                                                        setCell(rowIndex, 'gst_percent', v);
+                                                        if (row.product_id) setRowError(rowIndex, 'gst_percent', cellRule('gst_percent', v));
+                                                    }}
+                                                    className="text-right"
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label className="text-xs text-muted-foreground">Net</Label>
+                                                <div className="flex h-9 items-center justify-end rounded-md border bg-muted/40 px-2 text-sm font-medium tabular-nums">
+                                                    {amount(line.net_amount)}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <Label className="text-xs text-muted-foreground">Incentives</Label>
+                                            <div className="flex flex-wrap items-center gap-1">
+                                                {row.incentives.map((inc) => (
+                                                    <Badge key={inc.id} variant="outline" className="gap-1 pr-1">
+                                                        <span className="truncate">{inc.name}</span>
+                                                        {!readonly && (
+                                                            <button type="button" onClick={() => removeRule(rowIndex, inc)} className="rounded-sm hover:text-destructive">
+                                                                <X className="size-3" />
+                                                            </button>
+                                                        )}
+                                                    </Badge>
+                                                ))}
+                                                {!readonly && (
+                                                    <Button
+                                                        type="button" variant="outline" size="sm" disabled={!row.product_id}
+                                                        onClick={() => { setActiveRow(rowIndex); setRuleOpen(true); }}
+                                                    >
+                                                        <Plus className="mr-1 size-3" /> Rule
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <Label className="text-xs text-muted-foreground">Remarks</Label>
+                                            <Input
+                                                value={row.remarks} disabled={readonly}
+                                                onChange={(e) => setCell(rowIndex, 'remarks', e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                    {!isMobile && (
                     <div className="max-h-[55dvh] overflow-auto">
-                    <table className="w-full min-w-[1050px] text-sm">
+                    <table className="w-full min-w-[1280px] text-sm">
                         <thead className="sticky top-0 z-10 bg-muted text-xs uppercase">
                             <tr className="[&>th]:border-b [&>th]:px-2 [&>th]:py-2 [&>th]:text-left">
                                 <th className="w-8">#</th>
                                 <th className="min-w-56">Product <kbd className="opacity-50">F2</kbd></th>
+                                <th className="w-32">Supplier</th>
+                                <th className="w-16 text-right">Stock</th>
                                 <th className="w-20 text-right">Qty</th>
                                 <th className="w-20 text-right">Bonus</th>
                                 <th className="w-36">Rule <kbd className="opacity-50">F4</kbd></th>
                                 <th className="w-24 text-right">Price</th>
+                                <th className="w-24 text-right">Retail</th>
                                 <th className="w-20 text-right">Disc %</th>
                                 <th className="w-20 text-right">GST %</th>
                                 <th className="w-28 text-right">Net</th>
@@ -554,6 +729,12 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                                             onGridKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 0)}
                                             inputRef={grid.registerCell(rowIndex, 0)}
                                         />
+                                    </td>
+                                    <td className="truncate px-2 text-muted-foreground" title={row.company ?? undefined}>
+                                        {row.product_id ? (row.company ?? '—') : ''}
+                                    </td>
+                                    <td className={`px-2 text-right tabular-nums ${row.stock <= 0 && row.product_id ? 'text-destructive' : 'text-muted-foreground'}`}>
+                                        {row.product_id ? qty(row.stock) : ''}
                                     </td>
                                     <td>
                                         <Input
@@ -636,6 +817,9 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                                             className={`h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1 ${ringClass(rowIndex, 'trade_price')}`}
                                         />
                                     </td>
+                                    <td className="px-2 text-right tabular-nums text-muted-foreground">
+                                        {row.product_id && row.retail_price ? amount(row.retail_price) : ''}
+                                    </td>
                                     <td>
                                         {row.incentives.some((inc) => isDiscountType(inc.rule_type)) ? (
                                             // A discount incentive drives the line discount; the cell shows
@@ -705,6 +889,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                         </tbody>
                     </table>
                     </div>
+                    )}
                     {!readonly && (
                         <div className="border-t p-2">
                             <Button variant="ghost" size="sm" onClick={() => setRows((r) => [...r, emptyRow()])}>
@@ -715,11 +900,11 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                 </div>
 
                 <div className="sticky bottom-0 z-10 mt-auto bg-background pt-2">
-                    <div className="flex flex-wrap items-center gap-x-8 gap-y-1 rounded-xl border bg-muted px-5 py-3 text-base font-bold tabular-nums">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border bg-muted px-3 py-2 text-sm font-bold tabular-nums sm:gap-x-8 sm:px-5 sm:py-3 sm:text-base">
                         <span>Subtotal <span className="ml-1">{amount(totals.subtotal)}</span></span>
                         <span>Discounts <span className="ml-1">−{amount(totals.item_discount_total)}</span></span>
                         <span>GST <span className="ml-1">+{amount(totals.item_gst_total)}</span></span>
-                        <span className="ml-auto text-2xl text-primary">Total <span className="ml-1">{money(totals.total_amount)}</span></span>
+                        <span className="ml-auto text-lg text-primary sm:text-2xl">Total <span className="ml-1">{money(totals.total_amount)}</span></span>
                     </div>
                 </div>
             </div>
