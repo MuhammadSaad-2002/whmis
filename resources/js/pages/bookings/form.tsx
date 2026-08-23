@@ -81,6 +81,9 @@ interface BookingDto {
 interface Props {
     customers: { id: number; name: string; city: string | null }[];
     warehouse: { id: number; name: string };
+    // Present only for approvers/admin (who may credit a booking to a booker);
+    // null for field bookers, who are always booked as themselves.
+    bookers?: { id: number; name: string }[] | null;
     booking: BookingDto | null;
 }
 
@@ -123,7 +126,7 @@ const statusVariant = (status: string) =>
     status === 'approved' || status === 'converted' ? 'default'
         : status === 'rejected' || status === 'cancelled' ? 'destructive' : 'secondary';
 
-export default function BookingForm({ customers, warehouse, booking }: Props) {
+export default function BookingForm({ customers, warehouse, bookers, booking }: Props) {
     const { can } = usePermissions();
     const isMobile = useIsMobile();
     const isDraft = !booking || booking.status === 'draft';
@@ -131,6 +134,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
 
     const [header, setHeader] = useState({
         customer_id: booking ? String(booking.customer_id) : '',
+        booker_id: booking?.booker?.id ? String(booking.booker.id) : '',
         booking_date: booking?.booking_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
         notes: booking?.notes ?? '',
     });
@@ -356,6 +360,7 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
     const payload = () => ({
         ...header,
         customer_id: header.customer_id || null,
+        booker_id: header.booker_id || null,
         warehouse_id: warehouse.id,
         items: rows
             .filter((row) => row.product_id && toNumber(row.quantity) > 0)
@@ -497,6 +502,23 @@ export default function BookingForm({ customers, warehouse, booking }: Props) {
                         />
                         <InputError message={headerErrors.customer_id} className="mt-1 text-xs" />
                     </div>
+                    {bookers && (
+                        <div>
+                            <Label>Booker</Label>
+                            <SearchableSelect
+                                value={header.booker_id}
+                                onValueChange={(v) => setHeader((h) => ({ ...h, booker_id: v }))}
+                                disabled={readonly}
+                                placeholder="Select booker"
+                                searchPlaceholder="Search booker…"
+                                emptyText="No bookers found."
+                                options={[
+                                    { value: '', label: '— None —' },
+                                    ...bookers.map((b) => ({ value: String(b.id), label: b.name })),
+                                ]}
+                            />
+                        </div>
+                    )}
                     <div>
                         <Label>Booking Date *</Label>
                         <Input

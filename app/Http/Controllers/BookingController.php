@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Booking;
 use App\Models\Customer;
 use App\Models\Product;
+use App\Models\User;
 use App\Models\Warehouse;
 use App\Models\IncentiveRule;
 use App\Services\BookingService;
@@ -57,6 +58,7 @@ class BookingController extends Controller
         return Inertia::render('bookings/form', [
             'customers' => $this->customerOptions($request),
             'warehouse' => Warehouse::default()->only(['id', 'name']),
+            'bookers' => $this->bookerOptions($request),
             'booking' => null,
         ]);
     }
@@ -72,7 +74,7 @@ class BookingController extends Controller
         $booking = DB::transaction(function () use ($request, $data) {
             $booking = Booking::create($this->headerAttributes($data) + [
                 'booking_number' => $this->numbers->next('booking'),
-                'booker_id' => $request->user()->id,
+                'booker_id' => $this->resolveBookerId($request, $data),
                 'status' => Booking::STATUS_DRAFT,
                 'created_by' => $request->user()->id,
             ]);
@@ -99,6 +101,7 @@ class BookingController extends Controller
         return Inertia::render('bookings/form', [
             'customers' => $this->customerOptions($request),
             'warehouse' => $booking->warehouse->only(['id', 'name']),
+            'bookers' => $this->bookerOptions($request),
             'booking' => $booking,
         ]);
     }
@@ -117,8 +120,12 @@ class BookingController extends Controller
             return back()->with('error', "{$name} appears on more than one line — combine it into a single line.");
         }
 
-        DB::transaction(function () use ($booking, $data) {
-            $booking->update($this->headerAttributes($data));
+        DB::transaction(function () use ($request, $booking, $data) {
+            $booking->update($this->headerAttributes($data) + [
+                // Approvers may re-attribute a draft to a different booker; a field
+                // booker's submitted booker_id is ignored (stays whoever it was).
+                'booker_id' => $this->resolveBookerId($request, $data, $booking->booker_id),
+            ]);
             $booking->items()->delete();
             $this->syncItems($booking, $data['items']);
         });
@@ -233,10 +240,38 @@ class BookingController extends Controller
             ->get(['id', 'name', 'city']);
     }
 
+    /**
+     * Booker picklist — only approvers/admin may credit a booking to someone
+     * else; field bookers get null (no selector, always booked as themselves).
+     */
+    private function bookerOptions(Request $request)
+    {
+        if (! $request->user()->can('bookings.approve')) {
+            return null;
+        }
+
+        return User::role('Booker')->orderBy('name')->get(['id', 'name']);
+    }
+
+    /**
+     * The booker to credit. Only approvers/admin may pick one (on someone's
+     * behalf); everyone else is always booked as themselves. Falls back to
+     * $default (or the current user) when unset — preserving existing behaviour.
+     */
+    private function resolveBookerId(Request $request, array $data, ?int $default = null): int
+    {
+        if ($request->user()->can('bookings.approve') && ! empty($data['booker_id'])) {
+            return (int) $data['booker_id'];
+        }
+
+        return $default ?? $request->user()->id;
+    }
+
     private function validated(Request $request): array
     {
         return $request->validate([
             'customer_id' => ['required', 'exists:customers,id'],
+            'booker_id' => ['nullable', 'exists:users,id'],
             'warehouse_id' => ['required', 'exists:warehouses,id'],
             'booking_date' => ['required', 'date'],
             'notes' => ['nullable', 'string'],

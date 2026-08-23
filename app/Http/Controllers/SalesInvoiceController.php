@@ -8,6 +8,7 @@ use App\Models\IncentiveRule;
 use App\Models\Product;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
+use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\IncentiveEngine;
 use App\Services\InventoryService;
@@ -110,8 +111,9 @@ class SalesInvoiceController extends Controller
     public function create()
     {
         return Inertia::render('sales/form', [
-            'customers' => Customer::active()->orderBy('name')->get(['id', 'name', 'city', 'credit_limit']),
+            'customers' => Customer::active()->orderBy('name')->get(['id', 'name', 'city', 'credit_limit', 'booker_id']),
             'warehouse' => Warehouse::default()->only(['id', 'name']),
+            'bookers' => User::role('Booker')->orderBy('name')->get(['id', 'name']),
             'invoice' => null,
         ]);
     }
@@ -155,11 +157,13 @@ class SalesInvoiceController extends Controller
             'items.appliedRule:id,name',
             'items.incentives.rule:id,name,rule_type,base_qty,bonus_qty,slabs,value',
             'customer:id,name,city,credit_limit',
+            'booker:id,name',
         ]);
 
         return Inertia::render('sales/form', [
-            'customers' => Customer::active()->orderBy('name')->get(['id', 'name', 'city', 'credit_limit']),
+            'customers' => Customer::active()->orderBy('name')->get(['id', 'name', 'city', 'credit_limit', 'booker_id']),
             'warehouse' => $sale->warehouse->only(['id', 'name']),
+            'bookers' => User::role('Booker')->orderBy('name')->get(['id', 'name']),
             'invoice' => $sale,
         ]);
     }
@@ -295,6 +299,7 @@ class SalesInvoiceController extends Controller
                 Rule::unique('sales_invoices', 'invoice_number')->ignore($existing?->id),
             ],
             'customer_id' => ['required', 'exists:customers,id'],
+            'booker_id' => ['nullable', 'exists:users,id'],
             'warehouse_id' => ['required', 'exists:warehouses,id'],
             'invoice_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date'],
@@ -320,7 +325,7 @@ class SalesInvoiceController extends Controller
     private function headerAttributes(array $data): array
     {
         return collect($data)->only([
-            'customer_id', 'warehouse_id', 'invoice_date', 'due_date',
+            'customer_id', 'booker_id', 'warehouse_id', 'invoice_date', 'due_date',
             'sale_type', 'sale_terms', 'discount_percent', 'gst_percent', 'notes',
         ])->map(fn ($v) => $v ?? null)->all();
     }

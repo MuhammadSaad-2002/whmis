@@ -390,14 +390,20 @@ class ReportService
     private function bookerSales(Carbon $from, Carbon $to): array
     {
         $invoices = $this->postedSales($from, $to)->with('customer:id,name,booker_id')->get();
-        $returns = $this->postedReturns($from, $to)->with('customer:id,booker_id')->get();
+        $returns = $this->postedReturns($from, $to)->with(['customer:id,booker_id', 'invoice:id,booker_id'])->get();
 
-        $bookerIds = $invoices->pluck('customer.booker_id')
-            ->merge($returns->pluck('customer.booker_id'))->filter()->unique();
+        // Credit each invoice to its own booker when one was set (an admin may
+        // enter an order on a booker's behalf), else fall back to the customer's
+        // primary booker — the historical behaviour when nothing is set.
+        $invKey = fn ($invoice) => $invoice->booker_id ?? $invoice->customer?->booker_id ?? 0;
+        $retKey = fn ($return) => $return->invoice?->booker_id ?? $return->customer?->booker_id ?? 0;
+
+        $bookerIds = $invoices->map($invKey)
+            ->merge($returns->map($retKey))->filter()->unique();
         $bookers = User::whereIn('id', $bookerIds)->pluck('name', 'id');
 
-        $invByBooker = $invoices->groupBy(fn ($invoice) => $invoice->customer?->booker_id ?? 0);
-        $retByBooker = $returns->groupBy(fn ($return) => $return->customer?->booker_id ?? 0);
+        $invByBooker = $invoices->groupBy($invKey);
+        $retByBooker = $returns->groupBy($retKey);
 
         $rows = $invByBooker->keys()->merge($retByBooker->keys())->unique()->map(function ($bookerId) use ($invByBooker, $retByBooker, $bookers) {
             $invGroup = $invByBooker[$bookerId] ?? collect();

@@ -73,6 +73,7 @@ class BookingService
             $invoice = SalesInvoice::create([
                 'invoice_number' => $this->numbers->next('sales_invoice'),
                 'customer_id' => $booking->customer_id,
+                'booker_id' => $booking->booker_id,
                 'warehouse_id' => $booking->warehouse_id,
                 'booking_id' => $booking->id,
                 'sale_type' => 'booking',

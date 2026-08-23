@@ -43,6 +43,8 @@ interface InvoiceDto {
     id: number;
     invoice_number: string;
     customer_id: number;
+    booker_id: number | null;
+    booker?: { id: number; name: string } | null;
     warehouse_id: number;
     invoice_date: string;
     due_date: string | null;
@@ -82,11 +84,12 @@ interface InvoiceDto {
     }[];
 }
 
-interface CustomerOption { id: number; name: string; city: string | null; credit_limit: string }
+interface CustomerOption { id: number; name: string; city: string | null; credit_limit: string; booker_id: number | null }
 
 interface Props {
     customers: CustomerOption[];
     warehouse: { id: number; name: string };
+    bookers: { id: number; name: string }[];
     invoice: InvoiceDto | null;
 }
 
@@ -129,7 +132,7 @@ const DECIMAL_KEYS: ReadonlySet<keyof ItemRow> = new Set([
     'trade_price', 'discount_percent', 'gst_percent',
 ] as (keyof ItemRow)[]);
 
-export default function SalesForm({ customers, warehouse, invoice }: Props) {
+export default function SalesForm({ customers, warehouse, bookers, invoice }: Props) {
     const { can } = usePermissions();
     const isDraft = !invoice || invoice.status === 'draft';
     const readonly = !isDraft;
@@ -137,6 +140,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
     const [header, setHeader] = useState({
         invoice_number: '',
         customer_id: invoice ? String(invoice.customer_id) : '',
+        booker_id: invoice?.booker_id ? String(invoice.booker_id) : '',
         invoice_date: invoice?.invoice_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
         due_date: invoice?.due_date?.slice(0, 10) ?? '',
         sale_type: invoice?.sale_type ?? 'credit',
@@ -366,6 +370,7 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
         ...header,
         invoice_number: header.invoice_number || null,
         customer_id: header.customer_id || null,
+        booker_id: header.booker_id || null,
         due_date: header.due_date || null,
         // Terms only apply to Sale Base; cleared otherwise.
         sale_terms: header.sale_type === 'sale_base' ? header.sale_terms.trim() || null : null,
@@ -522,7 +527,14 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                         <SearchableSelect
                             value={header.customer_id}
                             onValueChange={(v) => {
-                                setHeader((h) => ({ ...h, customer_id: v }));
+                                const picked = customers.find((c) => String(c.id) === v);
+                                setHeader((h) => ({
+                                    ...h,
+                                    customer_id: v,
+                                    // Auto-fill the booker from the customer's assigned
+                                    // booker, but never clobber one already chosen.
+                                    booker_id: h.booker_id || (picked?.booker_id ? String(picked.booker_id) : ''),
+                                }));
                                 setHeaderErrors((e) => { const n = { ...e }; delete n.customer_id; return n; });
                             }}
                             disabled={readonly}
@@ -541,6 +553,21 @@ export default function SalesForm({ customers, warehouse, invoice }: Props) {
                                 Credit limit: {money(selectedCustomer.credit_limit)}
                             </p>
                         )}
+                    </div>
+                    <div>
+                        <Label>Booker</Label>
+                        <SearchableSelect
+                            value={header.booker_id}
+                            onValueChange={(v) => setHeader((h) => ({ ...h, booker_id: v }))}
+                            disabled={readonly}
+                            placeholder="Select booker"
+                            searchPlaceholder="Search booker…"
+                            emptyText="No bookers found."
+                            options={[
+                                { value: '', label: '— None —' },
+                                ...bookers.map((b) => ({ value: String(b.id), label: b.name })),
+                            ]}
+                        />
                     </div>
                     <div>
                         <Label>Invoice # {invoice ? '' : '(blank = auto)'}</Label>

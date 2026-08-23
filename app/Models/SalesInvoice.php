@@ -51,6 +51,12 @@ class SalesInvoice extends Model implements AuditableContract
         return $this->belongsTo(Customer::class);
     }
 
+    /** Optional booker credited with this sale (set by an admin/manager). */
+    public function booker(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'booker_id');
+    }
+
     /** Set when the invoice was created by converting a booking. */
     public function booking(): BelongsTo
     {
