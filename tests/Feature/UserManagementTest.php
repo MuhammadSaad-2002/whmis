@@ -93,20 +93,18 @@ class UserManagementTest extends TestCase
         $this->assertDatabaseHas('users', ['id' => $admin->id]);
     }
 
-    public function test_cannot_delete_the_last_super_admin(): void
+    public function test_non_super_admin_cannot_delete_a_super_admin(): void
     {
-        // Clear any seeded Super Admins so we control the count exactly.
-        User::role('Super Admin')->get()->each(fn (User $u) => $u->removeRole('Super Admin'));
-
-        // A manager who can manage users but is not a Super Admin themselves.
+        // A manager who can manage users but is not a Super Admin themselves may
+        // not act on a Super Admin account at all — it is invisible to them.
         $manager = User::factory()->create();
         $manager->givePermissionTo('users.manage');
         $this->actingAs($manager);
 
         $superAdmin = User::factory()->create();
-        $superAdmin->assignRole('Super Admin'); // now the only Super Admin
+        $superAdmin->assignRole('Super Admin');
 
-        $this->delete("/users/{$superAdmin->id}")->assertSessionHas('error');
+        $this->delete("/users/{$superAdmin->id}")->assertForbidden();
         $this->assertDatabaseHas('users', ['id' => $superAdmin->id]);
     }
 }

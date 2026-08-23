@@ -58,7 +58,7 @@ class RolePermissionSeeder extends Seeder
                 'inventory.view', 'inventory.adjust',
                 'payments.view', 'payments.manage',
                 'ledger.view', 'reports.view', 'dashboard.view', 'dashboard.view_all',
-                'audit.view',
+                'audit.view', 'users.manage',
             ],
             'Booker' => [
                 'customers.view', 'products.view',
