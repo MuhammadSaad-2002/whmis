@@ -7,11 +7,14 @@ import { TabBar } from '@/components/workspace/tab-bar';
 import { WorkspaceFrame } from '@/components/workspace/workspace-frame';
 import { useTabs } from '@/hooks/use-tabs';
 import { WORKSPACE_PATH, type ShellMessage } from '@/lib/embedded';
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 export default function Workspace() {
-    const { tabs, activeId, openTab, focusTab, closeTab, updateTab } = useTabs();
+    // Scope the open-tabs set to the signed-in user so it never leaks to whoever
+    // logs in next on the same browser.
+    const userId = (usePage().props as { auth?: { user?: { id?: number } } }).auth?.user?.id;
+    const { tabs, activeId, openTab, focusTab, closeTab, updateTab } = useTabs(userId);
 
     // Map tab id → its iframe element, so incoming tab-state messages can be
     // attributed to the frame that sent them.

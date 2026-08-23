@@ -6,9 +6,18 @@ export interface Tab {
     title: string;
 }
 
-const STORAGE_KEY = 'whmis:workspace-tabs';
+const STORAGE_PREFIX = 'whmis:workspace-tabs';
 const HOME: Omit<Tab, 'id'> = { url: '/dashboard', title: 'Dashboard' };
 export const MAX_TABS = 15;
+
+/**
+ * Per-user storage key. localStorage is shared by everyone on the same browser,
+ * so the open-tabs set must be namespaced by user id — otherwise the next person
+ * to sign in on this browser inherits the previous user's tabs.
+ */
+function storageKey(scope: string | number | undefined): string {
+    return `${STORAGE_PREFIX}:${scope ?? 'anon'}`;
+}
 
 function newId(): string {
     return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
@@ -28,13 +37,13 @@ interface Persisted {
     active: number;
 }
 
-function loadInitial(): { tabs: Tab[]; activeId: string } {
+function loadInitial(key: string): { tabs: Tab[]; activeId: string } {
     let items: { url: string; title: string }[] = [];
     let active = 0;
 
     if (typeof window !== 'undefined') {
         try {
-            const raw = localStorage.getItem(STORAGE_KEY);
+            const raw = localStorage.getItem(key);
             if (raw) {
                 const parsed = JSON.parse(raw) as Persisted;
                 if (Array.isArray(parsed.items)) {
@@ -53,9 +62,10 @@ function loadInitial(): { tabs: Tab[]; activeId: string } {
     return { tabs, activeId: tabs[active]?.id ?? tabs[0].id };
 }
 
-export function useTabs() {
+export function useTabs(scope?: string | number) {
+    const key = storageKey(scope);
     const initialRef = useRef<{ tabs: Tab[]; activeId: string } | null>(null);
-    const seed = (initialRef.current ??= loadInitial());
+    const seed = (initialRef.current ??= loadInitial(key));
 
     const [tabs, setTabs] = useState<Tab[]>(seed.tabs);
     const [activeId, setActiveId] = useState<string>(seed.activeId);
@@ -70,11 +80,11 @@ export function useTabs() {
         try {
             const active = Math.max(tabs.findIndex((t) => t.id === activeId), 0);
             const payload: Persisted = { items: tabs.map((t) => ({ url: t.url, title: t.title })), active };
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+            localStorage.setItem(key, JSON.stringify(payload));
         } catch {
             // ignore quota/serialisation errors
         }
-    }, [tabs, activeId]);
+    }, [tabs, activeId, key]);
 
     const focusTab = useCallback((id: string) => setActiveId(id), []);
 
