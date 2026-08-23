@@ -6,6 +6,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import { TabBar } from '@/components/workspace/tab-bar';
 import { WorkspaceFrame } from '@/components/workspace/workspace-frame';
 import { useTabs } from '@/hooks/use-tabs';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { WORKSPACE_PATH, type ShellMessage } from '@/lib/embedded';
 import { Head, usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
@@ -15,6 +16,8 @@ export default function Workspace() {
     // logs in next on the same browser.
     const userId = (usePage().props as { auth?: { user?: { id?: number } } }).auth?.user?.id;
     const { tabs, activeId, openTab, focusTab, closeTab, closeAll, updateTab } = useTabs(userId);
+    // Phones don't get the tab strip — navigation just swaps the visible page.
+    const isMobile = useIsMobile();
 
     // Map tab id → its iframe element, so incoming tab-state messages can be
     // attributed to the frame that sent them.
@@ -79,7 +82,11 @@ export default function Workspace() {
             <AppContent variant="sidebar" className="h-svh overflow-hidden">
                 <header className="border-sidebar-border/50 flex h-12 shrink-0 items-center gap-2 border-b px-4">
                     <SidebarTrigger className="-ml-1 shrink-0" />
-                    <TabBar tabs={tabs} activeId={activeId} onFocus={focusTab} onClose={closeTab} onCloseAll={closeAll} />
+                    {isMobile ? (
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">{activeTab?.title}</span>
+                    ) : (
+                        <TabBar tabs={tabs} activeId={activeId} onFocus={focusTab} onClose={closeTab} onCloseAll={closeAll} />
+                    )}
                     <NotificationBell />
                 </header>
 
