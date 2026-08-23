@@ -77,12 +77,11 @@ export default function Workspace() {
             <Head title={activeTab?.title ?? 'Workspace'} />
             <AppSidebar onNavigate={openTab} activeUrl={activePath} />
             <AppContent variant="sidebar" className="h-svh overflow-hidden">
-                <header className="border-sidebar-border/50 flex h-12 shrink-0 items-center justify-between gap-2 border-b px-4">
-                    <SidebarTrigger className="-ml-1" />
+                <header className="border-sidebar-border/50 flex h-12 shrink-0 items-center gap-2 border-b px-4">
+                    <SidebarTrigger className="-ml-1 shrink-0" />
+                    <TabBar tabs={tabs} activeId={activeId} onFocus={focusTab} onClose={closeTab} onCloseAll={closeAll} />
                     <NotificationBell />
                 </header>
-
-                <TabBar tabs={tabs} activeId={activeId} onFocus={focusTab} onClose={closeTab} onCloseAll={closeAll} />
 
                 <div className="relative flex-1 overflow-hidden bg-background">
                     {tabs.map((tab) => (
