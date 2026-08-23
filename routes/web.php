@@ -9,6 +9,7 @@ use App\Http\Controllers\IncentiveRuleController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\LedgerController;
+use App\Http\Controllers\LicenseController;
 use App\Http\Controllers\LookupController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PaymentController;
@@ -28,7 +29,11 @@ use Inertia\Inertia;
 
 Route::get('/', fn () => redirect()->route('workspace'))->name('home');
 
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'licensed'])->group(function () {
+    // Licensing "system inactive" screen — self-exempted inside EnsureLicensed so
+    // gated users can actually reach it (must stay reachable while locked).
+    Route::get('license/locked', [LicenseController::class, 'locked'])->name('license.locked');
+
     // Tabbed workspace shell: hosts every page as an in-app browser tab.
     Route::get('workspace', fn () => Inertia::render('workspace/index'))->name('workspace');
 
@@ -229,6 +234,12 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware('can:roles.manage')->group(function () {
         Route::resource('roles', RoleController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::get('permissions', [PermissionController::class, 'index'])->name('permissions.index');
+    });
+    // Licensing (Super Admin only via license.view/license.manage — hidden from Admins).
+    Route::middleware('can:license.view')->group(function () {
+        Route::get('license', [LicenseController::class, 'index'])->name('license.index');
+        Route::post('license', [LicenseController::class, 'store'])
+            ->middleware('can:license.manage')->name('license.store');
     });
     Route::get('audit-log', [AuditController::class, 'index'])
         ->middleware('can:audit.view')->name('audit.index');

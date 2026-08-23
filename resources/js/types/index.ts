@@ -21,10 +21,18 @@ export interface NavItem {
     isActive?: boolean;
 }
 
+export interface LicenseShared {
+    expires_at: string | null;
+    days_remaining: number | null;
+    valid: boolean;
+    show_warning: boolean;
+}
+
 export interface SharedData {
     name: string;
     quote: { message: string; author: string };
     auth: Auth;
+    license?: LicenseShared;
     [key: string]: unknown;
 }
 

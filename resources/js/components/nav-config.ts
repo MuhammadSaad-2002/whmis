@@ -9,6 +9,7 @@ import {
     ClipboardList,
     FlaskConical,
     Gift,
+    KeyRound,
     LayoutGrid,
     Pill,
     ScrollText,
@@ -81,6 +82,7 @@ export const navGroups: { label: string; items: PermittedNavItem[] }[] = [
             { title: 'Roles & Permissions', url: '/roles', icon: ShieldCheck, permission: 'roles.manage' },
             { title: 'Audit Log', url: '/audit-log', icon: ScrollText, permission: 'audit.view' },
             { title: 'Booker Assignments', url: '/booker-assignments', icon: UserCog, permission: 'audit.view' },
+            { title: 'License', url: '/license', icon: KeyRound, permission: 'license.view' },
         ],
     },
 ];

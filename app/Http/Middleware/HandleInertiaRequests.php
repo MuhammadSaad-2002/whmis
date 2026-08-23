@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\LicenseService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -51,6 +52,7 @@ class HandleInertiaRequests extends Middleware
                 'success' => $request->session()->get('success'),
                 'error' => $request->session()->get('error'),
             ],
+            'license' => app(LicenseService::class)->sharePayload($request->user()),
         ]);
     }
 }

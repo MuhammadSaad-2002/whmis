@@ -1,4 +1,5 @@
 import { FlashToaster } from '@/components/flash-toaster';
+import { LicenseBanner } from '@/components/license-banner';
 import { WORKSPACE_PATH, currentPath, isFramed, reportTabState } from '@/lib/embedded';
 import { type BreadcrumbItem } from '@/types';
 import { router } from '@inertiajs/react';
@@ -34,6 +35,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
         return (
             <>
                 <FlashToaster />
+                <LicenseBanner />
                 {children}
             </>
         );
