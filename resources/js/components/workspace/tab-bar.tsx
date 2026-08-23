@@ -29,10 +29,10 @@ export function TabBar({ tabs, activeId, onFocus, onClose, onCloseAll }: TabBarP
                             }
                         }}
                         className={cn(
-                            'group flex max-w-56 min-w-28 shrink-0 cursor-pointer items-center gap-2 rounded-md border px-3 py-1 text-sm select-none',
+                            'group flex max-w-56 min-w-28 shrink-0 cursor-pointer items-center gap-2 rounded-md border px-3 py-1 text-sm select-none transition-colors',
                             active
-                                ? 'border-border bg-background font-medium text-foreground shadow-sm'
-                                : 'border-transparent text-muted-foreground hover:bg-background/60',
+                                ? 'border-primary bg-primary font-medium text-primary-foreground shadow-sm'
+                                : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
                         )}
                         title={tab.title}
                     >
@@ -44,7 +44,10 @@ export function TabBar({ tabs, activeId, onFocus, onClose, onCloseAll }: TabBarP
                                 e.stopPropagation();
                                 onClose(tab.id);
                             }}
-                            className="ml-auto rounded p-0.5 opacity-60 hover:bg-muted hover:opacity-100"
+                            className={cn(
+                                'ml-auto rounded p-0.5 opacity-70 hover:opacity-100',
+                                active ? 'hover:bg-primary-foreground/20' : 'hover:bg-background',
+                            )}
                         >
                             <X className="size-3.5" />
                         </button>
@@ -57,7 +60,7 @@ export function TabBar({ tabs, activeId, onFocus, onClose, onCloseAll }: TabBarP
                     type="button"
                     onClick={onCloseAll}
                     title="Close all tabs"
-                    className="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-background hover:text-foreground"
+                    className="flex shrink-0 items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                 >
                     <XCircle className="size-3.5" />
                     Close all
