@@ -121,6 +121,13 @@ export function useTabs(scope?: string | number) {
         setActiveId((active) => (active === id ? (next[index] ?? next[index - 1]).id : active));
     }, []);
 
+    // Close every tab and return to a single Dashboard tab.
+    const closeAll = useCallback(() => {
+        const home: Tab = { id: newId(), url: HOME.url, title: HOME.title };
+        setTabs([home]);
+        setActiveId(home.id);
+    }, []);
+
     // Relabel / re-url a tab from a frame's tab-state message (mount or in-tab redirect).
     const updateTab = useCallback((id: string, patch: { url?: string; title?: string }) => {
         setTabs((prev) =>
@@ -134,5 +141,5 @@ export function useTabs(scope?: string | number) {
 
     const atLimit = tabs.length >= MAX_TABS;
 
-    return { tabs, activeId, openTab, focusTab, closeTab, updateTab, atLimit };
+    return { tabs, activeId, openTab, focusTab, closeTab, closeAll, updateTab, atLimit };
 }

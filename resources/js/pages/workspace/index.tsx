@@ -14,7 +14,7 @@ export default function Workspace() {
     // Scope the open-tabs set to the signed-in user so it never leaks to whoever
     // logs in next on the same browser.
     const userId = (usePage().props as { auth?: { user?: { id?: number } } }).auth?.user?.id;
-    const { tabs, activeId, openTab, focusTab, closeTab, updateTab } = useTabs(userId);
+    const { tabs, activeId, openTab, focusTab, closeTab, closeAll, updateTab } = useTabs(userId);
 
     // Map tab id → its iframe element, so incoming tab-state messages can be
     // attributed to the frame that sent them.
@@ -82,7 +82,7 @@ export default function Workspace() {
                     <NotificationBell />
                 </header>
 
-                <TabBar tabs={tabs} activeId={activeId} onFocus={focusTab} onClose={closeTab} />
+                <TabBar tabs={tabs} activeId={activeId} onFocus={focusTab} onClose={closeTab} onCloseAll={closeAll} />
 
                 <div className="relative flex-1 overflow-hidden bg-background">
                     {tabs.map((tab) => (

@@ -6,6 +6,14 @@ import { router } from '@inertiajs/react';
 export const WORKSPACE_PATH = '/workspace';
 const SOURCE = 'whmis';
 
+// Page <title>s are templated as "<Page> - <AppName>" (see app.tsx). Tabs show
+// only the page part, so strip the app-name suffix before labelling a tab.
+const APP_NAME = import.meta.env.VITE_APP_NAME || 'Laravel';
+function stripAppName(title: string): string {
+    const suffix = ` - ${APP_NAME}`;
+    return title.endsWith(suffix) ? title.slice(0, -suffix.length) : title;
+}
+
 export type ShellMessage =
     // A different-page navigation happened inside a frame → open/focus a tab.
     | { source: typeof SOURCE; type: 'open-tab'; url: string }
@@ -36,7 +44,7 @@ function postToShell(message: ShellMessage): void {
 /** Tell the shell this frame's page title / url so it can relabel the tab. */
 export function reportTabState(title: string): void {
     if (!isFramed()) return;
-    postToShell({ source: SOURCE, type: 'tab-state', path: currentPath(), title: title || document.title });
+    postToShell({ source: SOURCE, type: 'tab-state', path: currentPath(), title: stripAppName(title || document.title) });
 }
 
 /**

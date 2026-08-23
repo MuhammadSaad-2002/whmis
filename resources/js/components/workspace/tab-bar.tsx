@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { X } from 'lucide-react';
+import { X, XCircle } from 'lucide-react';
 import { type Tab } from '@/hooks/use-tabs';
 
 interface TabBarProps {
@@ -7,11 +7,13 @@ interface TabBarProps {
     activeId: string;
     onFocus: (id: string) => void;
     onClose: (id: string) => void;
+    onCloseAll: () => void;
 }
 
-export function TabBar({ tabs, activeId, onFocus, onClose }: TabBarProps) {
+export function TabBar({ tabs, activeId, onFocus, onClose, onCloseAll }: TabBarProps) {
     return (
-        <div className="flex items-stretch gap-1 overflow-x-auto border-b bg-muted/30 px-2 pt-1">
+        <div className="flex items-stretch border-b bg-muted/30 pt-1">
+            <div className="flex flex-1 items-stretch gap-1 overflow-x-auto px-2">
             {tabs.map((tab) => {
                 const active = tab.id === activeId;
                 return (
@@ -49,6 +51,18 @@ export function TabBar({ tabs, activeId, onFocus, onClose }: TabBarProps) {
                     </div>
                 );
             })}
+            </div>
+            {tabs.length > 1 && (
+                <button
+                    type="button"
+                    onClick={onCloseAll}
+                    title="Close all tabs"
+                    className="mr-2 flex shrink-0 items-center gap-1 self-center rounded px-2 py-1 text-xs text-muted-foreground hover:bg-background hover:text-foreground"
+                >
+                    <XCircle className="size-3.5" />
+                    Close all
+                </button>
+            )}
         </div>
     );
 }
