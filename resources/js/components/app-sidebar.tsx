@@ -1,7 +1,7 @@
 import { NavMain } from '@/components/nav-main';
 import { navGroups } from '@/components/nav-config';
 import { NavUser } from '@/components/nav-user';
-import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { usePermissions } from '@/hooks/use-permissions';
 import { Link } from '@inertiajs/react';
 import AppLogo from './app-logo';
@@ -15,6 +15,10 @@ interface AppSidebarProps {
 
 export function AppSidebar({ onNavigate, activeUrl }: AppSidebarProps = {}) {
     const { can } = usePermissions();
+    const { isMobile, setOpenMobile } = useSidebar();
+    const closeMobile = () => {
+        if (isMobile) setOpenMobile(false);
+    };
     const visibleGroups = navGroups
         .map((group) => ({ ...group, items: group.items.filter((item) => can(item.permission)) }))
         .filter((group) => group.items.length > 0);
@@ -26,11 +30,11 @@ export function AppSidebar({ onNavigate, activeUrl }: AppSidebarProps = {}) {
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
                             {onNavigate ? (
-                                <button type="button" onClick={() => onNavigate('/dashboard', 'Dashboard')}>
+                                <button type="button" onClick={() => { onNavigate('/dashboard', 'Dashboard'); closeMobile(); }}>
                                     <AppLogo />
                                 </button>
                             ) : (
-                                <Link href="/dashboard" prefetch>
+                                <Link href="/dashboard" prefetch onClick={closeMobile}>
                                     <AppLogo />
                                 </Link>
                             )}

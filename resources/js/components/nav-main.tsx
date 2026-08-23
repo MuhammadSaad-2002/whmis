@@ -1,4 +1,4 @@
-import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
+import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { type NavItem } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
 
@@ -15,6 +15,12 @@ interface NavMainProps {
 export function NavMain({ groups = [], onNavigate, activeUrl }: NavMainProps) {
     const page = usePage();
     const currentUrl = activeUrl ?? page.url;
+    const { isMobile, setOpenMobile } = useSidebar();
+
+    // On phones the sidebar is an overlay sheet — dismiss it after any nav tap.
+    const closeMobile = () => {
+        if (isMobile) setOpenMobile(false);
+    };
 
     return (
         <>
@@ -26,12 +32,12 @@ export function NavMain({ groups = [], onNavigate, activeUrl }: NavMainProps) {
                             <SidebarMenuItem key={item.title}>
                                 <SidebarMenuButton asChild isActive={item.url === currentUrl}>
                                     {onNavigate ? (
-                                        <button type="button" onClick={() => onNavigate(item.url, item.title)}>
+                                        <button type="button" onClick={() => { onNavigate(item.url, item.title); closeMobile(); }}>
                                             {item.icon && <item.icon />}
                                             <span>{item.title}</span>
                                         </button>
                                     ) : (
-                                        <Link href={item.url} prefetch>
+                                        <Link href={item.url} prefetch onClick={closeMobile}>
                                             {item.icon && <item.icon />}
                                             <span>{item.title}</span>
                                         </Link>
