@@ -15,6 +15,7 @@ class Batch extends Model
         return [
             'expiry_date' => 'date',
             'is_sample' => 'boolean',
+            'is_loan' => 'boolean',
             'purchase_rate' => 'decimal:4',
             'effective_cost' => 'decimal:4',
             'trade_price' => 'decimal:2',
@@ -53,10 +54,16 @@ class Batch extends Model
         return $query->where('is_sample', true);
     }
 
-    /** Normal purchased stock only (excludes free samples). */
+    /** Normal purchased stock only (excludes free samples and loaned-in stock). */
     public function scopeNormal($query)
     {
-        return $query->where('is_sample', false);
+        return $query->where('is_sample', false)->where('is_loan', false);
+    }
+
+    /** Loaned-in stock only (owned by a lender, segregated from sellable stock). */
+    public function scopeLoans($query)
+    {
+        return $query->where('is_loan', true);
     }
 
     public function scopeNotExpired($query)

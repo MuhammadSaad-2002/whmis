@@ -7,6 +7,8 @@ use App\Models\Product;
 use App\Models\PurchaseInvoiceItem;
 use App\Models\SampleReceipt;
 use App\Models\SampleReceiptItem;
+use App\Models\StockLoan;
+use App\Models\StockLoanItem;
 use App\Models\StockMovement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
@@ -94,6 +96,57 @@ class InventoryService
         $batch->save();
 
         $this->recordMovement($batch, 'sample_in_cancel', -$quantity, $reference, 0);
+    }
+
+    /**
+     * Stock in loaned-in goods from a posted stock loan (direction = in). Creates
+     * a dedicated loan batch (is_loan = true) at zero cost — segregated from both
+     * purchased and sample stock, and never consumed by a sale or sample issue.
+     */
+    public function receiveLoan(StockLoanItem $item, StockLoan $loan): Batch
+    {
+        $quantity = (float) $item->quantity;
+
+        $batch = Batch::create([
+            'product_id' => $item->product_id,
+            'warehouse_id' => $loan->warehouse_id,
+            'is_loan' => true,
+            'batch_number' => $item->batch_number ?: 'LOAN',
+            'expiry_date' => $item->expiry_date,
+            'purchase_rate' => 0,
+            'effective_cost' => 0,
+            'trade_price' => 0,
+            'retail_price' => 0,
+            'qty_purchased' => $quantity,
+            'qty_bonus' => 0,
+            'qty_available' => $quantity,
+        ]);
+
+        $this->recordMovement($batch, 'loan_in', $quantity, $loan, 0);
+
+        return $batch;
+    }
+
+    /**
+     * Return loaned-in units to their owner (or reverse a loan-in receipt on
+     * cancellation). Removes the units from the loan batch; guards against having
+     * already handed back more than is on hand.
+     */
+    public function reverseLoanIn(Batch $batch, float $quantity, Model $reference): void
+    {
+        $batch = Batch::whereKey($batch->id)->lockForUpdate()->firstOrFail();
+
+        if ((float) $batch->qty_available + 1e-9 < $quantity) {
+            throw new RuntimeException(
+                "Cannot return: only {$batch->qty_available} of loan batch {$batch->batch_number} is still on hand."
+            );
+        }
+
+        $batch->qty_available = (float) $batch->qty_available - $quantity;
+        $batch->qty_purchased = max(0, (float) $batch->qty_purchased - $quantity);
+        $batch->save();
+
+        $this->recordMovement($batch, 'loan_in_return', -$quantity, $reference, 0);
     }
 
     /**
@@ -193,6 +246,10 @@ class InventoryService
             // Normal consumption never touches free-sample stock.
             $query->where('is_sample', false);
         }
+
+        // Loaned-in stock belongs to the lender: neither sales nor sample issues
+        // may ever consume it. It leaves only via a Stock Loan return.
+        $query->where('is_loan', false);
 
         $query->orderByRaw('expiry_date IS NULL, expiry_date ASC')
             ->orderBy('id')

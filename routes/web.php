@@ -23,6 +23,7 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SalesInvoiceController;
 use App\Http\Controllers\SampleIssueController;
 use App\Http\Controllers\SampleReceiptController;
+use App\Http\Controllers\StockLoanController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -163,6 +164,32 @@ Route::middleware(['auth', 'licensed'])->group(function () {
         Route::post('issues/{issue}/cancel', [SampleIssueController::class, 'cancel'])
             ->middleware('can:samples.cancel')->name('samples.issues.cancel');
         Route::get('issues/{issue}/print', [SampleIssueController::class, 'print'])->name('samples.issues.print');
+    });
+
+    // Stock loans — products received on loan (in) or loaned out (out). No money,
+    // segregated stock. Literal in/out routes precede the {loan} model binding.
+    Route::middleware('can:loans.view')->prefix('loans')->group(function () {
+        Route::get('{direction}', [StockLoanController::class, 'index'])
+            ->whereIn('direction', ['in', 'out'])->name('loans.index');
+        Route::get('{direction}/create', [StockLoanController::class, 'create'])
+            ->whereIn('direction', ['in', 'out'])
+            ->middleware('can:loans.create')->name('loans.create');
+        Route::post('/', [StockLoanController::class, 'store'])
+            ->middleware('can:loans.create')->name('loans.store');
+        Route::get('{loan}/edit', [StockLoanController::class, 'edit'])
+            ->whereNumber('loan')->name('loans.edit');
+        Route::put('{loan}', [StockLoanController::class, 'update'])
+            ->whereNumber('loan')->middleware('can:loans.create')->name('loans.update');
+        Route::delete('{loan}', [StockLoanController::class, 'destroy'])
+            ->whereNumber('loan')->middleware('can:loans.create')->name('loans.destroy');
+        Route::post('{loan}/post', [StockLoanController::class, 'post'])
+            ->whereNumber('loan')->middleware('can:loans.post')->name('loans.post');
+        Route::post('{loan}/return', [StockLoanController::class, 'recordReturn'])
+            ->whereNumber('loan')->middleware('can:loans.return')->name('loans.return');
+        Route::post('{loan}/cancel', [StockLoanController::class, 'cancel'])
+            ->whereNumber('loan')->middleware('can:loans.cancel')->name('loans.cancel');
+        Route::post('{loan}/close', [StockLoanController::class, 'close'])
+            ->whereNumber('loan')->middleware('can:loans.cancel')->name('loans.close');
     });
 
     // Returns

@@ -27,5 +27,7 @@ class NumberSeries extends Model
         'purchase_return' => 'PR',
         'sample_receipt' => 'SMR',
         'sample_issue' => 'SMP',
+        'loan_in' => 'LI',
+        'loan_out' => 'LO',
     ];
 }

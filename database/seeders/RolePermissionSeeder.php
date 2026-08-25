@@ -24,6 +24,7 @@ class RolePermissionSeeder extends Seeder
             'sales.view', 'sales.create', 'sales.post', 'sales.cancel',
             'bookings.view', 'bookings.create', 'bookings.approve', 'bookings.convert',
             'samples.view', 'samples.receive', 'samples.issue', 'samples.post', 'samples.cancel',
+            'loans.view', 'loans.create', 'loans.post', 'loans.return', 'loans.cancel',
             'incentives.view', 'incentives.manage',
             'returns.view', 'returns.manage',
             'inventory.view', 'inventory.adjust',
@@ -54,6 +55,7 @@ class RolePermissionSeeder extends Seeder
                 'sales.view', 'sales.create', 'sales.post', 'sales.cancel',
                 'bookings.view', 'bookings.create', 'bookings.approve', 'bookings.convert',
                 'samples.view', 'samples.receive', 'samples.issue', 'samples.post', 'samples.cancel',
+                'loans.view', 'loans.create', 'loans.post', 'loans.return', 'loans.cancel',
                 'incentives.view',
                 'returns.view', 'returns.manage',
                 'inventory.view', 'inventory.adjust',
@@ -69,13 +71,14 @@ class RolePermissionSeeder extends Seeder
             'Accountant' => [
                 'ledger.view', 'payments.view', 'payments.manage',
                 'reports.view', 'dashboard.view', 'dashboard.view_all',
-                'sales.view', 'purchases.view', 'bookings.view', 'returns.view',
+                'sales.view', 'purchases.view', 'bookings.view', 'returns.view', 'loans.view',
                 'customers.view', 'suppliers.view', 'products.view_cost',
             ],
             'Warehouse Staff' => [
                 'inventory.view', 'inventory.adjust', 'products.view', 'products.view_cost',
                 'purchases.view', 'sales.view', 'dashboard.view', 'dashboard.view_all',
                 'samples.view', 'samples.receive', 'samples.issue', 'samples.post', 'samples.cancel',
+                'loans.view', 'loans.create', 'loans.post', 'loans.return',
             ],
         ];
 

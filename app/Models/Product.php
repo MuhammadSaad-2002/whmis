@@ -52,6 +52,7 @@ class Product extends Model implements AuditableContract
     public function availableStock(?int $warehouseId = null): float
     {
         return (float) $this->batches()
+            ->where('is_loan', false) // loaned-in stock is the lender's, never sellable
             ->when($warehouseId, fn ($q) => $q->where('warehouse_id', $warehouseId))
             ->sum('qty_available');
     }

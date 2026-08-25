@@ -17,6 +17,7 @@ use App\Models\SalesReturn;
 use App\Models\SampleIssue;
 use App\Models\SampleReceipt;
 use App\Models\StockAdjustment;
+use App\Models\StockLoan;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
@@ -51,6 +52,7 @@ class AppServiceProvider extends ServiceProvider
             'purchase_return' => PurchaseReturn::class,
             'sample_receipt' => SampleReceipt::class,
             'sample_issue' => SampleIssue::class,
+            'stock_loan' => StockLoan::class,
             'role' => Role::class,
             'permission' => Permission::class,
         ]);

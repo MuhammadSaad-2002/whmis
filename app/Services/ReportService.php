@@ -16,6 +16,7 @@ use App\Models\SalesReturn;
 use App\Models\SalesReturnItem;
 use App\Models\SampleIssue;
 use App\Models\SampleIssueItem;
+use App\Models\StockLoan;
 use App\Models\StockMovement;
 use App\Models\User;
 use Illuminate\Support\Carbon;
@@ -52,6 +53,7 @@ class ReportService
             'sample-issue-product' => ['title' => 'Sample Issues by Product', 'category' => 'Samples', 'description' => 'Samples given away per product: quantity and cost value (Rs 0 when drawn from sample stock)', 'filters' => ['date_range', 'supplier', 'product']],
             'sample-issue-recipient' => ['title' => 'Sample Issues by Recipient', 'category' => 'Samples', 'description' => 'Samples given away per customer / recipient: quantity and cost value', 'filters' => ['date_range', 'customer']],
             'slow-fast-moving' => ['title' => 'Slow / Fast Moving', 'category' => 'Inventory', 'description' => 'Products ranked by quantity sold in a period', 'filters' => ['date_range', 'order']],
+            'stock-on-loan' => ['title' => 'Stock on Loan', 'category' => 'Inventory', 'description' => 'Outstanding loaned stock per product and partner, both directions (in / out)', 'filters' => ['supplier', 'product']],
             'outstanding' => ['title' => 'Outstanding & Aging', 'category' => 'Financial', 'description' => 'Receivables per customer with aging buckets', 'filters' => []],
             'supplier-payables' => ['title' => 'Supplier Payables', 'category' => 'Financial', 'description' => 'What you owe each supplier', 'filters' => []],
             'profit-by-month' => ['title' => 'Monthly Sales & Profit', 'category' => 'Financial', 'description' => '12-month trend of sales, cost, and profit', 'filters' => []],
@@ -80,6 +82,7 @@ class ReportService
             'sample-issue-product' => $this->sampleIssueByProduct($from, $to, $filters),
             'sample-issue-recipient' => $this->sampleIssueByRecipient($from, $to, $filters),
             'slow-fast-moving' => $this->slowFastMoving($from, $to, $filters),
+            'stock-on-loan' => $this->stockOnLoan($filters),
             'outstanding' => $this->outstanding(),
             'supplier-payables' => $this->supplierPayables(),
             'profit-by-month' => $this->profitByMonth(),
@@ -687,6 +690,69 @@ class ReportService
     }
 
     /** Free-sample stock on hand, per product and batch (segregated from actual stock). */
+    /**
+     * Outstanding loaned stock per product × partner × direction. Sums the still-out
+     * balance (quantity − returned) of active loans; grouping is done in PHP so the
+     * SQLite test DB behaves like MySQL.
+     */
+    private function stockOnLoan(array $filters): array
+    {
+        $productId = $filters['product_id'] ?? null;
+        $companyId = $filters['company_id'] ?? null;
+
+        $loans = StockLoan::query()
+            ->with(['company:id,name', 'items.product:id,name'])
+            ->whereIn('status', [StockLoan::STATUS_LOANED, StockLoan::STATUS_PARTIALLY_RETURNED])
+            ->when($companyId, fn ($q, $id) => $q->where('company_id', $id))
+            ->get();
+
+        $grouped = [];
+        foreach ($loans as $loan) {
+            foreach ($loan->items as $item) {
+                if ($productId && (int) $item->product_id !== (int) $productId) {
+                    continue;
+                }
+                $outstanding = max(0, (float) $item->quantity - (float) $item->returned_quantity);
+                if ($outstanding <= 0) {
+                    continue;
+                }
+                $key = $loan->direction.'|'.$item->product_id.'|'.$loan->company_id;
+                $grouped[$key] ??= [
+                    'direction' => $loan->direction === StockLoan::DIRECTION_IN ? 'In' : 'Out',
+                    'product' => $item->product?->name,
+                    'supplier' => $loan->company?->name,
+                    'loaned' => 0.0,
+                    'returned' => 0.0,
+                    'outstanding' => 0.0,
+                ];
+                $grouped[$key]['loaned'] += (float) $item->quantity;
+                $grouped[$key]['returned'] += (float) $item->returned_quantity;
+                $grouped[$key]['outstanding'] += $outstanding;
+            }
+        }
+
+        $rows = collect($grouped)
+            ->sortBy(fn ($r) => [$r['direction'], $r['product']])
+            ->values();
+
+        return [
+            'columns' => [
+                ['key' => 'direction', 'label' => 'Direction'],
+                ['key' => 'product', 'label' => 'Product'],
+                ['key' => 'supplier', 'label' => 'Supplier / Partner'],
+                ['key' => 'loaned', 'label' => 'Loaned', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'returned', 'label' => 'Returned', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'outstanding', 'label' => 'Outstanding', 'align' => 'right', 'format' => 'qty'],
+            ],
+            'rows' => $rows->all(),
+            'totals' => [
+                'loaned' => (float) $rows->sum('loaned'),
+                'returned' => (float) $rows->sum('returned'),
+                'outstanding' => (float) $rows->sum('outstanding'),
+            ],
+        ];
+    }
+
     private function sampleStock(array $filters): array
     {
         $productId = $filters['product_id'] ?? null;

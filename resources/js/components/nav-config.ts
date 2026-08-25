@@ -1,5 +1,7 @@
 import { type NavItem } from '@/types';
 import {
+    ArrowDownToLine,
+    ArrowUpFromLine,
     BadgePercent,
     Banknote,
     BarChart3,
@@ -46,6 +48,13 @@ export const navGroups: { label: string; items: PermittedNavItem[] }[] = [
         items: [
             { title: 'Sample Receipts', url: '/samples/receipts', icon: FlaskConical, permission: 'samples.view' },
             { title: 'Sample Issues', url: '/samples/issues', icon: Gift, permission: 'samples.view' },
+        ],
+    },
+    {
+        label: 'Stock Loans',
+        items: [
+            { title: 'Loan Stock In', url: '/loans/in', icon: ArrowDownToLine, permission: 'loans.view' },
+            { title: 'Loan Stock Out', url: '/loans/out', icon: ArrowUpFromLine, permission: 'loans.view' },
         ],
     },
     {
