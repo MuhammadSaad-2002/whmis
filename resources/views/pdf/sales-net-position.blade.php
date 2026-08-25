@@ -17,7 +17,7 @@
     <table class="header">
         <tr>
             <td>
-                <h1>MP Sub Office</h1>
+                @include('pdf.partials.header')
                 <div class="meta">Sale — Net / Final Position</div>
             </td>
             <td style="text-align: right;">
