@@ -40,6 +40,8 @@ Route::middleware(['auth', 'licensed'])->group(function () {
 
     Route::get('dashboard', DashboardController::class)
         ->middleware('can:dashboard.view')->name('dashboard');
+    Route::get('dashboard/executive/pdf', [DashboardController::class, 'exportPdf'])
+        ->middleware('can:dashboard.executive')->name('dashboard.executive.pdf');
 
     // Master data
     Route::resource('suppliers', CompanyController::class)

@@ -1,3 +1,4 @@
+import ExecutiveDashboard, { type ExecutiveProps } from '@/pages/dashboard/executive-dashboard';
 import { TrendChart, type TrendPoint } from '@/components/trend-chart';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -64,7 +65,7 @@ interface RecentBooking {
 }
 
 interface Props {
-    scope?: 'booker';
+    scope?: 'booker' | 'executive';
     kpis: Kpis | BookerKpis;
     monthlyTrend?: TrendPoint[];
     expiringSoon?: ExpiringBatch[];
@@ -154,7 +155,11 @@ function BookerDashboard({ kpis, recentBookings }: { kpis: BookerKpis; recentBoo
     );
 }
 
-export default function Dashboard({ scope, kpis, monthlyTrend, expiringSoon, recentSales, topCustomers, recentBookings }: Props) {
+export default function Dashboard(props: Props) {
+    const { scope, kpis, monthlyTrend, expiringSoon, recentSales, topCustomers, recentBookings } = props;
+    if (scope === 'executive') {
+        return <ExecutiveDashboard {...(props as unknown as ExecutiveProps)} />;
+    }
     if (scope === 'booker') {
         return <BookerDashboard kpis={kpis as BookerKpis} recentBookings={recentBookings ?? []} />;
     }

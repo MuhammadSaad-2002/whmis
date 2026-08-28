@@ -8,14 +8,24 @@ use App\Models\Customer;
 use App\Models\LedgerEntry;
 use App\Models\PurchaseInvoice;
 use App\Models\SalesInvoice;
+use App\Services\DashboardService;
 use App\Services\ReportService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request, ReportService $reports)
+    public function __invoke(Request $request, ReportService $reports, DashboardService $dashboard)
     {
+        // Admin / Super Admin get the richer Executive Dashboard.
+        if ($request->user()->can('dashboard.executive')) {
+            [$from, $to, $period] = $this->resolvePeriod($request);
+
+            return Inertia::render('dashboard', $dashboard->executivePayload($from, $to, $period));
+        }
+
         // Bookers get a stripped, own-data-only dashboard — no company-wide
         // financials. Everyone else (dashboard.view_all) gets the full view.
         if (! $request->user()->can('dashboard.view_all')) {
@@ -77,6 +87,48 @@ class DashboardController extends Controller
                 ->with('customer:id,name')
                 ->get(),
         ]);
+    }
+
+    /** One-page executive summary PDF (Admin / Super Admin only — gated on the route). */
+    public function exportPdf(Request $request, DashboardService $dashboard)
+    {
+        [$from, $to, $period] = $this->resolvePeriod($request);
+        $payload = $dashboard->executivePayload($from, $to, $period);
+
+        return Pdf::loadView('pdf.executive', $payload)
+            ->setPaper('a4', 'portrait')
+            ->stream('executive-summary.pdf');
+    }
+
+    /**
+     * Resolve the period selector into a [from, to] window.
+     * Presets: this_month, last_3, last_6, last_12; custom reads from/to.
+     *
+     * @return array{0: Carbon, 1: Carbon, 2: string}
+     */
+    private function resolvePeriod(Request $request): array
+    {
+        $period = $request->string('period')->toString() ?: 'this_month';
+        $to = now();
+
+        $from = match ($period) {
+            'last_3' => now()->subMonthsNoOverflow(3)->addDay()->startOfDay(),
+            'last_6' => now()->subMonthsNoOverflow(6)->addDay()->startOfDay(),
+            'last_12' => now()->subMonthsNoOverflow(12)->addDay()->startOfDay(),
+            'custom' => $request->filled('from') ? Carbon::parse($request->string('from')->toString())->startOfDay() : now()->startOfMonth(),
+            default => now()->startOfMonth(),
+        };
+
+        if ($period === 'custom' && $request->filled('to')) {
+            $to = Carbon::parse($request->string('to')->toString());
+        }
+
+        // 'custom' without a valid start falls back to a coherent this-month window.
+        if ($period === 'custom' && ! $request->filled('from')) {
+            $period = 'this_month';
+        }
+
+        return [$from, $to, $period];
     }
 
     /** Own-data-only dashboard for bookers: assigned pharmacies + their orders. */

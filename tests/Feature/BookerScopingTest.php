@@ -65,9 +65,14 @@ class BookerScopingTest extends TestCase
                 ->missing('recentSales'));
     }
 
-    public function test_admin_dashboard_is_the_full_financial_view(): void
+    public function test_accountant_dashboard_is_the_full_financial_view(): void
     {
-        $this->actingAs($this->admin);
+        // Admins/Super Admins now get the Executive Dashboard; the mid-tier full
+        // view is served to roles with dashboard.view_all but not dashboard.executive.
+        $accountant = User::factory()->create(['name' => 'Adnan Accountant']);
+        $accountant->assignRole('Accountant');
+
+        $this->actingAs($accountant);
         $this->get('/dashboard')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
