@@ -9,6 +9,8 @@ repo. Treat it as the first file to read under `docs/`.
 - Business rules belong in `app/Services/`; controllers should stay thin.
 - Server calculations are authoritative. Never trust client totals for money, tax, margin, stock, or ledger posting.
 - Do not change application code while doing documentation-only work.
+- For every database-related change, create or update a matching manual SQL file
+  under `database/manual/` so production can be patched through phpMyAdmin.
 - Preserve dirty worktree changes that you did not make. At the time this guide was created, `scripts/__pycache__/` was untracked and must not be cleaned up without explicit approval.
 - Do not run formatters that rewrite code unless the task is explicitly code-formatting work.
 - Before changing money/stock behavior, read `CLAUDE.md`, `ARCHITECTURE.md`, `DATA_MODEL.md`, and `QUALITY_AND_RISKS.md`.
@@ -47,6 +49,7 @@ When adding features, update the docs in the same pass:
 - `DATA_MODEL.md` for new tables, relationships, statuses, and posting side effects.
 - `SECURITY_AND_PERMISSIONS.md` for permissions, roles, visibility, and gating.
 - `QUALITY_AND_RISKS.md` for tests, gaps, and logic hotspots.
+- `database/manual/*.sql` for any schema or seed change needed by production.
 
 ## Useful commands
 

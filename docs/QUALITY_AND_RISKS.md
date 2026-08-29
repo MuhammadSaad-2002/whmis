@@ -45,6 +45,8 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
 - `CLAUDE.md` contains important existing architecture rules. Keep this docs set and `CLAUDE.md` synchronized or future agents may follow stale guidance.
 - The route inventory is large, so route/permission changes should be checked with `php artisan route:list` and at least targeted HTTP tests.
 - Manual SQL files in `database/manual/` can drift from migrations if schema changes are made without updating both paths.
+- Permission-only DB changes can be missed in production if they do not have a
+  manual seed SQL file for phpMyAdmin imports.
 - Untracked workspace state can exist. Do not clean or reset files unless explicitly asked.
 
 ## Safe-next-work notes
@@ -53,4 +55,6 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
 - When introducing a new report, write tests for totals, return netting, filters, and export shape.
 - When introducing a new stock flow, test stock movements, batch quantities, cancellation, and ledger/payment isolation.
 - When changing permissions, test both route access and frontend navigation/control visibility.
+- When changing database schema or seed data, update migrations/seeders and the
+  matching `database/manual/*.sql` production import file in the same commit.
 - When changing deployment, test the production-like path: committed assets, committed vendor changes, `.cpanel.yml`, migrations, seeders, and `.env.production.example`.

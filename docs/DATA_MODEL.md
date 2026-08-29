@@ -68,3 +68,12 @@ stock, audit, payments, or notifications.
 `database/manual/` contains SQL files for manual cPanel fallback or targeted
 schema updates. Keep these aligned with migrations when adding production-facing
 tables or columns.
+
+Every DB-related change must include a manual SQL companion when production may
+need phpMyAdmin import instead of `artisan migrate` or `artisan db:seed`.
+Permission/role seed changes also need manual SQL, even when no migration is
+created.
+
+For stock loaning on a production database that does not yet have the module,
+import the existing schema SQL files first, then
+`database/manual/2026_08_25_seed_stock_loan_permissions.sql`.
