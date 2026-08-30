@@ -36,6 +36,8 @@ likely to matter when changing each module.
 - Loan stock in and out use `/loans/in` and `/loans/out`.
 - Flows support create/edit/post/record return/cancel/close.
 - Loan stock is segregated from normal stock and reports outstanding stock by partner and product.
+- Loan stock out stores outside-party requested/received people as text names,
+  while request-received-by and handed-over-by remain internal user fields.
 
 ## Inventory
 

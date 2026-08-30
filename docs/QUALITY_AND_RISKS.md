@@ -54,6 +54,8 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
 - Add an explicit docs update checklist to future feature PRs or commits.
 - When introducing a new report, write tests for totals, return netting, filters, and export shape.
 - When introducing a new stock flow, test stock movements, batch quantities, cancellation, and ledger/payment isolation.
+- When changing stock-loan people fields, test loan-in internal users separately
+  from loan-out outside-party text names and internal handler users.
 - When changing permissions, test both route access and frontend navigation/control visibility.
 - When changing database schema or seed data, update migrations/seeders and the
   matching `database/manual/*.sql` production import file in the same commit.

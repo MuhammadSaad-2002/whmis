@@ -23,6 +23,8 @@ CREATE TABLE `stock_loans` (
     `status` VARCHAR(255) NOT NULL DEFAULT 'pending',
     `requested_by_id` BIGINT UNSIGNED NULL,
     `received_by_id` BIGINT UNSIGNED NULL,
+    `external_requested_by` VARCHAR(255) NULL,
+    `external_received_by` VARCHAR(255) NULL,
     `request_received_by_id` BIGINT UNSIGNED NULL,
     `handed_over_by_id` BIGINT UNSIGNED NULL,
     `total_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0,

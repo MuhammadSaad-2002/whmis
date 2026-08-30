@@ -10,8 +10,8 @@ use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
 /**
  * A stock loan — products received on loan (direction = in) or loaned out
- * (direction = out). Zero money: no ledger, receivable, or revenue. Only
- * physical stock moves and is kept segregated from sellable inventory.
+ * (direction = out). Zero money: no ledger, receivable, or revenue. Loan-out
+ * stores outside-party people as names while internal handlers remain users.
  */
 class StockLoan extends Model implements AuditableContract
 {

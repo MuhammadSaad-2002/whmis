@@ -44,6 +44,8 @@ interface LoanDto {
     returned_quantity: string;
     requested_by_id: number | null;
     received_by_id: number | null;
+    external_requested_by: string | null;
+    external_received_by: string | null;
     request_received_by_id: number | null;
     handed_over_by_id: number | null;
     items: {
@@ -98,6 +100,8 @@ export default function LoanForm({ direction, companies, users, warehouse, loan 
         loan_date: loan?.loan_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
         requested_by_id: loan?.requested_by_id ? String(loan.requested_by_id) : '',
         received_by_id: loan?.received_by_id ? String(loan.received_by_id) : '',
+        external_requested_by: loan?.external_requested_by ?? '',
+        external_received_by: loan?.external_received_by ?? '',
         request_received_by_id: loan?.request_received_by_id ? String(loan.request_received_by_id) : '',
         handed_over_by_id: loan?.handed_over_by_id ? String(loan.handed_over_by_id) : '',
         notes: loan?.notes ?? '',
@@ -145,6 +149,8 @@ export default function LoanForm({ direction, companies, users, warehouse, loan 
         const h: Record<string, string> = {};
         const r: Record<number, Record<string, string>> = {};
         if (!header.company_id) h.company_id = 'Supplier / partner is required.';
+        if (isOut && !header.external_requested_by.trim()) h.external_requested_by = 'Required.';
+        if (isOut && !header.external_received_by.trim()) h.external_received_by = 'Required.';
         if (isOut && !header.request_received_by_id) h.request_received_by_id = 'Required.';
         if (isOut && !header.handed_over_by_id) h.handed_over_by_id = 'Required.';
         if (!rows.some((row) => row.product_id)) r[0] = { product_id: 'Add at least one product.' };
@@ -206,8 +212,10 @@ export default function LoanForm({ direction, companies, users, warehouse, loan 
         company_id: header.company_id || null,
         warehouse_id: warehouse.id,
         loan_date: header.loan_date,
-        requested_by_id: header.requested_by_id || null,
-        received_by_id: header.received_by_id || null,
+        requested_by_id: isOut ? null : header.requested_by_id || null,
+        received_by_id: isOut ? null : header.received_by_id || null,
+        external_requested_by: isOut ? header.external_requested_by.trim() : null,
+        external_received_by: isOut ? header.external_received_by.trim() : null,
         request_received_by_id: isOut ? header.request_received_by_id || null : null,
         handed_over_by_id: isOut ? header.handed_over_by_id || null : null,
         notes: header.notes,
@@ -320,6 +328,24 @@ export default function LoanForm({ direction, companies, users, warehouse, loan 
         </div>
     );
 
+    const textField = (key: keyof typeof header, label: string, required = false, placeholder = '') => (
+        <div>
+            <Label>{label}{required ? ' *' : ''}</Label>
+            <Input
+                value={header[key] as string}
+                placeholder={placeholder}
+                disabled={readonly}
+                aria-invalid={!!headerErrors[key]}
+                onChange={(e) => {
+                    setHeader((h) => ({ ...h, [key]: e.target.value }));
+                    setHeaderErrors((err) => { const n = { ...err }; delete n[key]; return n; });
+                }}
+                className={headerErrors[key] ? 'border-destructive ring-1 ring-destructive' : ''}
+            />
+            <InputError message={headerErrors[key]} className="mt-1 text-xs" />
+        </div>
+    );
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title={loan ? loan.loan_number : `New ${title}`} />
@@ -401,10 +427,19 @@ export default function LoanForm({ direction, companies, users, warehouse, loan 
                         <Label>Warehouse</Label>
                         <Input value={warehouse.name} disabled />
                     </div>
-                    {personField('requested_by_id', 'Requested By')}
-                    {personField('received_by_id', 'Received By')}
-                    {isOut && personField('request_received_by_id', 'Request Received By', true)}
-                    {isOut && personField('handed_over_by_id', 'Handed Over By', true)}
+                    {isOut ? (
+                        <>
+                            {textField('external_requested_by', 'Requested By (Partner)', true, 'Outside person name')}
+                            {textField('external_received_by', 'Received By (Partner)', true, 'Outside person name')}
+                            {personField('request_received_by_id', 'Request Received By (Our Staff)', true)}
+                            {personField('handed_over_by_id', 'Handed Over By (Our Staff)', true)}
+                        </>
+                    ) : (
+                        <>
+                            {personField('requested_by_id', 'Requested By (Our Staff)')}
+                            {personField('received_by_id', 'Received By (Our Staff)')}
+                        </>
+                    )}
                     <div className={isOut ? 'md:col-span-4' : 'md:col-span-2'}>
                         <Label>Remarks</Label>
                         <Input

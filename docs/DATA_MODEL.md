@@ -23,6 +23,8 @@ changing cPanel/manual deployment assumptions.
 - Returns: `sales_returns`, `sales_return_items`, `purchase_returns`, and `purchase_return_items`.
 - Samples: `sample_receipts`, `sample_receipt_items`, `sample_issues`, and `sample_issue_items`.
 - Loans: `stock_loans` and `stock_loan_items`.
+- Loan-out outside-party people are stored as text fields on `stock_loans`;
+  internal loan handlers remain nullable user foreign keys.
 - Finance: `ledger_entries`, `payments`, and `payment_allocations`.
 
 ## Lifecycle states

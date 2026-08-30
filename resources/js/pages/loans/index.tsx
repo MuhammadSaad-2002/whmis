@@ -30,6 +30,8 @@ interface LoanRow {
     company?: { id: number; name: string };
     requested_by?: UserRef | null;
     received_by?: UserRef | null;
+    external_requested_by?: string | null;
+    external_received_by?: string | null;
     request_received_by?: UserRef | null;
     handed_over_by?: UserRef | null;
 }
@@ -89,7 +91,7 @@ export default function LoansIndex({ direction, loans, companies, users, summary
         router.get(base, { ...filters, [key]: value }, { preserveState: true });
 
     const breadcrumbs: BreadcrumbItem[] = [{ title, href: base }];
-    const colSpan = isOut ? 9 : 7;
+    const colSpan = isOut ? 10 : 8;
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -152,7 +154,7 @@ export default function LoansIndex({ direction, loans, companies, users, summary
                         </SelectContent>
                     </Select>
                     <Select value={filters.user_id ?? 'all'} onValueChange={(v) => setFilter('user_id', v === 'all' ? undefined : v)}>
-                        <SelectTrigger className="w-44"><SelectValue placeholder="Person" /></SelectTrigger>
+                        <SelectTrigger className="w-44"><SelectValue placeholder="Internal staff" /></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Anyone</SelectItem>
                             {users.map((u) => (
@@ -173,10 +175,10 @@ export default function LoansIndex({ direction, loans, companies, users, summary
                                 <TableHead>Date</TableHead>
                                 <TableHead className="text-right">Items</TableHead>
                                 <TableHead className="text-right">Qty</TableHead>
-                                <TableHead>Requested By</TableHead>
-                                <TableHead>Received By</TableHead>
-                                {isOut && <TableHead>Request Received By</TableHead>}
-                                {isOut && <TableHead>Handed Over By</TableHead>}
+                                <TableHead>{isOut ? 'Requested By (Partner)' : 'Requested By (Our Staff)'}</TableHead>
+                                <TableHead>{isOut ? 'Received By (Partner)' : 'Received By (Our Staff)'}</TableHead>
+                                {isOut && <TableHead>Request Received By (Our Staff)</TableHead>}
+                                {isOut && <TableHead>Handed Over By (Our Staff)</TableHead>}
                                 <TableHead>Status</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -202,8 +204,8 @@ export default function LoansIndex({ direction, loans, companies, users, summary
                                     <TableCell>{shortDate(loan.loan_date)}</TableCell>
                                     <TableCell className="text-right tabular-nums">{loan.items_count}</TableCell>
                                     <TableCell className="text-right tabular-nums">{qty(loan.total_quantity)}</TableCell>
-                                    <TableCell>{loan.requested_by?.name ?? '—'}</TableCell>
-                                    <TableCell>{loan.received_by?.name ?? '—'}</TableCell>
+                                    <TableCell>{isOut ? loan.external_requested_by || '—' : loan.requested_by?.name ?? '—'}</TableCell>
+                                    <TableCell>{isOut ? loan.external_received_by || '—' : loan.received_by?.name ?? '—'}</TableCell>
                                     {isOut && <TableCell>{loan.request_received_by?.name ?? '—'}</TableCell>}
                                     {isOut && <TableCell>{loan.handed_over_by?.name ?? '—'}</TableCell>}
                                     <TableCell>

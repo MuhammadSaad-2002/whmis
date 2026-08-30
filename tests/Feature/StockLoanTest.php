@@ -284,6 +284,129 @@ class StockLoanTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->has('loans.data', 1));
     }
 
+    public function test_loan_out_accepts_external_people_and_clears_internal_requested_received(): void
+    {
+        $requestHandler = User::factory()->create(['name' => 'Ali Storekeeper']);
+        $handoverHandler = User::factory()->create(['name' => 'Sara Warehouse']);
+
+        $this->post(route('loans.store'), [
+            'direction' => StockLoan::DIRECTION_OUT,
+            'company_id' => $this->company->id,
+            'warehouse_id' => $this->warehouse->id,
+            'loan_date' => now()->toDateString(),
+            // These are intentionally ignored for loan-out because they are
+            // local users, not the outside-party requested/received people.
+            'requested_by_id' => $this->admin->id,
+            'received_by_id' => $this->admin->id,
+            'external_requested_by' => 'Partner Pharmacist',
+            'external_received_by' => 'Partner Rider',
+            'request_received_by_id' => $requestHandler->id,
+            'handed_over_by_id' => $handoverHandler->id,
+            'items' => [[
+                'product_id' => $this->product->id,
+                'quantity' => 5,
+            ]],
+        ])->assertRedirect();
+
+        $loan = StockLoan::where('direction', StockLoan::DIRECTION_OUT)->latest('id')->firstOrFail();
+
+        $this->assertSame('Partner Pharmacist', $loan->external_requested_by);
+        $this->assertSame('Partner Rider', $loan->external_received_by);
+        $this->assertNull($loan->requested_by_id);
+        $this->assertNull($loan->received_by_id);
+        $this->assertSame($requestHandler->id, $loan->request_received_by_id);
+        $this->assertSame($handoverHandler->id, $loan->handed_over_by_id);
+    }
+
+    public function test_loan_out_requires_external_people(): void
+    {
+        $handler = User::factory()->create();
+
+        $this->post(route('loans.store'), [
+            'direction' => StockLoan::DIRECTION_OUT,
+            'company_id' => $this->company->id,
+            'warehouse_id' => $this->warehouse->id,
+            'loan_date' => now()->toDateString(),
+            'request_received_by_id' => $handler->id,
+            'handed_over_by_id' => $handler->id,
+            'items' => [[
+                'product_id' => $this->product->id,
+                'quantity' => 5,
+            ]],
+        ])->assertSessionHasErrors(['external_requested_by', 'external_received_by']);
+    }
+
+    public function test_loan_in_keeps_internal_people_and_clears_external_people(): void
+    {
+        $requester = User::factory()->create(['name' => 'Internal Requester']);
+        $receiver = User::factory()->create(['name' => 'Internal Receiver']);
+
+        $this->post(route('loans.store'), [
+            'direction' => StockLoan::DIRECTION_IN,
+            'company_id' => $this->company->id,
+            'warehouse_id' => $this->warehouse->id,
+            'loan_date' => now()->toDateString(),
+            'requested_by_id' => $requester->id,
+            'received_by_id' => $receiver->id,
+            'external_requested_by' => 'Ignored Partner Requester',
+            'external_received_by' => 'Ignored Partner Receiver',
+            'items' => [[
+                'product_id' => $this->product->id,
+                'batch_number' => 'LOAN-IN-B',
+                'expiry_date' => now()->addYear()->toDateString(),
+                'quantity' => 5,
+            ]],
+        ])->assertRedirect();
+
+        $loan = StockLoan::where('direction', StockLoan::DIRECTION_IN)->latest('id')->firstOrFail();
+
+        $this->assertSame($requester->id, $loan->requested_by_id);
+        $this->assertSame($receiver->id, $loan->received_by_id);
+        $this->assertNull($loan->external_requested_by);
+        $this->assertNull($loan->external_received_by);
+        $this->assertNull($loan->request_received_by_id);
+        $this->assertNull($loan->handed_over_by_id);
+    }
+
+    public function test_loan_out_index_payload_uses_external_people_and_filters_internal_staff(): void
+    {
+        $requestHandler = User::factory()->create(['name' => 'Internal Desk']);
+        $handoverHandler = User::factory()->create(['name' => 'Internal Warehouse']);
+        $notInvolved = User::factory()->create(['name' => 'Not Involved']);
+
+        $loan = StockLoan::create([
+            'loan_number' => app(NumberSeriesService::class)->next('loan_out'),
+            'direction' => StockLoan::DIRECTION_OUT,
+            'company_id' => $this->company->id,
+            'warehouse_id' => $this->warehouse->id,
+            'loan_date' => now()->toDateString(),
+            'status' => StockLoan::STATUS_PENDING,
+            'external_requested_by' => 'Outside Buyer',
+            'external_received_by' => 'Outside Receiver',
+            'request_received_by_id' => $requestHandler->id,
+            'handed_over_by_id' => $handoverHandler->id,
+        ]);
+        $loan->items()->create([
+            'product_id' => $this->product->id,
+            'quantity' => 3,
+            'sort_order' => 0,
+        ]);
+
+        $this->get(route('loans.index', 'out'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('loans.data.0.external_requested_by', 'Outside Buyer')
+                ->where('loans.data.0.external_received_by', 'Outside Receiver')
+                ->where('loans.data.0.request_received_by.name', 'Internal Desk')
+                ->where('loans.data.0.handed_over_by.name', 'Internal Warehouse'));
+
+        $this->get(route('loans.index', ['direction' => 'out', 'user_id' => $requestHandler->id]))
+            ->assertInertia(fn (Assert $page) => $page->has('loans.data', 1));
+
+        $this->get(route('loans.index', ['direction' => 'out', 'user_id' => $notInvolved->id]))
+            ->assertInertia(fn (Assert $page) => $page->has('loans.data', 0));
+    }
+
     public function test_loans_require_the_loans_permission(): void
     {
         $outsider = User::factory()->create();

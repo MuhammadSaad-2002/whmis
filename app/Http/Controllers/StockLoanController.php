@@ -36,9 +36,9 @@ class StockLoanController extends Controller
             ->when($request->search, fn ($q, $search) => $q->where('loan_number', 'like', "%{$search}%"))
             ->when($request->company_id, fn ($q, $id) => $q->where('company_id', $id))
             ->when($request->status, fn ($q, $status) => $q->where('status', $status))
-            ->when($request->user_id, fn ($q, $id) => $q->where(fn ($w) => $w
-                ->where('requested_by_id', $id)->orWhere('received_by_id', $id)
-                ->orWhere('request_received_by_id', $id)->orWhere('handed_over_by_id', $id)))
+            ->when($request->user_id, fn ($q, $id) => $q->where(fn ($w) => $direction === StockLoan::DIRECTION_OUT
+                ? $w->where('request_received_by_id', $id)->orWhere('handed_over_by_id', $id)
+                : $w->where('requested_by_id', $id)->orWhere('received_by_id', $id)))
             ->when($request->product_id, fn ($q, $id) => $q->whereHas('items', fn ($i) => $i->where('product_id', $id)))
             ->when($request->from, fn ($q, $from) => $q->whereDate('loan_date', '>=', $from))
             ->when($request->to, fn ($q, $to) => $q->whereDate('loan_date', '<=', $to))
@@ -256,7 +256,10 @@ class StockLoanController extends Controller
             'loan_date' => ['required', 'date'],
             'requested_by_id' => ['nullable', 'exists:users,id'],
             'received_by_id' => ['nullable', 'exists:users,id'],
-            // Only Loan Stock Out captures who received the request / handed the stock over.
+            'external_requested_by' => [Rule::requiredIf($isOut), 'nullable', 'string', 'max:255'],
+            'external_received_by' => [Rule::requiredIf($isOut), 'nullable', 'string', 'max:255'],
+            // Only Loan Stock Out captures which internal staff received the
+            // outside request and handed the stock over.
             'request_received_by_id' => [Rule::requiredIf($isOut), 'nullable', 'exists:users,id'],
             'handed_over_by_id' => [Rule::requiredIf($isOut), 'nullable', 'exists:users,id'],
             'notes' => ['nullable', 'string'],
@@ -271,10 +274,25 @@ class StockLoanController extends Controller
 
     private function headerAttributes(array $data): array
     {
-        return collect($data)->only([
+        $attributes = collect($data)->only([
             'direction', 'company_id', 'warehouse_id', 'loan_date', 'notes',
-            'requested_by_id', 'received_by_id', 'request_received_by_id', 'handed_over_by_id',
-        ])->map(fn ($v) => $v === '' ? null : $v)->all();
+            'requested_by_id', 'received_by_id', 'external_requested_by', 'external_received_by',
+            'request_received_by_id', 'handed_over_by_id',
+        ])->map(fn ($v) => is_string($v) ? trim($v) : $v)
+            ->map(fn ($v) => $v === '' ? null : $v)
+            ->all();
+
+        if (($attributes['direction'] ?? null) === StockLoan::DIRECTION_OUT) {
+            $attributes['requested_by_id'] = null;
+            $attributes['received_by_id'] = null;
+        } else {
+            $attributes['external_requested_by'] = null;
+            $attributes['external_received_by'] = null;
+            $attributes['request_received_by_id'] = null;
+            $attributes['handed_over_by_id'] = null;
+        }
+
+        return $attributes;
     }
 
     /** Name of the first product that appears on more than one line, or null. */
