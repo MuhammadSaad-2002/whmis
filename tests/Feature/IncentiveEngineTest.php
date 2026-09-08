@@ -103,6 +103,89 @@ class IncentiveEngineTest extends TestCase
         $this->assertEquals(4.0, $response->json('0.effect.bonus_qty'));
     }
 
+    public function test_lookup_rules_endpoint_shows_minimum_quantity_rules_before_they_qualify(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $always = $this->rule([
+            'name' => 'Always Product Discount',
+            'rule_type' => 'fixed_discount',
+            'value' => 10,
+            'product_id' => $this->product->id,
+        ]);
+        $locked = $this->rule([
+            'name' => 'Twenty Plus Bonus',
+            'rule_type' => 'qty_bonus',
+            'base_qty' => 20,
+            'bonus_qty' => 2,
+            'min_qty' => 20,
+            'product_id' => $this->product->id,
+        ]);
+        $otherProduct = Product::create(['name' => 'Other Product', 'company_id' => $this->company->id]);
+        $this->rule([
+            'name' => 'Other Product Only',
+            'rule_type' => 'fixed_discount',
+            'value' => 50,
+            'product_id' => $otherProduct->id,
+        ]);
+
+        $response = $this->getJson(route('lookup.rules', [
+            'product_id' => $this->product->id,
+            'qty' => 1,
+            'price' => 100,
+        ]));
+
+        $response->assertOk();
+        $rules = collect($response->json());
+
+        $this->assertEqualsCanonicalizing(
+            [$always->id, $locked->id],
+            $rules->pluck('id')->all(),
+        );
+
+        $alwaysPayload = $rules->firstWhere('id', $always->id);
+        $lockedPayload = $rules->firstWhere('id', $locked->id);
+
+        $this->assertTrue($alwaysPayload['eligible']);
+        $this->assertSame(['discount_amount' => 10], $alwaysPayload['effect']);
+        $this->assertFalse($lockedPayload['eligible']);
+        $this->assertSame(20, $lockedPayload['min_qty']);
+        $this->assertSame('Minimum qty 20', $lockedPayload['eligibility_label']);
+        $this->assertSame([], $lockedPayload['effect']);
+    }
+
+    public function test_lookup_rules_endpoint_uses_the_document_date(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $futureDate = now()->addMonth()->toDateString();
+
+        $this->rule([
+            'name' => 'Future Campaign',
+            'rule_type' => 'percent_discount',
+            'value' => 12,
+            'product_id' => $this->product->id,
+            'date_from' => $futureDate,
+            'date_to' => now()->addMonths(2)->toDateString(),
+        ]);
+
+        $this->getJson(route('lookup.rules', [
+            'product_id' => $this->product->id,
+            'qty' => 10,
+            'price' => 100,
+        ]))
+            ->assertOk()
+            ->assertJsonCount(0);
+
+        $this->getJson(route('lookup.rules', [
+            'product_id' => $this->product->id,
+            'qty' => 10,
+            'price' => 100,
+            'date' => $futureDate,
+        ]))
+            ->assertOk()
+            ->assertJsonPath('0.name', 'Future Campaign')
+            ->assertJsonPath('0.eligible', true);
+    }
+
     public function test_discount_and_price_override_effects(): void
     {
         $percent = $this->rule(['rule_type' => 'percent_discount', 'value' => 10]);

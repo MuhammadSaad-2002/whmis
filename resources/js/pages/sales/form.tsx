@@ -839,6 +839,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
                 customerId={header.customer_id ? Number(header.customer_id) : null}
                 qty={toNumber(rows[activeRow]?.quantity)}
                 price={toNumber(rows[activeRow]?.trade_price)}
+                date={header.invoice_date}
                 applied={rows[activeRow]?.incentives ?? []}
                 onAdd={(rule) => addRule(activeRow, rule)}
                 onRemove={(rule) => removeRule(activeRow, rule)}

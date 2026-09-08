@@ -15,9 +15,12 @@ use Illuminate\Support\Collection;
 class IncentiveEngine
 {
     /**
-     * All rules applicable to the context, most specific first.
+     * All active rules matching the product/customer/date context, most
+     * specific first. Quantity-gated rules are intentionally included so the
+     * picker can show "available for this product, but needs qty N" schemes
+     * before the user reaches the minimum quantity.
      */
-    public function applicable(int $productId, ?int $customerId, float $qty, ?Carbon $date = null): Collection
+    public function available(int $productId, ?int $customerId, ?Carbon $date = null): Collection
     {
         $date = $date ?? Carbon::today();
         $companyId = Product::whereKey($productId)->value('company_id');
@@ -34,11 +37,27 @@ class IncentiveEngine
             })
             ->where(fn ($q) => $q->whereNull('date_from')->orWhereDate('date_from', '<=', $date))
             ->where(fn ($q) => $q->whereNull('date_to')->orWhereDate('date_to', '>=', $date))
-            ->where(fn ($q) => $q->whereNull('min_qty')->orWhere('min_qty', '<=', $qty))
             ->get()
             ->sort(fn (IncentiveRule $a, IncentiveRule $b) => [$this->specificity($b), $b->priority, $b->id]
                 <=> [$this->specificity($a), $a->priority, $a->id])
             ->values();
+    }
+
+    /**
+     * Rules applicable to the full product/customer/qty/date context, most
+     * specific first. Used by server-side application so minimum-quantity gates
+     * remain authoritative.
+     */
+    public function applicable(int $productId, ?int $customerId, float $qty, ?Carbon $date = null): Collection
+    {
+        return $this->available($productId, $customerId, $date)
+            ->filter(fn (IncentiveRule $rule) => $this->meetsMinimumQuantity($rule, $qty))
+            ->values();
+    }
+
+    public function meetsMinimumQuantity(IncentiveRule $rule, float $qty): bool
+    {
+        return $rule->min_qty === null || (float) $rule->min_qty <= $qty;
     }
 
     /**

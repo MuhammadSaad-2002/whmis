@@ -23,6 +23,9 @@ export interface IncentiveHit {
     bonus_qty?: number;
     slabs?: Slab[];
     value?: number;
+    min_qty?: number | null;
+    eligible?: boolean;
+    eligibility_label?: string | null;
     effect: {
         bonus_qty?: number;
         discount_percent?: number;

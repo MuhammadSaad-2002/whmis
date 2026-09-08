@@ -12,6 +12,7 @@ use App\Models\SalesInvoice;
 use App\Models\Warehouse;
 use App\Services\IncentiveEngine;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 /**
  * JSON lookups used by the keyboard grid (F2 product search) and forms.
@@ -122,34 +123,49 @@ class LookupController extends Controller
             'product_id' => ['required', 'exists:products,id'],
             'customer_id' => ['nullable', 'exists:customers,id'],
             'qty' => ['nullable', 'numeric', 'min:0'],
+            'date' => ['nullable', 'date'],
         ]);
 
         $qty = (float) ($request->qty ?: 0);
         $price = (float) ($request->price ?: 0);
+        $date = $request->date ? Carbon::parse($request->date) : null;
 
-        $rules = $engine->applicable(
+        $rules = $engine->available(
             (int) $request->product_id,
             $request->customer_id ? (int) $request->customer_id : null,
-            $qty,
+            $date,
         );
 
-        return response()->json($rules->map(fn (IncentiveRule $rule) => [
-            'id' => $rule->id,
-            'name' => $rule->name,
-            'rule_type' => $rule->rule_type,
-            'summary' => $rule->summary(),
-            'scope' => implode(' · ', array_filter([
-                $rule->customer_id ? 'This customer' : null,
-                $rule->product_id ? 'This product' : null,
-                $rule->company_id ? 'Company-wide' : null,
-            ])) ?: 'All customers & products',
-            // Rule parameters so the client can recompute the bonus live as qty changes.
-            'base_qty' => (float) $rule->base_qty,
-            'bonus_qty' => (float) $rule->bonus_qty,
-            'slabs' => $rule->slabs ?? [],
-            'value' => (float) $rule->value,
-            'effect' => $engine->effect($rule, $qty, $price),
-        ])->values());
+        return response()->json($rules->map(function (IncentiveRule $rule) use ($engine, $qty, $price) {
+            $eligible = $engine->meetsMinimumQuantity($rule, $qty);
+            $minQty = $rule->min_qty !== null ? (float) $rule->min_qty : null;
+
+            return [
+                'id' => $rule->id,
+                'name' => $rule->name,
+                'rule_type' => $rule->rule_type,
+                'summary' => $rule->summary(),
+                'scope' => implode(' · ', array_filter([
+                    $rule->customer_id ? 'This customer' : null,
+                    $rule->product_id ? 'This product' : null,
+                    $rule->company_id ? 'Company-wide' : null,
+                ])) ?: 'All customers & products',
+                // Rule parameters so the client can recompute the bonus live as qty changes.
+                'base_qty' => (float) $rule->base_qty,
+                'bonus_qty' => (float) $rule->bonus_qty,
+                'slabs' => $rule->slabs ?? [],
+                'value' => (float) $rule->value,
+                'min_qty' => $minQty,
+                'eligible' => $eligible,
+                'eligibility_label' => $eligible || $minQty === null ? null : 'Minimum qty '.$this->formatQty($minQty),
+                'effect' => $eligible ? $engine->effect($rule, $qty, $price) : [],
+            ];
+        })->values());
+    }
+
+    private function formatQty(float $qty): string
+    {
+        return rtrim(rtrim(number_format($qty, 2), '0'), '.');
     }
 
     /**

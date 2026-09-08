@@ -938,6 +938,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                 customerId={header.customer_id ? Number(header.customer_id) : null}
                 qty={toNumber(activeRowData?.quantity)}
                 price={toNumber(activeRowData?.trade_price)}
+                date={header.booking_date}
                 applied={activeRowData?.incentives ?? []}
                 onAdd={(rule) => addRule(activeRow, rule)}
                 onRemove={(rule) => removeRule(activeRow, rule)}
