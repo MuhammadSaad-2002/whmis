@@ -93,6 +93,29 @@ class ReportTest extends TestCase
             ->where('totals.revenue', 2000));
     }
 
+    public function test_all_time_product_cogs_report_has_lifetime_rows_and_grand_totals(): void
+    {
+        SalesInvoice::where('status', 'posted')->update([
+            'invoice_date' => now()->subYears(2)->toDateString(),
+        ]);
+
+        $this->get(route('reports.show', 'all-time-product-cogs'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('reports/show')
+                ->where('report.filters', ['supplier'])
+                ->where('rows.0.product', 'Panadol 500mg')
+                ->where('rows.0.qty_sold', 20)
+                ->where('rows.0.bonus_given', 2)
+                ->where('rows.0.net_qty_sold', 20)
+                ->where('rows.0.gross_cogs', 1760)
+                ->where('rows.0.return_cogs', 0)
+                ->where('rows.0.net_cogs', 1760)
+                ->where('totals.qty_sold', 20)
+                ->where('totals.bonus_given', 2)
+                ->where('totals.net_cogs', 1760));
+    }
+
     public function test_date_filter_constrains_rows(): void
     {
         $this->get(route('reports.show', ['key' => 'sales-register',

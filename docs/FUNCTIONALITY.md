@@ -62,10 +62,20 @@ reports page/export pipeline. The reports centre groups report definitions by
 business area, and report datasets can declare a `group_by` field for grouped
 table presentation (currently used by Stock on Loan).
 
+`product-sales` is an invoice-cohort profitability report: the date range selects
+sales invoices, then every posted return against those invoices is netted from
+quantity, revenue, and COGS. `product-sales-daily` remains an activity-by-date
+report and buckets returns on their actual return date.
+
+`all-time-product-cogs` has no date range. It presents lifetime billed quantity,
+bonus units, returned quantity, net quantity sold, gross COGS, return COGS, and
+net COGS per product, with grand totals and an optional supplier filter.
+
 Current report keys:
 
 - `sales-register`
 - `product-sales`
+- `all-time-product-cogs`
 - `product-sales-daily`
 - `customer-sales`
 - `booker-sales`

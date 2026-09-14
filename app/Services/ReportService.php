@@ -38,7 +38,8 @@ class ReportService
     {
         return [
             'sales-register' => ['title' => 'Sales Register', 'category' => 'Sales', 'description' => 'Every posted sales invoice in a period', 'filters' => ['date_range', 'customer']],
-            'product-sales' => ['title' => 'Product Sales & Profitability', 'category' => 'Sales', 'description' => 'Qty, bonus given, revenue, cost, profit per product', 'filters' => ['date_range', 'supplier']],
+            'product-sales' => ['title' => 'Product Sales & Profitability', 'category' => 'Sales', 'description' => 'Sales invoices dated in the period, net of every valid return against those invoices, with return COGS shown separately', 'filters' => ['date_range', 'supplier']],
+            'all-time-product-cogs' => ['title' => 'All-Time Product Sales & COGS', 'category' => 'Sales', 'description' => 'Lifetime quantities sold and cost of goods sold per product, net of posted returns', 'filters' => ['supplier']],
             'product-sales-daily' => ['title' => 'Daily Product Sales', 'category' => 'Sales', 'description' => 'Per product, per day: qty, bonus given, revenue, cost and profit (net of returns). Cost includes the bonus units shipped free, so profit is true.', 'filters' => ['date_range', 'supplier', 'product']],
             'customer-sales' => ['title' => 'Customer Sales & Profitability', 'category' => 'Sales', 'description' => 'Revenue, profit, and outstanding per pharmacy', 'filters' => ['date_range']],
             'booker-sales' => ['title' => 'Booker Sales', 'category' => 'Sales', 'description' => 'Sales attributed to each booker via assigned customers', 'filters' => ['date_range']],
@@ -68,6 +69,7 @@ class ReportService
         return match ($key) {
             'sales-register' => $this->salesRegister($from, $to, $filters),
             'product-sales' => $this->productSales($from, $to, $filters),
+            'all-time-product-cogs' => $this->allTimeProductCogs($filters),
             'product-sales-daily' => $this->productSalesDaily($from, $to, $filters),
             'customer-sales' => $this->customerSales($from, $to),
             'booker-sales' => $this->bookerSales($from, $to),
@@ -225,9 +227,12 @@ class ReportService
             ->get()
             ->groupBy('product_id');
 
+        // Invoice-cohort profitability: returns belong to the original sale's
+        // period, not whichever period the credit note happened to be entered.
         $returned = SalesReturnItem::query()
-            ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED)
-                ->whereDate('return_date', '>=', $from)->whereDate('return_date', '<=', $to))
+            ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED))
+            ->whereHas('invoiceItem.invoice', fn ($q) => $q->where('status', 'posted')
+                ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to))
             ->when($companyId, fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id)))
             ->with('product:id,name,company_id', 'product.company:id,name')
             ->get()
@@ -243,6 +248,8 @@ class ReportService
             $grossRev = (float) $soldGroup->sum('net_amount');
             $retRev = (float) $retGroup->sum('net_amount');
             $retCost = (float) $retGroup->sum('cost_amount');
+            $grossCost = (float) $soldGroup->sum('cost_amount');
+            $netCost = $grossCost - $retCost;
 
             return [
                 'product' => $product?->name,
@@ -254,8 +261,10 @@ class ReportService
                 'revenue' => round($grossRev, 2),
                 'returns' => round($retRev, 2),
                 'net_revenue' => round($grossRev - $retRev, 2),
-                'net_cost' => round((float) $soldGroup->sum('cost_amount') - $retCost, 2),
-                'net_profit' => round((float) $soldGroup->sum('profit') - ($retRev - $retCost), 2),
+                'gross_cost' => round($grossCost, 2),
+                'return_cost' => round($retCost, 2),
+                'net_cost' => round($netCost, 2),
+                'net_profit' => round(($grossRev - $retRev) - $netCost, 2),
             ];
         })->sortByDesc('net_revenue')->values();
 
@@ -270,6 +279,8 @@ class ReportService
                 ['key' => 'revenue', 'label' => 'Gross Revenue', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'returns', 'label' => 'Returns', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'net_revenue', 'label' => 'Net Revenue', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'gross_cost', 'label' => 'Gross COGS', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'return_cost', 'label' => 'Return COGS', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'net_cost', 'label' => 'Net Cost', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'net_profit', 'label' => 'Net Profit', 'align' => 'right', 'format' => 'money'],
             ],
@@ -282,8 +293,78 @@ class ReportService
                 'revenue' => (float) $rows->sum('revenue'),
                 'returns' => (float) $rows->sum('returns'),
                 'net_revenue' => (float) $rows->sum('net_revenue'),
+                'gross_cost' => (float) $rows->sum('gross_cost'),
+                'return_cost' => (float) $rows->sum('return_cost'),
                 'net_cost' => (float) $rows->sum('net_cost'),
                 'net_profit' => (float) $rows->sum('net_profit'),
+            ],
+        ];
+    }
+
+    /** Lifetime billed units and their FIFO COGS, net of every posted return. */
+    private function allTimeProductCogs(array $filters): array
+    {
+        $companyId = $filters['company_id'] ?? null;
+        $byCompany = fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id));
+
+        $sold = SalesInvoiceItem::query()
+            ->whereHas('invoice', fn ($q) => $q->where('status', 'posted'))
+            ->when($companyId, $byCompany)
+            ->with('product:id,name,company_id', 'product.company:id,name')
+            ->get()
+            ->groupBy('product_id');
+
+        $returned = SalesReturnItem::query()
+            ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED))
+            ->whereHas('invoiceItem.invoice', fn ($q) => $q->where('status', 'posted'))
+            ->when($companyId, $byCompany)
+            ->with('product:id,name,company_id', 'product.company:id,name')
+            ->get()
+            ->groupBy('product_id');
+
+        $rows = $sold->keys()->merge($returned->keys())->unique()->map(function ($productId) use ($sold, $returned) {
+            $soldGroup = $sold[$productId] ?? collect();
+            $returnGroup = $returned[$productId] ?? collect();
+            $product = ($soldGroup->first() ?? $returnGroup->first())->product;
+            $grossQty = (float) $soldGroup->sum('quantity');
+            $returnedQty = (float) $returnGroup->sum('quantity');
+            $grossCogs = (float) $soldGroup->sum('cost_amount');
+            $returnCogs = (float) $returnGroup->sum('cost_amount');
+
+            return [
+                'product' => $product?->name,
+                'supplier' => $product?->company?->name,
+                'qty_sold' => round($grossQty, 2),
+                'bonus_given' => round((float) $soldGroup->sum('bonus_quantity'), 2),
+                'qty_returned' => round($returnedQty, 2),
+                'net_qty_sold' => round($grossQty - $returnedQty, 2),
+                'gross_cogs' => round($grossCogs, 2),
+                'return_cogs' => round($returnCogs, 2),
+                'net_cogs' => round($grossCogs - $returnCogs, 2),
+            ];
+        })->sortByDesc('net_qty_sold')->values();
+
+        return [
+            'columns' => [
+                ['key' => 'product', 'label' => 'Product'],
+                ['key' => 'supplier', 'label' => 'Supplier'],
+                ['key' => 'qty_sold', 'label' => 'Qty Sold', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'bonus_given', 'label' => 'Bonus Given', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'qty_returned', 'label' => 'Qty Returned', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'net_qty_sold', 'label' => 'Net Qty Sold', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'gross_cogs', 'label' => 'Gross COGS', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'return_cogs', 'label' => 'Return COGS', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'net_cogs', 'label' => 'Net COGS', 'align' => 'right', 'format' => 'money'],
+            ],
+            'rows' => $rows->all(),
+            'totals' => [
+                'qty_sold' => (float) $rows->sum('qty_sold'),
+                'bonus_given' => (float) $rows->sum('bonus_given'),
+                'qty_returned' => (float) $rows->sum('qty_returned'),
+                'net_qty_sold' => (float) $rows->sum('net_qty_sold'),
+                'gross_cogs' => (float) $rows->sum('gross_cogs'),
+                'return_cogs' => (float) $rows->sum('return_cogs'),
+                'net_cogs' => (float) $rows->sum('net_cogs'),
             ],
         ];
     }

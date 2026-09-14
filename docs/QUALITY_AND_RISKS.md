@@ -33,7 +33,7 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
 - Ledger: customer/supplier debit-credit meaning must stay consistent across sales, purchases, returns, and payments.
 - FIFO: sale posting depends on earliest expiry then id unless a batch is explicitly chosen.
 - Incentives: rules fill line fields; posting math should not special-case incentive internals.
-- Reports: netting returns, bonus quantities, sample/loan segregation, and PHP date grouping exist to keep SQLite tests and MySQL production aligned. Dashboard period figures must use `ReportService` period totals so posted credit/debit notes are deducted consistently.
+- Reports: netting returns, bonus quantities, sample/loan segregation, and PHP date grouping exist to keep SQLite tests and MySQL production aligned. Keep invoice-cohort reports distinct from transaction-date activity reports, and always net returned COGS with returned revenue. Dashboard period figures must use `ReportService` period totals so posted credit/debit notes are deducted consistently.
 - Search pickers: keyboard highlight scrolling must not be overridden by hover events when a highlighted row scrolls beneath a stationary pointer.
 - Permissions: frontend hiding is convenience only; route middleware is the boundary.
 - License: Super Admin must not be locked out.

@@ -95,8 +95,77 @@ class ReportNettingTest extends TestCase
         $this->assertEqualsWithDelta(2000.0, $row['revenue'], 0.01);
         $this->assertEqualsWithDelta(500.0, $row['returns'], 0.01);
         $this->assertEqualsWithDelta(1500.0, $row['net_revenue'], 0.01);
+        $this->assertEqualsWithDelta(1600.0, $row['gross_cost'], 0.01);
+        $this->assertEqualsWithDelta(400.0, $row['return_cost'], 0.01);
         $this->assertEqualsWithDelta(1200.0, $row['net_cost'], 0.01);
         $this->assertEqualsWithDelta(300.0, $row['net_profit'], 0.01); // 400 − (500 − 400)
+    }
+
+    public function test_all_time_product_cogs_nets_returns_and_totals(): void
+    {
+        $this->returnFive();
+
+        $report = app(ReportService::class)->build('all-time-product-cogs', []);
+        $row = $report['rows'][0];
+
+        $this->assertEqualsWithDelta(20.0, $row['qty_sold'], 0.01);
+        $this->assertEqualsWithDelta(5.0, $row['qty_returned'], 0.01);
+        $this->assertEqualsWithDelta(15.0, $row['net_qty_sold'], 0.01);
+        $this->assertEqualsWithDelta(1600.0, $row['gross_cogs'], 0.01);
+        $this->assertEqualsWithDelta(400.0, $row['return_cogs'], 0.01);
+        $this->assertEqualsWithDelta(1200.0, $row['net_cogs'], 0.01);
+        $this->assertEqualsWithDelta(15.0, $report['totals']['net_qty_sold'], 0.01);
+        $this->assertEqualsWithDelta(1200.0, $report['totals']['net_cogs'], 0.01);
+    }
+
+    public function test_product_sales_does_not_mix_returns_from_older_invoices_into_the_period(): void
+    {
+        $oldSale = SalesInvoice::create([
+            'invoice_number' => app(NumberSeriesService::class)->next('sales_invoice'),
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => 1,
+            'invoice_date' => now()->subDay()->toDateString(),
+            'sale_type' => 'credit',
+        ]);
+        $oldSale->items()->create([
+            'product_id' => $this->product->id,
+            'quantity' => 10,
+            'trade_price' => 100,
+            'discount_percent' => 0,
+            'gst_percent' => 0,
+        ]);
+        $oldSale = app(InvoicePostingService::class)->postSale($oldSale->refresh());
+
+        app(ReturnService::class)->createSalesReturn(
+            $oldSale,
+            [['sales_invoice_item_id' => $oldSale->items->first()->id, 'quantity' => 5]],
+            now()->toDateString(),
+        );
+
+        $row = app(ReportService::class)->build('product-sales', $this->range())['rows'][0];
+
+        $this->assertEqualsWithDelta(20.0, $row['qty'], 0.01);
+        $this->assertEqualsWithDelta(0.0, $row['returned_qty'], 0.01);
+        $this->assertEqualsWithDelta(2000.0, $row['net_revenue'], 0.01);
+        $this->assertEqualsWithDelta(1600.0, $row['net_cost'], 0.01);
+        $this->assertEqualsWithDelta(400.0, $row['net_profit'], 0.01);
+    }
+
+    public function test_product_sales_includes_later_returns_against_period_invoices(): void
+    {
+        $item = $this->sale->items->first();
+        app(ReturnService::class)->createSalesReturn(
+            $this->sale,
+            [['sales_invoice_item_id' => $item->id, 'quantity' => 5]],
+            now()->addDay()->toDateString(),
+        );
+
+        $row = app(ReportService::class)->build('product-sales', $this->range())['rows'][0];
+
+        $this->assertEqualsWithDelta(5.0, $row['returned_qty'], 0.01);
+        $this->assertEqualsWithDelta(400.0, $row['return_cost'], 0.01);
+        $this->assertEqualsWithDelta(1200.0, $row['net_cost'], 0.01);
+        $this->assertEqualsWithDelta(300.0, $row['net_profit'], 0.01);
     }
 
     public function test_customer_sales_nets_returns(): void
