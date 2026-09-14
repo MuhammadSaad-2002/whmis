@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\InvoicePostingService;
 use App\Services\NumberSeriesService;
+use App\Services\ReportService;
 use App\Services\StockLoanPostingService;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSeeder;
@@ -418,5 +419,28 @@ class StockLoanTest extends TestCase
         // The seeded Super Admin can see it.
         $this->actingAs($this->admin);
         $this->get(route('loans.index', 'in'))->assertOk();
+    }
+
+    public function test_stock_on_loan_report_separates_in_and_out_balances(): void
+    {
+        $this->makeNormalStock(100);
+        $this->service()->post($this->makeLoan(StockLoan::DIRECTION_OUT, 12));
+        $this->service()->post($this->makeLoan(StockLoan::DIRECTION_IN, 7));
+
+        $report = app(ReportService::class)->build('stock-on-loan', []);
+
+        $this->assertSame('direction', $report['group_by']);
+        $this->assertEqualsWithDelta(12.0, $report['totals']['outstanding_out'], 0.001);
+        $this->assertEqualsWithDelta(7.0, $report['totals']['outstanding_in'], 0.001);
+        $this->assertEqualsWithDelta(5.0, $report['totals']['net_out'], 0.001);
+        $this->assertCount(2, $report['rows']);
+
+        $this->get(route('reports.show', ['key' => 'stock-on-loan', 'direction' => 'out']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('groupBy', 'direction')
+                ->has('rows', 1)
+                ->where('rows.0.direction', 'Out')
+                ->where('totals.outstanding_in', fn ($v) => (float) $v === 0.0));
     }
 }

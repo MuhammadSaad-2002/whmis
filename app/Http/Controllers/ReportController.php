@@ -32,7 +32,7 @@ class ReportController extends Controller
         abort_unless(isset($catalog[$key]), 404);
 
         $meta = $catalog[$key];
-        $filters = $request->only('from', 'to', 'customer_id', 'company_id', 'product_id', 'expiry_window', 'order');
+        $filters = $request->only('from', 'to', 'customer_id', 'company_id', 'product_id', 'direction', 'expiry_window', 'order');
         $data = $this->reports->build($key, $filters);
 
         if ($request->format === 'xlsx') {
@@ -49,6 +49,7 @@ class ReportController extends Controller
                 'columns' => $data['columns'],
                 'rows' => $data['rows'],
                 'totals' => $data['totals'] ?? [],
+                'groupBy' => $data['group_by'] ?? null,
             ])->setPaper('a4', count($data['columns']) > 6 ? 'landscape' : 'portrait')
                 ->stream("{$key}.pdf");
         }
@@ -64,6 +65,7 @@ class ReportController extends Controller
             'rows' => $data['rows'],
             'totals' => $data['totals'] ?? [],
             'chart' => $data['chart'] ?? null,
+            'groupBy' => $data['group_by'] ?? null,
             'filterValues' => $filters + [
                 'from' => $filters['from'] ?? now()->startOfMonth()->toDateString(),
                 'to' => $filters['to'] ?? now()->toDateString(),

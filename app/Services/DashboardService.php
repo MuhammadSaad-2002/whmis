@@ -64,8 +64,8 @@ class DashboardService
         $now = $this->salesTotals($from, $to);
         $prev = $this->salesTotals($prevFrom, $prevTo);
 
-        $purchases = $this->purchaseTotal($from, $to);
-        $prevPurchases = $this->purchaseTotal($prevFrom, $prevTo);
+        $purchases = $this->reports->purchasePeriodTotals($from, $to)['net_purchases'];
+        $prevPurchases = $this->reports->purchasePeriodTotals($prevFrom, $prevTo)['net_purchases'];
 
         return [
             'sales' => $now['sales'],
@@ -82,19 +82,9 @@ class DashboardService
     /** @return array{sales: float, profit: float} */
     private function salesTotals(Carbon $from, Carbon $to): array
     {
-        $row = SalesInvoice::where('status', 'posted')
-            ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to)
-            ->selectRaw('COALESCE(SUM(total_amount), 0) as sales, COALESCE(SUM(total_profit), 0) as profit')
-            ->first();
+        $totals = $this->reports->salesPeriodTotals($from, $to);
 
-        return ['sales' => (float) $row->sales, 'profit' => (float) $row->profit];
-    }
-
-    private function purchaseTotal(Carbon $from, Carbon $to): float
-    {
-        return (float) PurchaseInvoice::where('status', 'posted')
-            ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to)
-            ->sum('total_amount');
+        return ['sales' => $totals['net_sales'], 'profit' => $totals['net_profit']];
     }
 
     /** The equal-length window immediately before [from, to]. */
@@ -200,20 +190,17 @@ class DashboardService
     /** Top 5 customers by net revenue in the period. */
     private function topCustomers(Carbon $from, Carbon $to): array
     {
-        return SalesInvoice::where('status', 'posted')
-            ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to)
-            ->selectRaw('customer_id, SUM(total_amount) as total, SUM(total_profit) as profit')
-            ->groupBy('customer_id')
-            ->orderByDesc('total')
-            ->limit(5)
-            ->with('customer:id,name')
-            ->get()
+        return collect($this->reports->build('customer-sales', [
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+        ])['rows'])
+            ->take(5)
             ->map(fn ($row) => [
-                'customer_id' => $row->customer_id,
-                'customer' => $row->customer?->name,
-                'total' => (float) $row->total,
-                'profit' => (float) $row->profit,
-            ])->all();
+                'customer_id' => $row['customer_id'],
+                'customer' => $row['customer'],
+                'total' => (float) $row['net_revenue'],
+                'profit' => (float) $row['net_profit'],
+            ])->values()->all();
     }
 
     /** Outstanding loaned stock (both directions), from the Stock on Loan report. */
@@ -222,7 +209,9 @@ class DashboardService
         $data = $this->reports->build('stock-on-loan', []);
 
         return [
-            'outstanding' => (float) $data['totals']['outstanding'],
+            'outstanding_out' => (float) $data['totals']['outstanding_out'],
+            'outstanding_in' => (float) $data['totals']['outstanding_in'],
+            'net_out' => (float) $data['totals']['net_out'],
             'rows' => collect($data['rows'])->take(6)->map(fn ($row) => [
                 'direction' => $row['direction'],
                 'product' => $row['product'],

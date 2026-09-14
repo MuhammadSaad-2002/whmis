@@ -74,6 +74,7 @@ class ReportTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('reports/index')
                 ->has('catalog.Sales')
+                ->has('catalog.Loans')
                 ->has('catalog.Financial'));
     }
 

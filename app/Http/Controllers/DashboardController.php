@@ -34,11 +34,9 @@ class DashboardController extends Controller
 
         $today = now()->toDateString();
 
-        $todaySales = SalesInvoice::where('status', 'posted')->whereDate('invoice_date', $today);
-        $todayPurchases = PurchaseInvoice::where('status', 'posted')->whereDate('invoice_date', $today);
-
-        $monthSales = SalesInvoice::where('status', 'posted')
-            ->whereBetween('invoice_date', [now()->startOfMonth()->toDateString(), $today]);
+        $todaySales = $reports->salesPeriodTotals(now()->startOfDay(), now());
+        $todayPurchases = $reports->purchasePeriodTotals(now()->startOfDay(), now());
+        $monthSales = $reports->salesPeriodTotals(now()->startOfMonth(), now());
 
         $receivable = (float) LedgerEntry::where('party_type', 'customer')
             ->selectRaw('COALESCE(SUM(debit - credit), 0) as v')->value('v');
@@ -47,11 +45,11 @@ class DashboardController extends Controller
 
         return Inertia::render('dashboard', [
             'kpis' => [
-                'today_sales' => (float) (clone $todaySales)->sum('total_amount'),
-                'today_sales_count' => (clone $todaySales)->count(),
-                'today_purchases' => (float) (clone $todayPurchases)->sum('total_amount'),
-                'month_sales' => (float) (clone $monthSales)->sum('total_amount'),
-                'month_profit' => (float) (clone $monthSales)->sum('total_profit'),
+                'today_sales' => $todaySales['net_sales'],
+                'today_sales_count' => SalesInvoice::where('status', 'posted')->whereDate('invoice_date', $today)->count(),
+                'today_purchases' => $todayPurchases['net_purchases'],
+                'month_sales' => $monthSales['net_sales'],
+                'month_profit' => $monthSales['net_profit'],
                 'receivable' => $receivable,
                 'payable' => $payable,
                 'inventory_value' => (float) Batch::selectRaw('COALESCE(SUM(qty_available * effective_cost), 0) as v')->value('v'),
@@ -78,14 +76,15 @@ class DashboardController extends Controller
                 ->latest('id')
                 ->limit(8)
                 ->get(['id', 'invoice_number', 'customer_id', 'invoice_date', 'status', 'total_amount']),
-            'topCustomers' => SalesInvoice::where('status', 'posted')
-                ->whereBetween('invoice_date', [now()->subDays(30)->toDateString(), $today])
-                ->selectRaw('customer_id, SUM(total_amount) as total, SUM(total_profit) as profit')
-                ->groupBy('customer_id')
-                ->orderByDesc('total')
-                ->limit(5)
-                ->with('customer:id,name')
-                ->get(),
+            'topCustomers' => collect($reports->build('customer-sales', [
+                'from' => now()->subDays(30)->toDateString(),
+                'to' => $today,
+            ])['rows'])->take(5)->map(fn ($row) => [
+                'customer_id' => $row['customer_id'],
+                'customer' => ['id' => $row['customer_id'], 'name' => $row['customer']],
+                'total' => $row['net_revenue'],
+                'profit' => $row['net_profit'],
+            ])->values(),
         ]);
     }
 

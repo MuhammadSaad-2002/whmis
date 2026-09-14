@@ -193,7 +193,7 @@ export function BatchSelectCell({ productId, warehouseId, value, onSelect, disab
                             aria-selected={index === highlight}
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => select(b)}
-                            onMouseEnter={() => setHighlight(index)}
+                            onMouseMove={() => setHighlight(index)}
                             className={`cursor-pointer border-b px-3 py-1.5 text-sm last:border-0 ${index === highlight ? 'bg-accent text-accent-foreground' : ''}`}
                         >
                             {label(b)}

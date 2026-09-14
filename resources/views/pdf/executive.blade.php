@@ -38,10 +38,10 @@
     <h2>Performance · this period</h2>
     <table class="kpi-grid">
         <tr>
-            <td><div class="label">Sales</div><div class="value">{{ $rs($kpis['sales']) }}</div><div class="delta">{{ $sign($kpis['sales_delta']) }}</div></td>
-            <td><div class="label">Gross Profit</div><div class="value">{{ $rs($kpis['profit']) }}</div><div class="delta">{{ $sign($kpis['profit_delta']) }}</div></td>
-            <td><div class="label">Margin</div><div class="value">{{ $kpis['margin_pct'] }}%</div><div class="delta">prev {{ $kpis['prev_margin_pct'] }}%</div></td>
-            <td><div class="label">Purchases</div><div class="value">{{ $rs($kpis['purchases']) }}</div><div class="delta">{{ $sign($kpis['purchases_delta']) }}</div></td>
+            <td><div class="label">Net Sales</div><div class="value">{{ $rs($kpis['sales']) }}</div><div class="delta">{{ $sign($kpis['sales_delta']) }}</div></td>
+            <td><div class="label">Net Profit</div><div class="value">{{ $rs($kpis['profit']) }}</div><div class="delta">{{ $sign($kpis['profit_delta']) }}</div></td>
+            <td><div class="label">Net Margin</div><div class="value">{{ $kpis['margin_pct'] }}%</div><div class="delta">prev {{ $kpis['prev_margin_pct'] }}%</div></td>
+            <td><div class="label">Net Purchases</div><div class="value">{{ $rs($kpis['purchases']) }}</div><div class="delta">{{ $sign($kpis['purchases_delta']) }}</div></td>
         </tr>
     </table>
 
@@ -69,7 +69,7 @@
                 </table>
             </td>
             <td>
-                <h2>Stock on Loan · outstanding {{ number_format((float) $stockOnLoan['outstanding'], 2) }}</h2>
+                <h2>Stock on Loan · out {{ number_format((float) $stockOnLoan['outstanding_out'], 2) }} / in {{ number_format((float) $stockOnLoan['outstanding_in'], 2) }}</h2>
                 <table class="items">
                     <thead><tr><th>Dir</th><th>Product</th><th class="num">Out</th></tr></thead>
                     <tbody>

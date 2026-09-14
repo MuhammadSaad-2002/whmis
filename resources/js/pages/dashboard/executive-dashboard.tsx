@@ -12,7 +12,11 @@ import AppLayout from '@/layouts/app-layout';
 import { money, pct, qty, shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowDownRight, ArrowUpRight, FileDown } from 'lucide-react';
+import {
+    ArrowDownRight, ArrowUpRight, Banknote, Boxes, FileDown, Landmark,
+    ReceiptText, ShoppingCart, TrendingUp,
+    type LucideIcon,
+} from 'lucide-react';
 
 interface Kpis {
     sales: number;
@@ -87,7 +91,7 @@ export interface ExecutiveProps {
     salesBySupplier: BarDatum[];
     topDebtors: Debtor[];
     topCustomers: TopCustomer[];
-    stockOnLoan: { outstanding: number; rows: LoanRow[] };
+    stockOnLoan: { outstanding_out: number; outstanding_in: number; net_out: number; rows: LoanRow[] };
     attention: Attention;
     recentSales: RecentSale[];
     expiringSoon: ExpiringBatch[];
@@ -120,16 +124,27 @@ function Delta({ value, invert }: { value: number | null; invert?: boolean }) {
     );
 }
 
-function KpiCard({ label, value, delta, hint }: { label: string; value: string; delta?: React.ReactNode; hint?: string }) {
+const KPI_TONES = {
+    emerald: 'from-emerald-500/15 to-emerald-500/0 text-emerald-600 dark:text-emerald-400',
+    blue: 'from-blue-500/15 to-blue-500/0 text-blue-600 dark:text-blue-400',
+    violet: 'from-violet-500/15 to-violet-500/0 text-violet-600 dark:text-violet-400',
+    amber: 'from-amber-500/15 to-amber-500/0 text-amber-600 dark:text-amber-400',
+} as const;
+
+function KpiCard({ label, value, delta, hint, icon: Icon, tone = 'blue' }: {
+    label: string; value: string; delta?: React.ReactNode; hint?: string; icon: LucideIcon; tone?: keyof typeof KPI_TONES;
+}) {
     return (
-        <Card>
-            <CardHeader className="pb-1">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <div className="text-2xl font-semibold tabular-nums">{value}</div>
-                {delta && <div className="mt-1">{delta}</div>}
-                {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        <Card className="relative overflow-hidden border-border/60 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+            <div className={`absolute inset-0 bg-gradient-to-br ${KPI_TONES[tone]}`} />
+            <CardContent className="relative p-5">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-muted-foreground">{label}</span>
+                    <span className={`rounded-xl bg-background/80 p-2 shadow-sm ${KPI_TONES[tone].split(' ').slice(-2).join(' ')}`}><Icon className="size-4" /></span>
+                </div>
+                <div className="text-2xl font-bold tracking-tight tabular-nums">{value}</div>
+                {delta && <div className="mt-1.5">{delta}</div>}
+                {hint && <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p>}
             </CardContent>
         </Card>
     );
@@ -137,7 +152,7 @@ function KpiCard({ label, value, delta, hint }: { label: string; value: string; 
 
 function MiniStat({ label, value, href }: { label: string; value: string; href?: string }) {
     const body = (
-        <Card className={href ? 'transition-colors hover:bg-muted/40' : undefined}>
+        <Card className={`border-border/60 shadow-sm ${href ? 'transition-all hover:-translate-y-0.5 hover:bg-muted/40 hover:shadow-md' : ''}`}>
             <CardContent className="flex flex-col gap-0.5 py-4">
                 <span className="text-2xl font-semibold tabular-nums">{value}</span>
                 <span className="text-xs text-muted-foreground">{label}</span>
@@ -162,18 +177,21 @@ export default function ExecutiveDashboard(props: ExecutiveProps) {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Executive Dashboard" />
-            <div className="flex h-full flex-col gap-4 p-4">
+            <div className="flex h-full flex-col gap-5 bg-gradient-to-b from-muted/35 via-background to-background p-4 md:p-6">
                 {/* Period bar */}
-                <div className="flex flex-wrap items-end justify-between gap-3 border-b pb-4">
+                <div className="relative overflow-hidden rounded-2xl border border-primary/10 bg-gradient-to-br from-slate-950 via-slate-900 to-primary/80 p-5 text-white shadow-xl shadow-primary/10 md:p-7">
+                    <div className="absolute -right-20 -top-24 size-72 rounded-full bg-white/10 blur-3xl" />
+                    <div className="relative flex flex-wrap items-end justify-between gap-4">
                     <div>
-                        <h1 className="text-3xl font-bold">Executive Overview</h1>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-white/60">WHMIS command centre</p>
+                        <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Executive Overview</h1>
+                        <p className="mt-1 text-sm text-white/70">
                             {PERIOD_LABELS[filterValues.period] ?? 'This Month'} · {shortDate(filterValues.from)} — {shortDate(filterValues.to)}
                         </p>
                     </div>
                     <div className="flex flex-wrap items-end gap-2">
                         <Select value={filterValues.period} onValueChange={(v) => reload({ period: v })}>
-                            <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                            <SelectTrigger className="w-44 border-white/20 bg-white/10 text-white"><SelectValue /></SelectTrigger>
                             <SelectContent>
                                 {Object.entries(PERIOD_LABELS).map(([value, label]) => (
                                     <SelectItem key={value} value={value}>{label}</SelectItem>
@@ -183,46 +201,48 @@ export default function ExecutiveDashboard(props: ExecutiveProps) {
                         {filterValues.period === 'custom' && (
                             <>
                                 <div>
-                                    <Label className="text-xs">From</Label>
-                                    <Input type="date" className="w-40" value={filterValues.from}
+                                    <Label className="text-xs text-white/70">From</Label>
+                                    <Input type="date" className="w-40 border-white/20 bg-white/10 text-white" value={filterValues.from}
                                         onChange={(e) => reload({ from: e.target.value })} />
                                 </div>
                                 <div>
-                                    <Label className="text-xs">To</Label>
-                                    <Input type="date" className="w-40" value={filterValues.to}
+                                    <Label className="text-xs text-white/70">To</Label>
+                                    <Input type="date" className="w-40 border-white/20 bg-white/10 text-white" value={filterValues.to}
                                         onChange={(e) => reload({ to: e.target.value })} />
                                 </div>
                             </>
                         )}
-                        <Button variant="outline" size="sm" asChild>
+                        <Button variant="outline" size="sm" className="border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" asChild>
                             <a href={pdfUrl()} target="_blank" rel="noreferrer">
                                 <FileDown className="mr-1 size-4" /> PDF
                             </a>
                         </Button>
                     </div>
+                    </div>
                 </div>
 
                 {/* KPI band A — period, with deltas */}
                 <div className="grid gap-3 md:grid-cols-4">
-                    <KpiCard label="Sales" value={money(kpis.sales)} delta={<Delta value={kpis.sales_delta} />} />
-                    <KpiCard label="Gross Profit" value={money(kpis.profit)} delta={<Delta value={kpis.profit_delta} />} />
-                    <KpiCard label="Margin" value={pct(kpis.margin_pct)} hint={`prev ${pct(kpis.prev_margin_pct)}`} />
-                    <KpiCard label="Purchases" value={money(kpis.purchases)} delta={<Delta value={kpis.purchases_delta} invert />} />
+                    <KpiCard label="Net Sales" value={money(kpis.sales)} delta={<Delta value={kpis.sales_delta} />} icon={TrendingUp} tone="emerald" />
+                    <KpiCard label="Net Profit" value={money(kpis.profit)} delta={<Delta value={kpis.profit_delta} />} icon={Banknote} tone="blue" />
+                    <KpiCard label="Net Margin" value={pct(kpis.margin_pct)} hint={`Previous period ${pct(kpis.prev_margin_pct)}`} icon={Landmark} tone="violet" />
+                    <KpiCard label="Net Purchases" value={money(kpis.purchases)} delta={<Delta value={kpis.purchases_delta} invert />} icon={ShoppingCart} tone="amber" />
                 </div>
 
                 {/* KPI band B — snapshot position */}
                 <div className="grid gap-3 md:grid-cols-4">
-                    <KpiCard label="Receivable from Customers" value={money(financials.receivable)} hint="as of now" />
-                    <KpiCard label="Payable to Suppliers" value={money(financials.payable)} hint="as of now" />
-                    <KpiCard label="Net Position" value={money(financials.net_position)} hint="receivable − payable" />
-                    <KpiCard label="Inventory Value (cost)" value={money(financials.inventory_value)} hint="as of now" />
+                    <KpiCard label="Customer Receivables" value={money(financials.receivable)} hint="Live ledger balance" icon={ReceiptText} tone="blue" />
+                    <KpiCard label="Supplier Payables" value={money(financials.payable)} hint="Live ledger balance" icon={Landmark} tone="amber" />
+                    <KpiCard label="Net Position" value={money(financials.net_position)} hint="Receivables minus payables" icon={Banknote} tone="violet" />
+                    <KpiCard label="Inventory at Cost" value={money(financials.inventory_value)} hint="Current sellable stock" icon={Boxes} tone="emerald" />
                 </div>
 
                 {/* Attention tiles */}
-                <div className="grid gap-3 md:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     <MiniStat label="Draft invoices" value={String(attention.draft_sales + attention.draft_purchases)} />
                     <MiniStat label="Pending bookings" value={String(attention.pending_bookings)} href="/bookings?status=pending" />
-                    <MiniStat label="Stock on loan (units out)" value={qty(stockOnLoan.outstanding)} href="/loans/out" />
+                    <MiniStat label="Loan stock out" value={qty(stockOnLoan.outstanding_out)} href="/loans/out" />
+                    <MiniStat label="Borrowed stock in" value={qty(stockOnLoan.outstanding_in)} href="/loans/in" />
                     <MiniStat label="Batches expiring ≤90d" value={String(attention.expiring_90)} />
                 </div>
 

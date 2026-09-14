@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\LedgerEntry;
 use App\Models\Product;
 use App\Models\SalesInvoice;
+use App\Models\SalesReturn;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSeeder;
@@ -162,5 +163,31 @@ class ExecutiveDashboardTest extends TestCase
                 ->where('financials.receivable', fn ($v) => (float) $v === 1500.0)
                 ->where('financials.payable', fn ($v) => (float) $v === 5000.0)
                 ->where('financials.net_position', fn ($v) => (float) $v === -3500.0));
+    }
+
+    public function test_period_sales_profit_and_top_customers_deduct_credit_notes(): void
+    {
+        $sale = $this->postedSale(now()->toDateString(), 2000, 400);
+        $sale->update(['total_cost' => 1600]);
+
+        SalesReturn::create([
+            'return_number' => 'SR-DASH-1',
+            'sales_invoice_id' => $sale->id,
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => 1,
+            'return_date' => now()->toDateString(),
+            'status' => SalesReturn::STATUS_POSTED,
+            'total_amount' => 500,
+            'total_cost' => 400,
+        ]);
+
+        $this->actingAs($this->admin);
+        $this->get('/dashboard?period=this_month')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('kpis.sales', fn ($v) => (float) $v === 1500.0)
+                ->where('kpis.profit', fn ($v) => (float) $v === 300.0)
+                ->where('topCustomers.0.total', fn ($v) => (float) $v === 1500.0)
+                ->where('topCustomers.0.profit', fn ($v) => (float) $v === 300.0));
     }
 }

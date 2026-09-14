@@ -5,7 +5,7 @@ likely to matter when changing each module.
 
 ## Overview and workspace
 
-- Dashboard: `/dashboard`; Booker users receive own-data dashboard, while users with `dashboard.executive` receive the executive dashboard.
+- Dashboard: `/dashboard`; Booker users receive own-data dashboard, while users with `dashboard.executive` receive the executive dashboard. Executive period KPIs use net sales/profit after posted customer credit notes and net purchases after supplier debit notes.
 - Executive PDF: `/dashboard/executive/pdf`.
 - Workspace: `/workspace`; tabbed shell that hosts the app navigation experience.
 - Navigation source: `resources/js/components/nav-config.ts`.
@@ -35,7 +35,7 @@ likely to matter when changing each module.
 
 - Loan stock in and out use `/loans/in` and `/loans/out`.
 - Flows support create/edit/post/record return/cancel/close.
-- Loan stock is segregated from normal stock and reports outstanding stock by partner and product.
+- Loan stock is segregated from normal stock and reports outstanding stock by partner and product. Loan reporting and dashboard totals keep loan-out and borrowed-in quantities separate; the report can filter and group by direction.
 - Loan stock out stores outside-party requested/received people as text names,
   while request-received-by and handed-over-by remain internal user fields.
 
@@ -58,7 +58,9 @@ likely to matter when changing each module.
 ## Reports
 
 Reports are registered in `ReportService::catalog()` and rendered by the generic
-reports page/export pipeline.
+reports page/export pipeline. The reports centre groups report definitions by
+business area, and report datasets can declare a `group_by` field for grouped
+table presentation (currently used by Stock on Loan).
 
 Current report keys:
 

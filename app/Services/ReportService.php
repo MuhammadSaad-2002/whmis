@@ -9,6 +9,7 @@ use App\Models\LedgerEntry;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
 use App\Models\PurchaseInvoiceItem;
+use App\Models\PurchaseReturn;
 use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceItem;
 use App\Models\SalesInvoiceItemIncentive;
@@ -53,7 +54,7 @@ class ReportService
             'sample-issue-product' => ['title' => 'Sample Issues by Product', 'category' => 'Samples', 'description' => 'Samples given away per product: quantity and cost value (Rs 0 when drawn from sample stock)', 'filters' => ['date_range', 'supplier', 'product']],
             'sample-issue-recipient' => ['title' => 'Sample Issues by Recipient', 'category' => 'Samples', 'description' => 'Samples given away per customer / recipient: quantity and cost value', 'filters' => ['date_range', 'customer']],
             'slow-fast-moving' => ['title' => 'Slow / Fast Moving', 'category' => 'Inventory', 'description' => 'Products ranked by quantity sold in a period', 'filters' => ['date_range', 'order']],
-            'stock-on-loan' => ['title' => 'Stock on Loan', 'category' => 'Inventory', 'description' => 'Outstanding loaned stock per product and partner, both directions (in / out)', 'filters' => ['supplier', 'product']],
+            'stock-on-loan' => ['title' => 'Stock on Loan', 'category' => 'Loans', 'description' => 'Outstanding loaned stock per product and partner, separated into stock in and stock out', 'filters' => ['direction', 'supplier', 'product']],
             'outstanding' => ['title' => 'Outstanding & Aging', 'category' => 'Financial', 'description' => 'Receivables per customer with aging buckets', 'filters' => []],
             'supplier-payables' => ['title' => 'Supplier Payables', 'category' => 'Financial', 'description' => 'What you owe each supplier', 'filters' => []],
             'profit-by-month' => ['title' => 'Monthly Sales & Profit', 'category' => 'Financial', 'description' => '12-month trend of sales, cost, and profit', 'filters' => []],
@@ -110,6 +111,52 @@ class ReportService
         return SalesReturn::where('status', SalesReturn::STATUS_POSTED)
             ->whereDate('return_date', '>=', $from)
             ->whereDate('return_date', '<=', $to);
+    }
+
+    /** Canonical period sales figures, net of posted customer credit notes. */
+    public function salesPeriodTotals(Carbon $from, Carbon $to): array
+    {
+        $sales = SalesInvoice::where('status', 'posted')
+            ->whereDate('invoice_date', '>=', $from)
+            ->whereDate('invoice_date', '<=', $to)
+            ->selectRaw('COALESCE(SUM(total_amount), 0) as amount, COALESCE(SUM(total_cost), 0) as cost, COALESCE(SUM(total_profit), 0) as profit')
+            ->first();
+
+        $returns = SalesReturn::where('status', SalesReturn::STATUS_POSTED)
+            ->whereDate('return_date', '>=', $from)
+            ->whereDate('return_date', '<=', $to)
+            ->selectRaw('COALESCE(SUM(total_amount), 0) as amount, COALESCE(SUM(total_cost), 0) as cost')
+            ->first();
+
+        $gross = (float) $sales->amount;
+        $creditNotes = (float) $returns->amount;
+        $netCost = (float) $sales->cost - (float) $returns->cost;
+
+        return [
+            'gross_sales' => round($gross, 2),
+            'credit_notes' => round($creditNotes, 2),
+            'net_sales' => round($gross - $creditNotes, 2),
+            'net_cost' => round($netCost, 2),
+            'net_profit' => round((float) $sales->profit - ($creditNotes - (float) $returns->cost), 2),
+        ];
+    }
+
+    /** Canonical period purchases, net of posted supplier debit notes. */
+    public function purchasePeriodTotals(Carbon $from, Carbon $to): array
+    {
+        $gross = (float) PurchaseInvoice::where('status', 'posted')
+            ->whereDate('invoice_date', '>=', $from)
+            ->whereDate('invoice_date', '<=', $to)
+            ->sum('total_amount');
+        $debitNotes = (float) PurchaseReturn::whereDate('return_date', '>=', $from)
+            ->whereDate('return_date', '<=', $to)
+            ->sum('total_amount');
+
+        return [
+            'gross_purchases' => round($gross, 2),
+            'debit_notes' => round($debitNotes, 2),
+            'net_purchases' => round($gross - $debitNotes, 2),
+        ];
     }
 
     private function salesRegister(Carbon $from, Carbon $to, array $filters): array
@@ -356,6 +403,7 @@ class ReportService
             $retCost = (float) $retGroup->sum('total_cost');
 
             return [
+                'customer_id' => (int) $customerId,
                 'customer' => $customer?->name,
                 'city' => $customer?->city,
                 'invoices' => $invGroup->count(),
@@ -699,10 +747,12 @@ class ReportService
     {
         $productId = $filters['product_id'] ?? null;
         $companyId = $filters['company_id'] ?? null;
+        $direction = $filters['direction'] ?? null;
 
         $loans = StockLoan::query()
             ->with(['company:id,name', 'items.product:id,name'])
             ->whereIn('status', [StockLoan::STATUS_LOANED, StockLoan::STATUS_PARTIALLY_RETURNED])
+            ->when(in_array($direction, [StockLoan::DIRECTION_IN, StockLoan::DIRECTION_OUT], true), fn ($q) => $q->where('direction', $direction))
             ->when($companyId, fn ($q, $id) => $q->where('company_id', $id))
             ->get();
 
@@ -732,10 +782,14 @@ class ReportService
         }
 
         $rows = collect($grouped)
-            ->sortBy(fn ($r) => [$r['direction'], $r['product']])
+            ->sortBy(fn ($r) => [$r['direction'] === 'Out' ? 0 : 1, $r['product']])
             ->values();
 
+        $outstandingOut = (float) $rows->where('direction', 'Out')->sum('outstanding');
+        $outstandingIn = (float) $rows->where('direction', 'In')->sum('outstanding');
+
         return [
+            'group_by' => 'direction',
             'columns' => [
                 ['key' => 'direction', 'label' => 'Direction'],
                 ['key' => 'product', 'label' => 'Product'],
@@ -749,6 +803,9 @@ class ReportService
                 'loaned' => (float) $rows->sum('loaned'),
                 'returned' => (float) $rows->sum('returned'),
                 'outstanding' => (float) $rows->sum('outstanding'),
+                'outstanding_out' => $outstandingOut,
+                'outstanding_in' => $outstandingIn,
+                'net_out' => round($outstandingOut - $outstandingIn, 2),
             ],
         ];
     }

@@ -147,7 +147,7 @@ export function ReturnLineCell({ value, options, disabled, invalid, openSignal, 
                             aria-selected={index === highlight}
                             onMouseDown={(e) => e.preventDefault()} // keep focus in the cell
                             onClick={() => select(option)}
-                            onMouseEnter={() => setHighlight(index)}
+                            onMouseMove={() => setHighlight(index)}
                             className={`cursor-pointer border-b px-3 py-1.5 text-sm last:border-0 ${
                                 index === highlight ? 'bg-accent text-accent-foreground' : ''
                             }`}

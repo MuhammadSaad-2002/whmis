@@ -203,7 +203,10 @@ export function ProductSearchCell({
                             aria-selected={index === highlight}
                             onMouseDown={(e) => e.preventDefault()} // keep focus in the cell
                             onClick={() => select(product)}
-                            onMouseEnter={() => setHighlight(index)}
+                            // `onMouseEnter` also fires when keyboard scrolling moves a
+                            // row underneath a stationary pointer, which used to pull the
+                            // highlight backwards and make ArrowDown appear stuck.
+                            onMouseMove={() => setHighlight(index)}
                             className={`${gridCols} cursor-pointer border-b py-2 text-sm last:border-0 ${
                                 index === highlight ? 'bg-accent text-accent-foreground' : ''
                             }`}

@@ -12,7 +12,8 @@ import AppLayout from '@/layouts/app-layout';
 import { amount, qty, shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
-import { FileDown, FileSpreadsheet } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, FileDown, FileSpreadsheet } from 'lucide-react';
+import { Fragment } from 'react';
 
 interface Column {
     key: string;
@@ -29,6 +30,7 @@ interface Props {
     rows: Record<string, string | number | null>[];
     totals: Record<string, number>;
     chart: TrendPoint[] | null;
+    groupBy: string | null;
     filterValues: Record<string, string | undefined>;
     options: { customers: Option[]; suppliers: Option[]; products: Option[] };
 }
@@ -44,7 +46,7 @@ function formatCell(value: string | number | null, format?: Column['format']): s
     }
 }
 
-export default function ReportShow({ report, columns, rows, totals, chart, filterValues, options }: Props) {
+export default function ReportShow({ report, columns, rows, totals, chart, groupBy, filterValues, options }: Props) {
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Reports', href: '/reports' },
         { title: report.title, href: '#' },
@@ -152,6 +154,19 @@ export default function ReportShow({ report, columns, rows, totals, chart, filte
                             />
                         </div>
                     )}
+                    {has('direction') && (
+                        <Select
+                            value={filterValues.direction ?? 'all'}
+                            onValueChange={(v) => applyFilter({ direction: v === 'all' ? undefined : v })}
+                        >
+                            <SelectTrigger className="w-48"><SelectValue placeholder="Loan direction" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Both directions</SelectItem>
+                                <SelectItem value="out">Loan stock out</SelectItem>
+                                <SelectItem value="in">Loan stock in</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    )}
                     {has('expiry_window') && (
                         <Select
                             value={filterValues.expiry_window ?? '90'}
@@ -188,6 +203,26 @@ export default function ReportShow({ report, columns, rows, totals, chart, filte
                     </Card>
                 )}
 
+                {report.key === 'stock-on-loan' && (
+                    <div className="grid gap-3 sm:grid-cols-3">
+                        <Card className="border-orange-200 bg-orange-50/60 dark:border-orange-950 dark:bg-orange-950/20">
+                            <CardContent className="flex items-center gap-3 py-4">
+                                <span className="rounded-xl bg-orange-500/10 p-2 text-orange-600"><ArrowUpFromLine className="size-5" /></span>
+                                <div><p className="text-xs text-muted-foreground">Outstanding loaned out</p><p className="text-xl font-semibold tabular-nums">{qty(totals.outstanding_out ?? 0)}</p></div>
+                            </CardContent>
+                        </Card>
+                        <Card className="border-sky-200 bg-sky-50/60 dark:border-sky-950 dark:bg-sky-950/20">
+                            <CardContent className="flex items-center gap-3 py-4">
+                                <span className="rounded-xl bg-sky-500/10 p-2 text-sky-600"><ArrowDownToLine className="size-5" /></span>
+                                <div><p className="text-xs text-muted-foreground">Outstanding borrowed in</p><p className="text-xl font-semibold tabular-nums">{qty(totals.outstanding_in ?? 0)}</p></div>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="py-4"><p className="text-xs text-muted-foreground">Net units out</p><p className="text-xl font-semibold tabular-nums">{qty(totals.net_out ?? 0)}</p></CardContent>
+                        </Card>
+                    </div>
+                )}
+
                 <div className="rounded-xl border">
                     <Table>
                         <TableHeader>
@@ -207,18 +242,32 @@ export default function ReportShow({ report, columns, rows, totals, chart, filte
                                     </TableCell>
                                 </TableRow>
                             )}
-                            {rows.map((row, index) => (
-                                <TableRow key={index}>
-                                    {columns.map((column) => (
-                                        <TableCell
-                                            key={column.key}
-                                            className={column.align === 'right' ? 'text-right tabular-nums' : ''}
-                                        >
-                                            {formatCell(row[column.key] ?? null, column.format)}
-                                        </TableCell>
-                                    ))}
-                                </TableRow>
-                            ))}
+                            {rows.map((row, index) => {
+                                const group = groupBy ? row[groupBy] : null;
+                                const previousGroup = groupBy && index > 0 ? rows[index - 1][groupBy] : null;
+
+                                return (
+                                    <Fragment key={index}>
+                                        {groupBy && (index === 0 || group !== previousGroup) && (
+                                            <TableRow className="bg-muted/60">
+                                                <TableCell colSpan={columns.length} className="py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                                    {String(group ?? 'Other')}
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                        <TableRow>
+                                            {columns.map((column) => (
+                                                <TableCell
+                                                    key={column.key}
+                                                    className={column.align === 'right' ? 'text-right tabular-nums' : ''}
+                                                >
+                                                    {formatCell(row[column.key] ?? null, column.format)}
+                                                </TableCell>
+                                            ))}
+                                        </TableRow>
+                                    </Fragment>
+                                );
+                            })}
                             {rows.length > 0 && Object.keys(totals).length > 0 && (
                                 <TableRow className="bg-muted/30 font-semibold">
                                     {columns.map((column, index) => (

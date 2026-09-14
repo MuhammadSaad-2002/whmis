@@ -30,7 +30,14 @@
             </tr>
         </thead>
         <tbody>
-            @foreach($rows as $row)
+            @foreach($rows as $index => $row)
+                @if(!empty($groupBy) && ($index === 0 || ($rows[$index - 1][$groupBy] ?? null) !== ($row[$groupBy] ?? null)))
+                    <tr>
+                        <td colspan="{{ count($columns) }}" style="font-weight: bold; background: #eef2f7; text-transform: uppercase;">
+                            {{ $row[$groupBy] ?? 'Other' }}
+                        </td>
+                    </tr>
+                @endif
                 <tr>
                     @foreach($columns as $column)
                         @php $value = $row[$column['key']] ?? ''; @endphp

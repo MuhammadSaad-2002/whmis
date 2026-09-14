@@ -175,7 +175,7 @@ export function PurchaseBatchCell({
                             aria-selected={index === highlight}
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => pick(b)}
-                            onMouseEnter={() => setHighlight(index)}
+                            onMouseMove={() => setHighlight(index)}
                             className={`flex cursor-pointer items-center justify-between gap-2 border-b px-3 py-1.5 text-sm last:border-0 ${index === highlight ? 'bg-accent text-accent-foreground' : ''}`}
                         >
                             <span className="truncate">
@@ -192,7 +192,7 @@ export function PurchaseBatchCell({
                             aria-selected={highlight === createIndex}
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => create(query)}
-                            onMouseEnter={() => setHighlight(createIndex)}
+                            onMouseMove={() => setHighlight(createIndex)}
                             className={`cursor-pointer px-3 py-1.5 text-sm ${highlight === createIndex ? 'bg-accent text-accent-foreground' : ''}`}
                         >
                             Create new batch: <span className="font-medium">{query.trim()}</span>
