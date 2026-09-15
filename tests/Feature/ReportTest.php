@@ -10,6 +10,8 @@ use App\Models\SalesInvoice;
 use App\Models\User;
 use App\Services\InvoicePostingService;
 use App\Services\NumberSeriesService;
+use App\Services\ReportService;
+use App\Services\ReportVisualizationService;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -90,7 +92,9 @@ class ReportTest extends TestCase
             ->where('rows.0.revenue', 2000)
             ->where('rows.0.net_cost', 1760)
             ->where('rows.0.net_profit', 240)
-            ->where('totals.revenue', 2000));
+            ->where('totals.revenue', 2000)
+            ->where('visualization.labelKey', 'product')
+            ->where('visualization.metrics.0.key', 'net_revenue'));
     }
 
     public function test_all_time_product_cogs_report_has_lifetime_rows_and_grand_totals(): void
@@ -147,6 +151,46 @@ class ReportTest extends TestCase
         $this->get(route('reports.show', ['key' => 'product-sales', 'format' => 'pdf']))
             ->assertOk()
             ->assertHeader('content-type', 'application/pdf');
+    }
+
+    public function test_pdf_visualizations_are_generated_from_report_rows(): void
+    {
+        $reports = app(ReportService::class);
+        $visualizations = app(ReportVisualizationService::class);
+
+        $ranked = $visualizations->pdfCharts('product-sales', $reports->build('product-sales', [
+            'from' => now()->toDateString(),
+            'to' => now()->toDateString(),
+        ]));
+        $this->assertCount(1, $ranked);
+        $this->assertSame('Top 10 by Net Revenue', $ranked[0]['title']);
+        $this->assertStringStartsWith('data:image/svg+xml;base64,', $ranked[0]['image']);
+        $this->assertStringContainsString('<rect', base64_decode(substr($ranked[0]['image'], 26)));
+
+        $trend = $visualizations->pdfCharts('profit-by-month', $reports->build('profit-by-month', []));
+        $this->assertCount(1, $trend);
+        $this->assertSame('Sales and Profit Trend', $trend[0]['title']);
+        $this->assertStringContainsString('<polyline', base64_decode(substr($trend[0]['image'], 26)));
+    }
+
+    public function test_pdf_chart_images_preserve_their_intrinsic_aspect_ratio(): void
+    {
+        $html = view('pdf.report', [
+            'title' => 'Chart Test',
+            'filters' => [],
+            'columns' => [],
+            'rows' => [],
+            'totals' => [],
+            'groupBy' => null,
+            'charts' => [[
+                'title' => 'Ranked Chart',
+                'subtitle' => 'Aspect ratio test',
+                'image' => 'data:image/svg+xml;base64,'.base64_encode('<svg xmlns="http://www.w3.org/2000/svg" width="760" height="340"></svg>'),
+            ]],
+        ])->render();
+
+        $this->assertStringContainsString('.report-chart img { display: block; width: 100%; height: auto; }', $html);
+        $this->assertStringNotContainsString('max-height:', $html);
     }
 
     public function test_unknown_report_404s_and_permission_enforced(): void

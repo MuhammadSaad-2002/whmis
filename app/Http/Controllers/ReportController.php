@@ -7,6 +7,7 @@ use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Services\ReportService;
+use App\Services\ReportVisualizationService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -14,7 +15,10 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class ReportController extends Controller
 {
-    public function __construct(private readonly ReportService $reports) {}
+    public function __construct(
+        private readonly ReportService $reports,
+        private readonly ReportVisualizationService $visualizations,
+    ) {}
 
     public function index()
     {
@@ -50,6 +54,7 @@ class ReportController extends Controller
                 'rows' => $data['rows'],
                 'totals' => $data['totals'] ?? [],
                 'groupBy' => $data['group_by'] ?? null,
+                'charts' => $this->visualizations->pdfCharts($key, $data),
             ])->setPaper('a4', count($data['columns']) > 6 ? 'landscape' : 'portrait')
                 ->stream("{$key}.pdf");
         }
@@ -65,6 +70,7 @@ class ReportController extends Controller
             'rows' => $data['rows'],
             'totals' => $data['totals'] ?? [],
             'chart' => $data['chart'] ?? null,
+            'visualization' => $this->visualizations->definition($key),
             'groupBy' => $data['group_by'] ?? null,
             'filterValues' => $filters + [
                 'from' => $filters['from'] ?? now()->startOfMonth()->toDateString(),

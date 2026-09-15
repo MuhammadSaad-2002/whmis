@@ -1,4 +1,4 @@
-import { amount } from '@/lib/format';
+import { amount, qty } from '@/lib/format';
 import { useEffect, useState } from 'react';
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
@@ -17,9 +17,7 @@ function useIsDark(): boolean {
     const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
 
     useEffect(() => {
-        const observer = new MutationObserver(() =>
-            setDark(document.documentElement.classList.contains('dark')),
-        );
+        const observer = new MutationObserver(() => setDark(document.documentElement.classList.contains('dark')));
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
         return () => observer.disconnect();
     }, []);
@@ -27,12 +25,24 @@ function useIsDark(): boolean {
     return dark;
 }
 
+interface HBarChartProps {
+    data: BarDatum[];
+    valueLabel?: string;
+    valueFormat?: 'money' | 'qty' | 'pct';
+}
+
+function formatValue(value: number, format: HBarChartProps['valueFormat']): string {
+    if (format === 'qty') return qty(value);
+    if (format === 'pct') return `${amount(value)}%`;
+    return `Rs ${amount(value)}`;
+}
+
 /** Horizontal bars, ranked highest-first, with a truncated category axis. */
-export function HBarChart({ data }: { data: BarDatum[] }) {
+export function HBarChart({ data, valueLabel = 'Net Revenue', valueFormat = 'money' }: HBarChartProps) {
     const palette = useIsDark() ? COLORS.dark : COLORS.light;
 
     if (data.length === 0) {
-        return <div className="flex h-72 items-center justify-center text-sm text-muted-foreground">No data for this period.</div>;
+        return <div className="text-muted-foreground flex h-72 items-center justify-center text-sm">No data for this period.</div>;
     }
 
     return (
@@ -51,7 +61,15 @@ export function HBarChart({ data }: { data: BarDatum[] }) {
                     />
                     <Tooltip
                         cursor={{ fill: palette.grid }}
-                        formatter={(value) => [`Rs ${amount(Number(value ?? 0))}`, 'Net Revenue']}
+                        formatter={(value) => {
+                            const numericValue = Number(value ?? 0);
+                            return [
+                                formatValue(numericValue, valueFormat),
+                                numericValue < 0
+                                    ? `${valueLabel} - negative because deductions, returns, costs, or outbound quantities exceed the corresponding positive amount`
+                                    : valueLabel,
+                            ];
+                        }}
                         contentStyle={{
                             borderRadius: 8,
                             border: '1px solid ' + palette.grid,
@@ -61,8 +79,8 @@ export function HBarChart({ data }: { data: BarDatum[] }) {
                         }}
                     />
                     <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false} barSize={20}>
-                        {data.map((_, index) => (
-                            <Cell key={index} fill={palette.bar} />
+                        {data.map((datum, index) => (
+                            <Cell key={index} fill={datum.value < 0 ? '#dc2626' : palette.bar} />
                         ))}
                     </Bar>
                 </BarChart>

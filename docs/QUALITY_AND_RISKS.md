@@ -34,6 +34,10 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
 - FIFO: sale posting depends on earliest expiry then id unless a batch is explicitly chosen.
 - Incentives: rules fill line fields; posting math should not special-case incentive internals.
 - Reports: netting returns, bonus quantities, sample/loan segregation, and PHP date grouping exist to keep SQLite tests and MySQL production aligned. Keep invoice-cohort reports distinct from transaction-date activity reports, and always net returned COGS with returned revenue. Dashboard period figures and charts must use the selected range and `ReportService` math so posted credit/debit notes are deducted consistently.
+- Report visualizations are views of the returned rows and totals; they must not
+  recalculate or replace server-authoritative financial values. Ranked chart
+  definitions are supplied by `ReportVisualizationService` to both Inertia and
+  PDF exports, while PDF SVGs are generated server-side for Dompdf compatibility.
 - Search pickers: keyboard highlight scrolling must not be overridden by hover events when a highlighted row scrolls beneath a stationary pointer.
 - Permissions: frontend hiding is convenience only; route middleware is the boundary.
 - License: Super Admin must not be locked out.

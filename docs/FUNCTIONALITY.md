@@ -99,6 +99,20 @@ Current report keys:
 Adding a report should mean one catalog entry, one service method, and tests for
 its aggregation/netting behavior.
 
+The shared report screen adds four headline totals when totals are available,
+report-specific ranked charts with metric/top-count/order controls, and a sticky
+scrollable table with a frozen first column. Report filters live in a compact
+collapsible panel: dates, entity selections, direction, expiry, and ordering are
+all staged locally and only update the report when **Apply Filters** is clicked.
+Cancel discards staged changes, while date quick presets only prepare the range
+for the same explicit apply action. Excel and PDF continue to use the same
+server-authoritative report rows and totals. PDF exports include server-rendered
+SVG visualizations: a top-10 ranked chart for reports with ranked metrics and a
+sales/profit trend graph when the report supplies time-series chart data.
+Negative report values are highlighted and carry an information tooltip that
+explains the likely row-level cause from revenue, returns, COGS, quantities, or
+balances. PDFs render the same negative values in red with a printable guide.
+
 ## Administration
 
 - Users: create/update/password/toggle/delete.
