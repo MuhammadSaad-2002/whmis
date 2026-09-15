@@ -443,7 +443,10 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                     </div>
                 </div>
 
-                <div data-enter-nav className="grid grid-cols-2 gap-3 rounded-xl border p-4 md:grid-cols-4">
+                <div
+                    data-enter-nav
+                    className="grid grid-cols-1 gap-3 rounded-xl border p-2.5 [&>div]:min-w-0 [&>div>label]:mb-1 [&>div>label]:block sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-5 xl:gap-x-2 xl:gap-y-1.5 xl:[&>div>button]:h-8 xl:[&>div>input]:h-8 xl:[&>div>label]:whitespace-nowrap xl:[&>div>label]:text-[11px] 2xl:grid-cols-9"
+                >
                     <div>
                         <Label>Supplier *</Label>
                         <Select
@@ -510,7 +513,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                         <Input value={warehouse.name} disabled />
                     </div>
                     <div>
-                        <Label>Invoice Discount %</Label>
+                        <Label>Discount %</Label>
                         <Input
                             type="number" min={0} max={100} step="0.01" value={header.discount_percent} disabled={readonly}
                             onChange={(e) => setHeader((h) => ({ ...h, discount_percent: e.target.value }))}
@@ -518,7 +521,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                         />
                     </div>
                     <div>
-                        <Label>Invoice GST %</Label>
+                        <Label>GST %</Label>
                         <Input
                             type="number" min={0} max={100} step="0.01" value={header.gst_percent} disabled={readonly}
                             onChange={(e) => setHeader((h) => ({ ...h, gst_percent: e.target.value }))}
@@ -532,7 +535,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                             }}
                         />
                     </div>
-                    <div className="col-span-2">
+                    <div className="sm:col-span-2 xl:col-span-1">
                         <Label>Remarks</Label>
                         <Input
                             value={header.notes} disabled={readonly}

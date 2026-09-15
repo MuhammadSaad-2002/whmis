@@ -113,20 +113,26 @@ class ExecutiveDashboardTest extends TestCase
 
     public function test_period_selector_rescopes_period_kpis(): void
     {
-        $this->postedSale(now()->toDateString(), 1000);
-        $this->postedSale(now()->subDays(60)->toDateString(), 5000);
+        $this->postedSale(now()->toDateString(), 1000, 100);
+        $this->postedSale(now()->subDays(60)->toDateString(), 5000, 500);
 
         $this->actingAs($this->admin);
 
         // This-month window excludes the 60-day-old sale.
         $this->get('/dashboard?period=this_month')
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('kpis.sales', fn ($v) => (float) $v === 1000.0));
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('kpis.sales', fn ($v) => (float) $v === 1000.0)
+                ->where('monthlyTrend', fn ($rows) => (float) collect($rows)->sum('sales') === 1000.0)
+                ->where('monthlyTrend', fn ($rows) => (float) collect($rows)->sum('profit') === 100.0));
 
         // Last-12-months window includes both.
         $this->get('/dashboard?period=last_12')
             ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page->where('kpis.sales', fn ($v) => (float) $v === 6000.0));
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('kpis.sales', fn ($v) => (float) $v === 6000.0)
+                ->where('monthlyTrend', fn ($rows) => (float) collect($rows)->sum('sales') === 6000.0)
+                ->where('monthlyTrend', fn ($rows) => (float) collect($rows)->sum('profit') === 600.0));
     }
 
     public function test_pdf_export_is_gated_to_admins(): void
@@ -187,6 +193,8 @@ class ExecutiveDashboardTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('kpis.sales', fn ($v) => (float) $v === 1500.0)
                 ->where('kpis.profit', fn ($v) => (float) $v === 300.0)
+                ->where('monthlyTrend', fn ($rows) => (float) collect($rows)->sum('sales') === 1500.0)
+                ->where('monthlyTrend', fn ($rows) => (float) collect($rows)->sum('profit') === 300.0)
                 ->where('topCustomers.0.total', fn ($v) => (float) $v === 1500.0)
                 ->where('topCustomers.0.profit', fn ($v) => (float) $v === 300.0));
     }

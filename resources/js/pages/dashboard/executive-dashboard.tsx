@@ -164,6 +164,7 @@ function MiniStat({ label, value, href }: { label: string; value: string; href?:
 
 export default function ExecutiveDashboard(props: ExecutiveProps) {
     const { filterValues, kpis, financials, monthlyTrend, aging, topProducts, salesBySupplier, topDebtors, topCustomers, stockOnLoan, attention, recentSales, expiringSoon } = props;
+    const periodKey = `${filterValues.from}:${filterValues.to}`;
 
     const reload = (patch: Partial<ExecutiveProps['filterValues']>) => {
         router.get(route('dashboard'), { ...filterValues, ...patch }, { preserveState: true, preserveScroll: true, replace: true });
@@ -246,13 +247,13 @@ export default function ExecutiveDashboard(props: ExecutiveProps) {
                     <MiniStat label="Batches expiring ≤90d" value={String(attention.expiring_90)} />
                 </div>
 
-                {/* Trend — rolling 12 months */}
+                {/* Trend — selected period */}
                 <Card>
                     <CardHeader className="pb-0">
-                        <CardTitle className="text-base">Sales & Profit — last 12 months</CardTitle>
+                        <CardTitle className="text-base">Sales & Profit <span className="text-xs font-normal text-muted-foreground">· selected period</span></CardTitle>
                     </CardHeader>
                     <CardContent className="pt-2">
-                        <TrendChart data={monthlyTrend} />
+                        <TrendChart key={`trend:${periodKey}`} data={monthlyTrend} />
                     </CardContent>
                 </Card>
 
@@ -272,7 +273,7 @@ export default function ExecutiveDashboard(props: ExecutiveProps) {
                             <CardTitle className="text-base">Top Products by Net Revenue <span className="text-xs font-normal text-muted-foreground">· period</span></CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <HBarChart data={topProducts} />
+                            <HBarChart key={`products:${periodKey}`} data={topProducts} />
                         </CardContent>
                     </Card>
                 </div>
@@ -284,7 +285,7 @@ export default function ExecutiveDashboard(props: ExecutiveProps) {
                             <CardTitle className="text-base">Sales by Supplier <span className="text-xs font-normal text-muted-foreground">· period</span></CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <HBarChart data={salesBySupplier} />
+                            <HBarChart key={`suppliers:${periodKey}`} data={salesBySupplier} />
                         </CardContent>
                     </Card>
 

@@ -481,7 +481,10 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                     </div>
                 </div>
 
-                <div data-enter-nav className="grid grid-cols-1 gap-3 rounded-xl border p-4 sm:grid-cols-2 md:grid-cols-4">
+                <div
+                    data-enter-nav
+                    className="grid grid-cols-1 gap-3 rounded-xl border p-2.5 [&>div]:min-w-0 [&>div>label]:mb-1 [&>div>label]:block sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-5 xl:gap-x-2 xl:gap-y-1.5 xl:[&>div>button]:h-8 xl:[&>div>input]:h-8 xl:[&>div>label]:whitespace-nowrap xl:[&>div>label]:text-[11px]"
+                >
                     <div>
                         <Label>Customer *</Label>
                         <SearchableSelect
@@ -537,7 +540,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                         <Label>Warehouse</Label>
                         <Input value={warehouse.name} disabled />
                     </div>
-                    <div className="col-span-1 sm:col-span-2">
+                    <div className="sm:col-span-2 xl:col-span-1">
                         <Label>Remarks</Label>
                         <Input
                             value={header.notes} disabled={readonly}

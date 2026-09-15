@@ -1411,4 +1411,51 @@ class ReportService
             ])->all(),
         ];
     }
+
+    /**
+     * Sales and profit chart points constrained to an explicit dashboard period.
+     * Short ranges are shown daily; longer ranges are grouped by calendar month.
+     */
+    public function salesProfitTrend(Carbon $from, Carbon $to): array
+    {
+        $from = $from->copy()->startOfDay();
+        $to = $to->copy()->endOfDay();
+        $daily = $from->diffInDays($to) <= 45;
+        $keyFormat = $daily ? 'Y-m-d' : 'Y-m';
+        $labelFormat = $daily ? 'd M' : 'M Y';
+
+        $invoices = SalesInvoice::where('status', 'posted')
+            ->whereDate('invoice_date', '>=', $from)
+            ->whereDate('invoice_date', '<=', $to)
+            ->get(['invoice_date', 'total_amount', 'total_profit'])
+            ->groupBy(fn ($invoice) => $invoice->invoice_date->format($keyFormat));
+
+        $returns = SalesReturn::where('status', SalesReturn::STATUS_POSTED)
+            ->whereDate('return_date', '>=', $from)
+            ->whereDate('return_date', '<=', $to)
+            ->get(['return_date', 'total_amount', 'total_cost'])
+            ->groupBy(fn ($return) => $return->return_date->format($keyFormat));
+
+        $cursor = $daily ? $from->copy() : $from->copy()->startOfMonth();
+        $last = $daily ? $to->copy()->startOfDay() : $to->copy()->startOfMonth();
+        $points = [];
+
+        while ($cursor->lte($last)) {
+            $key = $cursor->format($keyFormat);
+            $sales = $invoices[$key] ?? collect();
+            $creditNotes = $returns[$key] ?? collect();
+            $returnedRevenue = (float) $creditNotes->sum('total_amount');
+            $returnedCost = (float) $creditNotes->sum('total_cost');
+
+            $points[] = [
+                'label' => $cursor->format($labelFormat),
+                'sales' => round((float) $sales->sum('total_amount') - $returnedRevenue, 2),
+                'profit' => round((float) $sales->sum('total_profit') - ($returnedRevenue - $returnedCost), 2),
+            ];
+
+            $daily ? $cursor->addDay() : $cursor->addMonth();
+        }
+
+        return $points;
+    }
 }

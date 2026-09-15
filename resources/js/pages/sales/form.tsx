@@ -521,9 +521,19 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
                     </div>
                 </div>
 
-                <div data-enter-nav className="grid grid-cols-2 gap-3 rounded-xl border p-4 md:grid-cols-4">
+                <div
+                    data-enter-nav
+                    className="grid grid-cols-1 gap-3 rounded-xl border p-2.5 [&>div]:min-w-0 [&>div>label]:mb-1 [&>div>label]:block sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-5 xl:gap-x-2 xl:gap-y-1.5 xl:[&>div>button]:h-8 xl:[&>div>input]:h-8 xl:[&>div>label]:whitespace-nowrap xl:[&>div>label]:text-[11px] 2xl:grid-cols-10"
+                >
                     <div>
-                        <Label>Customer *</Label>
+                        <Label>
+                            Customer *
+                            {selectedCustomer && Number(selectedCustomer.credit_limit) > 0 && (
+                                <span className="float-right ml-2 max-w-[60%] truncate font-normal text-muted-foreground">
+                                    Limit: {money(selectedCustomer.credit_limit)}
+                                </span>
+                            )}
+                        </Label>
                         <SearchableSelect
                             value={header.customer_id}
                             onValueChange={(v) => {
@@ -548,11 +558,6 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
                             }))}
                         />
                         <InputError message={headerErrors.customer_id} className="mt-1 text-xs" />
-                        {selectedCustomer && Number(selectedCustomer.credit_limit) > 0 && (
-                            <p className="mt-1 text-xs text-muted-foreground">
-                                Credit limit: {money(selectedCustomer.credit_limit)}
-                            </p>
-                        )}
                     </div>
                     <div>
                         <Label>Booker</Label>
@@ -570,7 +575,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
                         />
                     </div>
                     <div>
-                        <Label>Invoice # {invoice ? '' : '(blank = auto)'}</Label>
+                        <Label>Invoice #</Label>
                         <Input
                             value={invoice ? invoice.invoice_number : header.invoice_number}
                             disabled={!!invoice || readonly}
@@ -615,7 +620,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
                         <Input value={warehouse.name} disabled />
                     </div>
                     <div>
-                        <Label>Invoice Discount %</Label>
+                        <Label>Discount %</Label>
                         <Input
                             type="number" min={0} max={100} step="0.01" value={header.discount_percent} disabled={readonly}
                             onChange={(e) => setHeader((h) => ({ ...h, discount_percent: e.target.value }))}
@@ -623,7 +628,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
                         />
                     </div>
                     <div>
-                        <Label>Invoice GST %</Label>
+                        <Label>GST %</Label>
                         <Input
                             type="number" min={0} max={100} step="0.01" value={header.gst_percent} disabled={readonly}
                             onChange={(e) => setHeader((h) => ({ ...h, gst_percent: e.target.value }))}
@@ -637,7 +642,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
                             }}
                         />
                     </div>
-                    <div className="col-span-2">
+                    <div className="sm:col-span-2 xl:col-span-1">
                         <Label>Remarks</Label>
                         <Input
                             value={header.notes} disabled={readonly}
@@ -646,7 +651,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
                         />
                     </div>
                     {header.sale_type === 'sale_base' && (
-                        <div className="col-span-2 md:col-span-4">
+                        <div className="sm:col-span-2 md:col-span-4 xl:col-span-5 2xl:col-span-10">
                             <Label>Terms *</Label>
                             <Textarea
                                 rows={2}

@@ -43,7 +43,7 @@ class DashboardService
             ],
             'kpis' => $this->periodKpis($from, $to),
             'financials' => $this->financials(),
-            'monthlyTrend' => $this->reports->profitByMonth()['chart'],
+            'monthlyTrend' => $this->reports->salesProfitTrend($from, $to),
             'aging' => $this->aging(),
             'topProducts' => $this->topProducts($from, $to),
             'salesBySupplier' => $this->salesBySupplier($from, $to),
