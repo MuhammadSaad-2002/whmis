@@ -60,7 +60,7 @@ likely to matter when changing each module.
 Reports are registered in `ReportService::catalog()` and rendered by the generic
 reports page/export pipeline. The reports centre groups report definitions by
 business area, and report datasets can declare a `group_by` field for grouped
-table presentation (currently used by Stock on Loan).
+table presentation.
 
 `product-sales` is an invoice-cohort profitability report: the date range selects
 sales invoices, then every posted return against those invoices is netted from
@@ -70,6 +70,16 @@ report and buckets returns on their actual return date.
 `all-time-product-cogs` has no date range. It presents lifetime billed quantity,
 bonus units, returned quantity, net quantity sold, gross COGS, return COGS, and
 net COGS per product, with grand totals and an optional supplier filter.
+
+`stock-on-loan` uses `stock_loans.loan_date` as the transaction date and returns
+one row per loan item within the selected period. Posted, partially returned,
+returned, and closed loans are included; pending drafts and cancelled loans are
+excluded. Rows are grouped by product and ordered by date, then show direction,
+loan number, partner, quantities, and the people involved. For loan-out rows,
+`Received By` is the outside-party name while `Request Received By` and
+`Handed Over By` are internal WHMIS users. For loan-in rows, `Received By` is the
+internal WHMIS receiver. The returned quantity remains the aggregate stored on
+the loan item; the current schema does not record separate return-event dates.
 
 Current report keys:
 

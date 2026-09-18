@@ -429,7 +429,7 @@ class StockLoanTest extends TestCase
 
         $report = app(ReportService::class)->build('stock-on-loan', []);
 
-        $this->assertSame('direction', $report['group_by']);
+        $this->assertSame('product', $report['group_by']);
         $this->assertEqualsWithDelta(12.0, $report['totals']['outstanding_out'], 0.001);
         $this->assertEqualsWithDelta(7.0, $report['totals']['outstanding_in'], 0.001);
         $this->assertEqualsWithDelta(5.0, $report['totals']['net_out'], 0.001);
@@ -438,9 +438,79 @@ class StockLoanTest extends TestCase
         $this->get(route('reports.show', ['key' => 'stock-on-loan', 'direction' => 'out']))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('groupBy', 'direction')
+                ->where('groupBy', 'product')
                 ->has('rows', 1)
                 ->where('rows.0.direction', 'Out')
                 ->where('totals.outstanding_in', fn ($v) => (float) $v === 0.0));
+    }
+
+    public function test_stock_on_loan_report_is_date_wise_and_includes_loan_people(): void
+    {
+        $this->makeNormalStock(100);
+        $requestHandler = User::factory()->create(['name' => 'Request Desk']);
+        $handoverHandler = User::factory()->create(['name' => 'Warehouse Handover']);
+        $internalReceiver = User::factory()->create(['name' => 'Internal Receiver']);
+
+        $outsidePeriod = $this->makeLoan(StockLoan::DIRECTION_OUT, 1);
+        $outsidePeriod->update(['loan_date' => '2026-09-01']);
+        $this->service()->post($outsidePeriod->refresh());
+
+        $returnedLoan = $this->makeLoan(StockLoan::DIRECTION_OUT, 5);
+        $returnedLoan->update([
+            'loan_date' => '2026-09-10',
+            'external_received_by' => 'Partner Rider',
+            'request_received_by_id' => $requestHandler->id,
+            'handed_over_by_id' => $handoverHandler->id,
+        ]);
+        $returnedLoan = $this->service()->post($returnedLoan->refresh());
+        $returnedItem = $returnedLoan->items->firstOrFail();
+        $this->service()->recordReturn($returnedLoan, [$returnedItem->id => 5]);
+
+        $loanIn = $this->makeLoan(StockLoan::DIRECTION_IN, 2);
+        $loanIn->update([
+            'loan_date' => '2026-09-12',
+            'received_by_id' => $internalReceiver->id,
+        ]);
+        $this->service()->post($loanIn->refresh());
+
+        $currentLoan = $this->makeLoan(StockLoan::DIRECTION_OUT, 3);
+        $currentLoan->update([
+            'loan_date' => '2026-09-16',
+            'external_received_by' => 'Partner Driver',
+            'request_received_by_id' => $requestHandler->id,
+            'handed_over_by_id' => $handoverHandler->id,
+        ]);
+        $this->service()->post($currentLoan->refresh());
+
+        $report = app(ReportService::class)->build('stock-on-loan', [
+            'from' => '2026-09-10',
+            'to' => '2026-09-16',
+        ]);
+
+        $this->assertSame('product', $report['group_by']);
+        $this->assertCount(3, $report['rows']);
+        $this->assertSame(['2026-09-10', '2026-09-12', '2026-09-16'], array_column($report['rows'], 'date'));
+        $this->assertSame(['Out', 'In', 'Out'], array_column($report['rows'], 'direction'));
+        $this->assertSame('Partner Rider', $report['rows'][0]['received_by']);
+        $this->assertSame('Request Desk', $report['rows'][0]['request_received_by']);
+        $this->assertSame('Warehouse Handover', $report['rows'][0]['handed_over_by']);
+        $this->assertSame('Internal Receiver', $report['rows'][1]['received_by']);
+        $this->assertNull($report['rows'][1]['handed_over_by']);
+        $this->assertEqualsWithDelta(10.0, $report['totals']['loaned'], 0.001);
+        $this->assertEqualsWithDelta(5.0, $report['totals']['returned'], 0.001);
+        $this->assertEqualsWithDelta(5.0, $report['totals']['outstanding'], 0.001);
+        $this->assertEqualsWithDelta(3.0, $report['totals']['outstanding_out'], 0.001);
+        $this->assertEqualsWithDelta(2.0, $report['totals']['outstanding_in'], 0.001);
+
+        $this->get(route('reports.show', [
+            'key' => 'stock-on-loan',
+            'from' => '2026-09-10',
+            'to' => '2026-09-16',
+        ]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('groupBy', 'product')
+                ->has('rows', 3)
+                ->where('rows.0.date', '2026-09-10')
+                ->where('rows.0.received_by', 'Partner Rider'));
     }
 }

@@ -33,7 +33,7 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
 - Ledger: customer/supplier debit-credit meaning must stay consistent across sales, purchases, returns, and payments.
 - FIFO: sale posting depends on earliest expiry then id unless a batch is explicitly chosen.
 - Incentives: rules fill line fields; posting math should not special-case incentive internals.
-- Reports: netting returns, bonus quantities, sample/loan segregation, and PHP date grouping exist to keep SQLite tests and MySQL production aligned. Keep invoice-cohort reports distinct from transaction-date activity reports, and always net returned COGS with returned revenue. Dashboard period figures and charts must use the selected range and `ReportService` math so posted credit/debit notes are deducted consistently.
+- Reports: netting returns, bonus quantities, sample/loan segregation, and PHP date grouping exist to keep SQLite tests and MySQL production aligned. Keep invoice-cohort reports distinct from transaction-date activity reports, and always net returned COGS with returned revenue. The Stock on Loan report uses `loan_date`, groups rows by product, and includes settled loan transactions because the loan tables retain aggregate returned quantities but no return-event dates. Dashboard period figures and charts must use the selected range and `ReportService` math so posted credit/debit notes are deducted consistently.
 - Report visualizations are views of the returned rows and totals; they must not
   recalculate or replace server-authoritative financial values. Ranked chart
   definitions are supplied by `ReportVisualizationService` to both Inertia and

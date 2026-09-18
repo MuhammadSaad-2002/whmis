@@ -9,6 +9,8 @@
         .report-chart h2 { margin: 0 0 2px; color: #1f2937; }
         .report-chart .chart-meta { margin-bottom: 7px; font-size: 8.5px; color: #6b7280; }
         .report-chart img { display: block; width: 100%; height: auto; }
+        table.items.compact th { padding: 3px 3px; font-size: 7px; }
+        table.items.compact td { padding: 3px 3px; font-size: 7.5px; }
         .negative-guide { margin: 8px 0; padding: 6px 8px; border-left: 3px solid #dc2626; background: #fff7f7; color: #7f1d1d; font-size: 8.5px; line-height: 1.45; }
         .negative-value { color: #b91c1c; font-weight: bold; }
     </style>
@@ -54,7 +56,7 @@
         @endforeach
     @endif
 
-    <table class="items" @if(!empty($charts)) style="page-break-before: always;" @endif>
+    <table class="items @if(count($columns) > 8) compact @endif">
         <thead>
             <tr>
                 @foreach($columns as $column)
@@ -79,6 +81,8 @@
                                 {{ is_numeric($value) ? number_format((float) $value, 2) : $value }}
                             @elseif(($column['format'] ?? '') === 'pct')
                                 {{ $value }}%
+                            @elseif(($column['format'] ?? '') === 'date')
+                                {{ $value ? \Illuminate\Support\Carbon::parse($value)->format('d M Y') : '' }}
                             @else
                                 {{ $value }}
                             @endif

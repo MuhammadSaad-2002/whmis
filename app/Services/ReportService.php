@@ -55,7 +55,7 @@ class ReportService
             'sample-issue-product' => ['title' => 'Sample Issues by Product', 'category' => 'Samples', 'description' => 'Samples given away per product: quantity and cost value (Rs 0 when drawn from sample stock)', 'filters' => ['date_range', 'supplier', 'product']],
             'sample-issue-recipient' => ['title' => 'Sample Issues by Recipient', 'category' => 'Samples', 'description' => 'Samples given away per customer / recipient: quantity and cost value', 'filters' => ['date_range', 'customer']],
             'slow-fast-moving' => ['title' => 'Slow / Fast Moving', 'category' => 'Inventory', 'description' => 'Products ranked by quantity sold in a period', 'filters' => ['date_range', 'order']],
-            'stock-on-loan' => ['title' => 'Stock on Loan', 'category' => 'Loans', 'description' => 'Outstanding loaned stock per product and partner, separated into stock in and stock out', 'filters' => ['direction', 'supplier', 'product']],
+            'stock-on-loan' => ['title' => 'Stock on Loan', 'category' => 'Loans', 'description' => 'Date-wise posted stock-loan transactions grouped by product, with current balances and handover details', 'filters' => ['date_range', 'direction', 'supplier', 'product']],
             'outstanding' => ['title' => 'Outstanding & Aging', 'category' => 'Financial', 'description' => 'Receivables per customer with aging buckets', 'filters' => []],
             'supplier-payables' => ['title' => 'Supplier Payables', 'category' => 'Financial', 'description' => 'What you owe each supplier', 'filters' => []],
             'profit-by-month' => ['title' => 'Monthly Sales & Profit', 'category' => 'Financial', 'description' => '12-month trend of sales, cost, and profit', 'filters' => []],
@@ -85,7 +85,7 @@ class ReportService
             'sample-issue-product' => $this->sampleIssueByProduct($from, $to, $filters),
             'sample-issue-recipient' => $this->sampleIssueByRecipient($from, $to, $filters),
             'slow-fast-moving' => $this->slowFastMoving($from, $to, $filters),
-            'stock-on-loan' => $this->stockOnLoan($filters),
+            'stock-on-loan' => $this->stockOnLoan($from, $to, $filters),
             'outstanding' => $this->outstanding(),
             'supplier-payables' => $this->supplierPayables(),
             'profit-by-month' => $this->profitByMonth(),
@@ -818,63 +818,93 @@ class ReportService
         ];
     }
 
-    /** Free-sample stock on hand, per product and batch (segregated from actual stock). */
     /**
-     * Outstanding loaned stock per product × partner × direction. Sums the still-out
-     * balance (quantity − returned) of active loans; grouping is done in PHP so the
-     * SQLite test DB behaves like MySQL.
+     * Posted stock-loan transactions, one row per loan item. The report is grouped
+     * by product and ordered by the business loan date so a product's history is
+     * readable while the quantities still show its current outstanding balance.
+     * Grouping and sorting are done in PHP so SQLite tests behave like MySQL.
      */
-    private function stockOnLoan(array $filters): array
+    private function stockOnLoan(Carbon $from, Carbon $to, array $filters): array
     {
         $productId = $filters['product_id'] ?? null;
         $companyId = $filters['company_id'] ?? null;
         $direction = $filters['direction'] ?? null;
 
         $loans = StockLoan::query()
-            ->with(['company:id,name', 'items.product:id,name'])
-            ->whereIn('status', [StockLoan::STATUS_LOANED, StockLoan::STATUS_PARTIALLY_RETURNED])
+            ->with([
+                'company:id,name',
+                'requestedBy:id,name',
+                'receivedBy:id,name',
+                'requestReceivedBy:id,name',
+                'handedOverBy:id,name',
+                'items.product:id,name',
+            ])
+            ->whereIn('status', [
+                StockLoan::STATUS_LOANED,
+                StockLoan::STATUS_PARTIALLY_RETURNED,
+                StockLoan::STATUS_RETURNED,
+                StockLoan::STATUS_CLOSED,
+            ])
+            ->whereDate('loan_date', '>=', $from)
+            ->whereDate('loan_date', '<=', $to)
             ->when(in_array($direction, [StockLoan::DIRECTION_IN, StockLoan::DIRECTION_OUT], true), fn ($q) => $q->where('direction', $direction))
             ->when($companyId, fn ($q, $id) => $q->where('company_id', $id))
             ->get();
 
-        $grouped = [];
+        $rows = [];
         foreach ($loans as $loan) {
             foreach ($loan->items as $item) {
                 if ($productId && (int) $item->product_id !== (int) $productId) {
                     continue;
                 }
+
+                $loaned = (float) $item->quantity;
+                $returned = (float) $item->returned_quantity;
                 $outstanding = max(0, (float) $item->quantity - (float) $item->returned_quantity);
-                if ($outstanding <= 0) {
-                    continue;
-                }
-                $key = $loan->direction.'|'.$item->product_id.'|'.$loan->company_id;
-                $grouped[$key] ??= [
+
+                $rows[] = [
+                    'date' => $loan->loan_date?->toDateString(),
+                    'loan_number' => $loan->loan_number,
                     'direction' => $loan->direction === StockLoan::DIRECTION_IN ? 'In' : 'Out',
                     'product' => $item->product?->name,
                     'supplier' => $loan->company?->name,
-                    'loaned' => 0.0,
-                    'returned' => 0.0,
-                    'outstanding' => 0.0,
+                    // For loan-out, this is the outside-party recipient. For
+                    // loan-in, it is the internal WHMIS user who received stock.
+                    'received_by' => $loan->direction === StockLoan::DIRECTION_OUT
+                        ? $loan->external_received_by
+                        : $loan->receivedBy?->name,
+                    'request_received_by' => $loan->requestReceivedBy?->name,
+                    'handed_over_by' => $loan->handedOverBy?->name,
+                    'loaned' => $loaned,
+                    'returned' => $returned,
+                    'outstanding' => $outstanding,
                 ];
-                $grouped[$key]['loaned'] += (float) $item->quantity;
-                $grouped[$key]['returned'] += (float) $item->returned_quantity;
-                $grouped[$key]['outstanding'] += $outstanding;
             }
         }
 
-        $rows = collect($grouped)
-            ->sortBy(fn ($r) => [$r['direction'] === 'Out' ? 0 : 1, $r['product']])
+        $rows = collect($rows)
+            ->sortBy(fn ($r) => [
+                mb_strtolower((string) ($r['product'] ?? '')),
+                (string) ($r['date'] ?? ''),
+                $r['direction'] === 'Out' ? 0 : 1,
+                (string) ($r['loan_number'] ?? ''),
+            ])
             ->values();
 
         $outstandingOut = (float) $rows->where('direction', 'Out')->sum('outstanding');
         $outstandingIn = (float) $rows->where('direction', 'In')->sum('outstanding');
 
         return [
-            'group_by' => 'direction',
+            'group_by' => 'product',
             'columns' => [
+                ['key' => 'date', 'label' => 'Date', 'format' => 'date'],
+                ['key' => 'loan_number', 'label' => 'Loan #'],
                 ['key' => 'direction', 'label' => 'Direction'],
                 ['key' => 'product', 'label' => 'Product'],
                 ['key' => 'supplier', 'label' => 'Supplier / Partner'],
+                ['key' => 'received_by', 'label' => 'Received By'],
+                ['key' => 'request_received_by', 'label' => 'Request Received By'],
+                ['key' => 'handed_over_by', 'label' => 'Handed Over By'],
                 ['key' => 'loaned', 'label' => 'Loaned', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'returned', 'label' => 'Returned', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'outstanding', 'label' => 'Outstanding', 'align' => 'right', 'format' => 'qty'],
