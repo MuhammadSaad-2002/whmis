@@ -33,7 +33,13 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
 - Ledger: customer/supplier debit-credit meaning must stay consistent across sales, purchases, returns, and payments.
 - FIFO: sale posting depends on earliest expiry then id unless a batch is explicitly chosen.
 - Incentives: rules fill line fields; posting math should not special-case incentive internals.
-- Reports: netting returns, bonus quantities, sample/loan segregation, and PHP date grouping exist to keep SQLite tests and MySQL production aligned. Keep invoice-cohort reports distinct from transaction-date activity reports, and always net returned COGS with returned revenue. The Stock on Loan report uses `loan_date`, groups rows by product, and includes settled loan transactions because the loan tables retain aggregate returned quantities but no return-event dates. Dashboard period figures and charts must use the selected range and `ReportService` math so posted credit/debit notes are deducted consistently.
+- Reports: netting returns, bonus quantities, sample/loan segregation, and PHP date grouping exist to keep SQLite tests and MySQL production aligned. Keep invoice-cohort reports distinct from transaction-date activity reports, and always net returned COGS with returned revenue. The Stock on Loan report uses `loan_date`, groups rows by product, includes settled loan transactions, and derives dated returns from stock movements while loan items retain aggregate quantities. Dashboard period figures and charts must use the selected range and `ReportService` math so posted credit/debit notes are deducted consistently.
+- Stock-loan return history is derived from the append-only stock movements and
+  aggregated by product/day. Do not substitute `closed_at` for a physical return
+  date. Cancellation stock reversals share return movement types; cancelled
+  loans must not be presented as ordinary returned loans. The Stock on Loan
+  period filters loan dates, while return dates and balances reflect current
+  lifetime activity for the matching loans.
 - Report visualizations are views of the returned rows and totals; they must not
   recalculate or replace server-authoritative financial values. Ranked chart
   definitions are supplied by `ReportVisualizationService` to both Inertia and

@@ -432,6 +432,8 @@ class StockLoanTest extends TestCase
         $this->assertSame('product', $report['group_by']);
         $this->assertEqualsWithDelta(12.0, $report['totals']['outstanding_out'], 0.001);
         $this->assertEqualsWithDelta(7.0, $report['totals']['outstanding_in'], 0.001);
+        $this->assertEqualsWithDelta(12.0, $report['totals']['sent_on_loan'], 0.001);
+        $this->assertEqualsWithDelta(7.0, $report['totals']['received_on_loan'], 0.001);
         $this->assertEqualsWithDelta(5.0, $report['totals']['net_out'], 0.001);
         $this->assertCount(2, $report['rows']);
 
@@ -498,6 +500,8 @@ class StockLoanTest extends TestCase
         $this->assertNull($report['rows'][1]['handed_over_by']);
         $this->assertEqualsWithDelta(10.0, $report['totals']['loaned'], 0.001);
         $this->assertEqualsWithDelta(5.0, $report['totals']['returned'], 0.001);
+        $this->assertEqualsWithDelta(5.0, $report['totals']['received_back'], 0.001);
+        $this->assertEqualsWithDelta(0.0, $report['totals']['returned_to_partner'], 0.001);
         $this->assertEqualsWithDelta(5.0, $report['totals']['outstanding'], 0.001);
         $this->assertEqualsWithDelta(3.0, $report['totals']['outstanding_out'], 0.001);
         $this->assertEqualsWithDelta(2.0, $report['totals']['outstanding_in'], 0.001);
@@ -512,5 +516,78 @@ class StockLoanTest extends TestCase
                 ->has('rows', 3)
                 ->where('rows.0.date', '2026-09-10')
                 ->where('rows.0.received_by', 'Partner Rider'));
+    }
+
+    public function test_loan_return_dates_come_from_stock_movements_and_closure_is_separate(): void
+    {
+        $this->makeNormalStock(100);
+        $loan = $this->service()->post($this->makeLoan(StockLoan::DIRECTION_OUT, 10));
+        $item = $loan->items->firstOrFail();
+
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-02 10:00:00'));
+        $loan = $this->service()->recordReturn($loan, [$item->id => 4]);
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-05 10:00:00'));
+        $loan = $this->service()->recordReturn($loan, [$item->id => 6]);
+
+        $this->get(route('loans.index', 'out'))->assertInertia(fn (Assert $page) => $page
+            ->where('loans.data.0.last_return_date', '2026-10-05')
+            ->where('loans.data.0.closed_at', null));
+
+        $this->get(route('loans.edit', $loan))->assertInertia(fn (Assert $page) => $page
+            ->has('loan.return_history', 2)
+            ->where('loan.return_history.0.date', '2026-10-02')
+            ->where('loan.return_history.0.quantity', 4)
+            ->where('loan.return_history.1.date', '2026-10-05')
+            ->where('loan.return_history.1.quantity', 6));
+
+        $report = app(ReportService::class)->build('stock-on-loan', [
+            'from' => $loan->loan_date->toDateString(),
+            'to' => $loan->loan_date->toDateString(),
+        ]);
+        $this->assertSame('2026-10-02 (4), 2026-10-05 (6)', $report['rows'][0]['return_dates']);
+        $this->assertNull($report['rows'][0]['closed_date']);
+        $this->assertEqualsWithDelta(10, $report['rows'][0]['returned'], 0.001);
+
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-07 10:00:00'));
+        $loan = $this->service()->close($loan);
+        $this->get(route('loans.index', 'out'))->assertInertia(fn (Assert $page) => $page
+            ->where('loans.data.0.last_return_date', '2026-10-05')
+            ->where('loans.data.0.closed_at', fn ($value) => str_starts_with($value, '2026-10-07')));
+
+        $report = app(ReportService::class)->build('stock-on-loan', [
+            'from' => $loan->loan_date->toDateString(),
+            'to' => $loan->loan_date->toDateString(),
+        ]);
+        $this->assertSame('2026-10-07', $report['rows'][0]['closed_date']);
+        $this->assertSame('2026-10-02 (4), 2026-10-05 (6)', $report['rows'][0]['return_dates']);
+        $this->travelBack();
+    }
+
+    public function test_loan_in_return_history_is_dated_and_cancel_reversals_are_not_returns(): void
+    {
+        $loanIn = $this->service()->post($this->makeLoan(StockLoan::DIRECTION_IN, 8));
+        $itemIn = $loanIn->items->firstOrFail();
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-03 10:00:00'));
+        $loanIn = $this->service()->recordReturn($loanIn, [$itemIn->id => 3]);
+
+        $this->get(route('loans.edit', $loanIn))->assertInertia(fn (Assert $page) => $page
+            ->has('loan.return_history', 1)
+            ->where('loan.return_history.0.date', '2026-10-03')
+            ->where('loan.return_history.0.quantity', 3));
+
+        $report = app(ReportService::class)->build('stock-on-loan', [
+            'from' => $loanIn->loan_date->toDateString(),
+            'to' => $loanIn->loan_date->toDateString(),
+        ]);
+        $this->assertSame('2026-10-03 (3)', $report['rows'][0]['return_dates']);
+        $this->assertSame('In', $report['rows'][0]['direction']);
+
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-04 10:00:00'));
+        $loanIn = $this->service()->cancel($loanIn);
+        $this->get(route('loans.edit', $loanIn))->assertInertia(fn (Assert $page) => $page
+            ->has('loan.return_history', 0));
+        $this->get(route('loans.index', 'in'))->assertInertia(fn (Assert $page) => $page
+            ->where('loans.data.0.last_return_date', null));
+        $this->travelBack();
     }
 }

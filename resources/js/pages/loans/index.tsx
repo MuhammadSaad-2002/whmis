@@ -34,6 +34,8 @@ interface LoanRow {
     external_received_by?: string | null;
     request_received_by?: UserRef | null;
     handed_over_by?: UserRef | null;
+    last_return_date?: string | null;
+    closed_at?: string | null;
 }
 
 interface Props {
@@ -91,7 +93,7 @@ export default function LoansIndex({ direction, loans, companies, users, summary
         router.get(base, { ...filters, [key]: value }, { preserveState: true });
 
     const breadcrumbs: BreadcrumbItem[] = [{ title, href: base }];
-    const colSpan = isOut ? 10 : 8;
+    const colSpan = isOut ? 12 : 10;
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -173,6 +175,8 @@ export default function LoansIndex({ direction, loans, companies, users, summary
                                 <TableHead className="w-12">S.No.</TableHead>
                                 <TableHead>Loan #</TableHead>
                                 <TableHead>Date</TableHead>
+                                <TableHead>Last Return</TableHead>
+                                <TableHead>Closed</TableHead>
                                 <TableHead className="text-right">Items</TableHead>
                                 <TableHead className="text-right">Qty</TableHead>
                                 <TableHead>{isOut ? 'Requested By (Partner)' : 'Requested By (Our Staff)'}</TableHead>
@@ -202,6 +206,8 @@ export default function LoansIndex({ direction, loans, companies, users, summary
                                         <div className="text-xs text-muted-foreground">{loan.company?.name}</div>
                                     </TableCell>
                                     <TableCell>{shortDate(loan.loan_date)}</TableCell>
+                                    <TableCell>{shortDate(loan.last_return_date)}</TableCell>
+                                    <TableCell>{shortDate(loan.closed_at)}</TableCell>
                                     <TableCell className="text-right tabular-nums">{loan.items_count}</TableCell>
                                     <TableCell className="text-right tabular-nums">{qty(loan.total_quantity)}</TableCell>
                                     <TableCell>{isOut ? loan.external_requested_by || '—' : loan.requested_by?.name ?? '—'}</TableCell>

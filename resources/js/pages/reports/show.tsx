@@ -759,35 +759,56 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
                 )}
 
                 {report.key === 'stock-on-loan' && (
-                    <div className="grid gap-3 sm:grid-cols-3">
-                        <Card className="border-orange-200 bg-orange-50/60 dark:border-orange-950 dark:bg-orange-950/20">
-                            <CardContent className="flex items-center gap-3 py-4">
-                                <span className="rounded-xl bg-orange-500/10 p-2 text-orange-600">
-                                    <ArrowUpFromLine className="size-5" />
-                                </span>
-                                <div>
-                                    <p className="text-muted-foreground text-xs">Outstanding loaned out</p>
-                                    <p className="text-xl font-semibold tabular-nums">{qty(totals.outstanding_out ?? 0)}</p>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card className="border-sky-200 bg-sky-50/60 dark:border-sky-950 dark:bg-sky-950/20">
-                            <CardContent className="flex items-center gap-3 py-4">
-                                <span className="rounded-xl bg-sky-500/10 p-2 text-sky-600">
-                                    <ArrowDownToLine className="size-5" />
-                                </span>
-                                <div>
-                                    <p className="text-muted-foreground text-xs">Outstanding borrowed in</p>
-                                    <p className="text-xl font-semibold tabular-nums">{qty(totals.outstanding_in ?? 0)}</p>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="py-4">
-                                <p className="text-muted-foreground text-xs">Net units out</p>
-                                <p className="text-xl font-semibold tabular-nums">{qty(totals.net_out ?? 0)}</p>
-                            </CardContent>
-                        </Card>
+                    <div className="space-y-3">
+                        <p className="text-sm text-muted-foreground">
+                            In = received from a partner; its returns are sent back. Out = sent to a partner; its returns are received back.
+                            The period filters loan dates; return dates and balances show the complete current history of those loans.
+                        </p>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            {([
+                                ['Received on loan', 'received_on_loan'],
+                                ['Sent on loan', 'sent_on_loan'],
+                                ['Received back', 'received_back'],
+                                ['Returned to partner', 'returned_to_partner'],
+                            ] as const).map(([label, key]) => (
+                                <Card key={key}>
+                                    <CardContent className="py-3">
+                                        <p className="text-xs text-muted-foreground">{label}</p>
+                                        <p className="text-lg font-semibold tabular-nums">{qty(totals[key] ?? 0)}</p>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                            <Card className="border-orange-200 bg-orange-50/60 dark:border-orange-950 dark:bg-orange-950/20">
+                                <CardContent className="flex items-center gap-3 py-4">
+                                    <span className="rounded-xl bg-orange-500/10 p-2 text-orange-600">
+                                        <ArrowUpFromLine className="size-5" />
+                                    </span>
+                                    <div>
+                                        <p className="text-muted-foreground text-xs">Outstanding loaned out</p>
+                                        <p className="text-xl font-semibold tabular-nums">{qty(totals.outstanding_out ?? 0)}</p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                            <Card className="border-sky-200 bg-sky-50/60 dark:border-sky-950 dark:bg-sky-950/20">
+                                <CardContent className="flex items-center gap-3 py-4">
+                                    <span className="rounded-xl bg-sky-500/10 p-2 text-sky-600">
+                                        <ArrowDownToLine className="size-5" />
+                                    </span>
+                                    <div>
+                                        <p className="text-muted-foreground text-xs">Outstanding borrowed in</p>
+                                        <p className="text-xl font-semibold tabular-nums">{qty(totals.outstanding_in ?? 0)}</p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                            <Card>
+                                <CardContent className="py-4">
+                                    <p className="text-muted-foreground text-xs">Net units out</p>
+                                    <p className="text-xl font-semibold tabular-nums">{qty(totals.net_out ?? 0)}</p>
+                                </CardContent>
+                            </Card>
+                        </div>
                     </div>
                 )}
 

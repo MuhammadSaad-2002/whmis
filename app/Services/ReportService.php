@@ -55,7 +55,7 @@ class ReportService
             'sample-issue-product' => ['title' => 'Sample Issues by Product', 'category' => 'Samples', 'description' => 'Samples given away per product: quantity and cost value (Rs 0 when drawn from sample stock)', 'filters' => ['date_range', 'supplier', 'product']],
             'sample-issue-recipient' => ['title' => 'Sample Issues by Recipient', 'category' => 'Samples', 'description' => 'Samples given away per customer / recipient: quantity and cost value', 'filters' => ['date_range', 'customer']],
             'slow-fast-moving' => ['title' => 'Slow / Fast Moving', 'category' => 'Inventory', 'description' => 'Products ranked by quantity sold in a period', 'filters' => ['date_range', 'order']],
-            'stock-on-loan' => ['title' => 'Stock on Loan', 'category' => 'Loans', 'description' => 'Date-wise posted stock-loan transactions grouped by product, with current balances and handover details', 'filters' => ['date_range', 'direction', 'supplier', 'product']],
+            'stock-on-loan' => ['title' => 'Stock on Loan', 'category' => 'Loans', 'description' => 'Loans dated in the period, with received/sent quantities, dated returns and current balances', 'filters' => ['date_range', 'direction', 'supplier', 'product']],
             'outstanding' => ['title' => 'Outstanding & Aging', 'category' => 'Financial', 'description' => 'Receivables per customer with aging buckets', 'filters' => []],
             'supplier-payables' => ['title' => 'Supplier Payables', 'category' => 'Financial', 'description' => 'What you owe each supplier', 'filters' => []],
             'profit-by-month' => ['title' => 'Monthly Sales & Profit', 'category' => 'Financial', 'description' => '12-month trend of sales, cost, and profit', 'filters' => []],
@@ -838,6 +838,7 @@ class ReportService
                 'requestReceivedBy:id,name',
                 'handedOverBy:id,name',
                 'items.product:id,name',
+                'returnMovements',
             ])
             ->whereIn('status', [
                 StockLoan::STATUS_LOANED,
@@ -853,6 +854,7 @@ class ReportService
 
         $rows = [];
         foreach ($loans as $loan) {
+            $returnHistory = collect($loan->returnHistory())->groupBy('product_id');
             foreach ($loan->items as $item) {
                 if ($productId && (int) $item->product_id !== (int) $productId) {
                     continue;
@@ -861,6 +863,7 @@ class ReportService
                 $loaned = (float) $item->quantity;
                 $returned = (float) $item->returned_quantity;
                 $outstanding = max(0, (float) $item->quantity - (float) $item->returned_quantity);
+                $itemReturns = $returnHistory->get($item->product_id, collect());
 
                 $rows[] = [
                     'date' => $loan->loan_date?->toDateString(),
@@ -875,6 +878,8 @@ class ReportService
                         : $loan->receivedBy?->name,
                     'request_received_by' => $loan->requestReceivedBy?->name,
                     'handed_over_by' => $loan->handedOverBy?->name,
+                    'return_dates' => $itemReturns->map(fn ($event) => $event['date'].' ('.$event['quantity'].')')->implode(', '),
+                    'closed_date' => $loan->closed_at?->toDateString(),
                     'loaned' => $loaned,
                     'returned' => $returned,
                     'outstanding' => $outstanding,
@@ -897,7 +902,7 @@ class ReportService
         return [
             'group_by' => 'product',
             'columns' => [
-                ['key' => 'date', 'label' => 'Date', 'format' => 'date'],
+                ['key' => 'date', 'label' => 'Loan Date', 'format' => 'date'],
                 ['key' => 'loan_number', 'label' => 'Loan #'],
                 ['key' => 'direction', 'label' => 'Direction'],
                 ['key' => 'product', 'label' => 'Product'],
@@ -907,12 +912,18 @@ class ReportService
                 ['key' => 'handed_over_by', 'label' => 'Handed Over By'],
                 ['key' => 'loaned', 'label' => 'Loaned', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'returned', 'label' => 'Returned', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'return_dates', 'label' => 'Return Dates (Qty)'],
+                ['key' => 'closed_date', 'label' => 'Closed Date', 'format' => 'date'],
                 ['key' => 'outstanding', 'label' => 'Outstanding', 'align' => 'right', 'format' => 'qty'],
             ],
             'rows' => $rows->all(),
             'totals' => [
                 'loaned' => (float) $rows->sum('loaned'),
                 'returned' => (float) $rows->sum('returned'),
+                'received_on_loan' => (float) $rows->where('direction', 'In')->sum('loaned'),
+                'sent_on_loan' => (float) $rows->where('direction', 'Out')->sum('loaned'),
+                'received_back' => (float) $rows->where('direction', 'Out')->sum('returned'),
+                'returned_to_partner' => (float) $rows->where('direction', 'In')->sum('returned'),
                 'outstanding' => (float) $rows->sum('outstanding'),
                 'outstanding_out' => $outstandingOut,
                 'outstanding_in' => $outstandingIn,

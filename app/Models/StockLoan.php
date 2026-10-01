@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
@@ -54,6 +55,42 @@ class StockLoan extends Model implements AuditableContract
     public function items(): HasMany
     {
         return $this->hasMany(StockLoanItem::class)->orderBy('sort_order');
+    }
+
+    /** Physical return movements, separate from manual closure and cancellation. */
+    public function returnMovements(): MorphMany
+    {
+        return $this->morphMany(StockMovement::class, 'reference')
+            ->whereIn('type', ['loan_in_return', 'loan_out_return'])
+            ->orderBy('id');
+    }
+
+    /** Dated return quantities per product. Multiple batches on a day form one entry. */
+    public function returnHistory(): array
+    {
+        // Cancellation reversals use the same movement types; a cancelled loan
+        // must not present those reversals as ordinary partner returns.
+        if ($this->status === self::STATUS_CANCELLED) {
+            return [];
+        }
+
+        $type = $this->isIn() ? 'loan_in_return' : 'loan_out_return';
+
+        return $this->returnMovements
+            ->where('type', $type)
+            ->groupBy(fn (StockMovement $movement) => $movement->product_id.'|'.$movement->created_at->toDateString())
+            ->map(function ($movements) {
+                $first = $movements->first();
+
+                return [
+                    'product_id' => (int) $first->product_id,
+                    'date' => $first->created_at->toDateString(),
+                    'quantity' => round($movements->sum(fn (StockMovement $movement) => abs((float) $movement->quantity)), 2),
+                ];
+            })
+            ->sortBy([['date', 'asc'], ['product_id', 'asc']])
+            ->values()
+            ->all();
     }
 
     public function creator(): BelongsTo

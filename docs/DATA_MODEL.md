@@ -39,6 +39,12 @@ changing cPanel/manual deployment assumptions.
 
 - `batches.quantity` is current stock.
 - `stock_movements` is the audit trail for stock changes and references the source model morphically.
+- Stock-loan return dates are read from `loan_in_return` and `loan_out_return`
+  movements referenced to the loan. Multiple batch movements for the same
+  product/day are summed for display. `stock_loans.closed_at` is an independent
+  administrative closure timestamp, not a return timestamp. Cancellation uses
+  the same stock reversal movement types, so cancelled loans are excluded from
+  displayed return history and the Stock on Loan report.
 - Purchase bonus quantity dilutes `batches.effective_cost`.
 - Sales consume FIFO by earliest expiry then id unless a batch is selected.
 - Samples and loan stock are segregated through batch flags.

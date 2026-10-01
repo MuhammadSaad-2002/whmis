@@ -32,6 +32,7 @@ class StockLoanController extends Controller
                 'company:id,name',
                 'requestedBy:id,name', 'receivedBy:id,name',
                 'requestReceivedBy:id,name', 'handedOverBy:id,name',
+                'returnMovements',
             ])
             ->when($request->search, fn ($q, $search) => $q->where('loan_number', 'like', "%{$search}%"))
             ->when($request->company_id, fn ($q, $id) => $q->where('company_id', $id))
@@ -46,6 +47,11 @@ class StockLoanController extends Controller
             ->latest('loan_date')->latest('id')
             ->paginate(15)
             ->withQueryString();
+
+        $loans->getCollection()->each(function (StockLoan $loan) {
+            $history = $loan->returnHistory();
+            $loan->setAttribute('last_return_date', $history ? end($history)['date'] : null);
+        });
 
         // Outstanding = posted, not-yet-fully-returned units.
         $scope = StockLoan::where('direction', $direction);
@@ -114,7 +120,8 @@ class StockLoanController extends Controller
 
     public function edit(StockLoan $loan)
     {
-        $loan->load(['items.product:id,name,generic_name', 'company:id,name']);
+        $loan->load(['items.product:id,name,generic_name', 'company:id,name', 'returnMovements']);
+        $loan->setAttribute('return_history', $loan->returnHistory());
 
         return Inertia::render('loans/form', [
             'direction' => $loan->direction,

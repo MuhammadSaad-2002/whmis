@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { useInvoiceHotkeys, useKeyboardGrid } from '@/hooks/use-keyboard-grid';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { qty as fmtQty, toNumber } from '@/lib/format';
+import { qty as fmtQty, shortDate, toNumber } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
@@ -48,6 +48,8 @@ interface LoanDto {
     external_received_by: string | null;
     request_received_by_id: number | null;
     handed_over_by_id: number | null;
+    closed_at: string | null;
+    return_history: { product_id: number; date: string; quantity: number }[];
     items: {
         id: number;
         product_id: number;
@@ -549,6 +551,40 @@ export default function LoanForm({ direction, companies, users, warehouse, loan 
                                 })}
                             </tbody>
                         </table>
+                    </div>
+                )}
+
+                {loan && loan.return_history.length > 0 && (
+                    <div className="rounded-xl border">
+                        <div className="border-b bg-muted/50 px-4 py-2">
+                            <h2 className="font-semibold">Return History</h2>
+                            <p className="text-xs text-muted-foreground">Dates reflect when stock was physically recorded as returned.</p>
+                        </div>
+                        <table className="w-full text-sm">
+                            <thead className="text-xs uppercase text-muted-foreground">
+                                <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-left">
+                                    <th>Return Date</th>
+                                    <th>Product</th>
+                                    <th className="text-right">Quantity</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loan.return_history.map((entry) => (
+                                    <tr key={`${entry.product_id}-${entry.date}`} className="border-t [&>td]:px-3 [&>td]:py-2">
+                                        <td>{shortDate(entry.date)}</td>
+                                        <td>{loan.items.find((item) => item.product_id === entry.product_id)?.product?.name ?? `#${entry.product_id}`}</td>
+                                        <td className="text-right tabular-nums">{fmtQty(entry.quantity)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {loan?.closed_at && (
+                    <div className="rounded-xl border px-4 py-3 text-sm">
+                        <span className="font-medium">Closed on {shortDate(loan.closed_at)}.</span>{' '}
+                        <span className="text-muted-foreground">Closing is administrative and does not record a stock return.</span>
                     </div>
                 )}
 

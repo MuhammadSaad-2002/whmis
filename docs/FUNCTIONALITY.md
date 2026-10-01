@@ -79,7 +79,18 @@ loan number, partner, quantities, and the people involved. For loan-out rows,
 `Received By` is the outside-party name while `Request Received By` and
 `Handed Over By` are internal WHMIS users. For loan-in rows, `Received By` is the
 internal WHMIS receiver. The returned quantity remains the aggregate stored on
-the loan item; the current schema does not record separate return-event dates.
+the loan item. Return dates and quantities come from append-only stock movements,
+grouped by product and calendar day. The register shows the latest physical
+return date; the loan detail shows the complete dated return history, even after
+the loan is fully returned and editing is disabled. A separate closure date is
+shown when a loan is manually closed, since closure does not itself move stock.
+The report also totals units received on loan, sent on loan, received back,
+and returned to the partner separately, so opposite flows are not combined.
+The report date range selects loans by loan date; their return dates and current
+balances can be later than the selected range. Loan-in means stock received from
+the partner and returned to them; loan-out means stock sent to the partner and
+received back from them. Cancelled loans are excluded from the report because
+their inventory reversals are not ordinary returns.
 
 Current report keys:
 
