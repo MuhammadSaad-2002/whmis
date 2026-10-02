@@ -5,12 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\IncentiveRule;
-use App\Models\PaymentAllocation;
 use App\Models\Product;
-use App\Models\PurchaseInvoice;
-use App\Models\SalesInvoice;
 use App\Models\Warehouse;
 use App\Services\IncentiveEngine;
+use App\Services\PaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -172,48 +170,17 @@ class LookupController extends Controller
      * Posted, not-fully-allocated invoices for a party — used when
      * allocating a receipt/payment.
      */
-    public function openInvoices(Request $request)
+    public function openInvoices(Request $request, PaymentService $payments)
     {
         $request->validate([
             'party_type' => ['required', 'in:customer,company'],
             'party_id' => ['required', 'integer'],
         ]);
 
-        if ($request->party_type === 'customer') {
-            Customer::findOrFail($request->party_id);
-            $invoices = SalesInvoice::where('customer_id', $request->party_id)
-                ->where('status', 'posted')
-                ->orderBy('invoice_date')
-                ->get(['id', 'invoice_number', 'invoice_date', 'total_amount']);
-            $morph = 'sales_invoice';
-        } else {
-            Company::findOrFail($request->party_id);
-            $invoices = PurchaseInvoice::where('company_id', $request->party_id)
-                ->where('status', 'posted')
-                ->orderBy('invoice_date')
-                ->get(['id', 'invoice_number', 'invoice_date', 'total_amount']);
-            $morph = 'purchase_invoice';
-        }
+        $party = $request->party_type === 'customer'
+            ? Customer::findOrFail($request->party_id)
+            : Company::findOrFail($request->party_id);
 
-        $allocated = PaymentAllocation::where('invoice_type', $morph)
-            ->whereIn('invoice_id', $invoices->pluck('id'))
-            ->whereHas('payment', fn ($q) => $q->where('status', 'completed'))
-            ->selectRaw('invoice_id, SUM(amount) as total')
-            ->groupBy('invoice_id')
-            ->pluck('total', 'invoice_id');
-
-        return response()->json(
-            $invoices
-                ->map(fn ($invoice) => [
-                    'id' => $invoice->id,
-                    'invoice_type' => $morph,
-                    'invoice_number' => $invoice->invoice_number,
-                    'invoice_date' => $invoice->invoice_date->toDateString(),
-                    'total_amount' => (float) $invoice->total_amount,
-                    'outstanding' => round((float) $invoice->total_amount - (float) ($allocated[$invoice->id] ?? 0), 2),
-                ])
-                ->filter(fn ($row) => $row['outstanding'] > 0)
-                ->values(),
-        );
+        return response()->json($payments->openInvoices($party));
     }
 }

@@ -1,5 +1,11 @@
 # WHMIS Functionality Index
 
+Payment allocation lookups show only positive invoice balances after completed
+payments and linked returns. Posted sales return credits and purchase return
+debits reduce the amount due; cancelled sales returns and cancelled payments
+are excluded. This calculation uses existing records, including historical
+returns, without altering invoice totals or ledger entries.
+
 This inventory describes the current product surface and the code areas most
 likely to matter when changing each module.
 

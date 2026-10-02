@@ -5,8 +5,11 @@ namespace App\Services;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\PurchaseInvoice;
+use App\Models\PurchaseReturn;
 use App\Models\SalesInvoice;
+use App\Models\SalesReturn;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +20,47 @@ class PaymentService
         private readonly NumberSeriesService $numbers,
         private readonly LedgerService $ledger,
     ) {}
+
+    /** Invoice balances available for allocation, net of linked return credits. */
+    public function openInvoices(Customer|Company $party): array
+    {
+        $isCustomer = $party instanceof Customer;
+        $invoiceModel = $isCustomer ? new SalesInvoice : new PurchaseInvoice;
+        $invoiceKey = $isCustomer ? 'sales_invoice_id' : 'purchase_invoice_id';
+        $morph = $invoiceModel->getMorphClass();
+        $invoices = $invoiceModel->newQuery()
+            ->where($isCustomer ? 'customer_id' : 'company_id', $party->id)
+            ->where('status', 'posted')
+            ->orderBy('invoice_date')
+            ->get(['id', 'invoice_number', 'invoice_date', 'total_amount']);
+
+        $allocated = PaymentAllocation::where('invoice_type', $morph)
+            ->whereIn('invoice_id', $invoices->pluck('id'))
+            ->whereHas('payment', fn ($q) => $q->where('status', 'completed'))
+            ->selectRaw('invoice_id, SUM(amount) as total')
+            ->groupBy('invoice_id')
+            ->pluck('total', 'invoice_id');
+
+        // Purchase returns post immediately; sales returns may later be cancelled.
+        $returns = $isCustomer
+            ? SalesReturn::where('status', SalesReturn::STATUS_POSTED)
+            : PurchaseReturn::query();
+        $returned = $returns->whereIn($invoiceKey, $invoices->pluck('id'))
+            ->selectRaw($invoiceKey.', SUM(total_amount) as total')
+            ->groupBy($invoiceKey)
+            ->pluck('total', $invoiceKey);
+
+        return $invoices->map(fn ($invoice) => [
+            'id' => $invoice->id,
+            'invoice_type' => $morph,
+            'invoice_number' => $invoice->invoice_number,
+            'invoice_date' => $invoice->invoice_date->toDateString(),
+            'total_amount' => (float) $invoice->total_amount,
+            'outstanding' => round((float) $invoice->total_amount
+                - (float) ($allocated[$invoice->id] ?? 0)
+                - (float) ($returned[$invoice->id] ?? 0), 2),
+        ])->filter(fn ($row) => $row['outstanding'] > 0)->values()->all();
+    }
 
     /**
      * Manual receipt (customer) or payment (supplier) with optional

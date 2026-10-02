@@ -31,6 +31,12 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
 - Stock mutation: `InventoryService` should remain the single mutation path.
 - Posting/cancellation: invoice, return, sample, loan, and payment cancellation must reverse effects without losing history.
 - Ledger: customer/supplier debit-credit meaning must stay consistent across sales, purchases, returns, and payments.
+- Payment invoice lookup uses `PaymentService::openInvoices`: original invoice
+  amount minus completed payment allocations minus linked return amounts. Only
+  posted sales returns count; cancelled returns/payments must restore capacity.
+  Zero/negative balances are excluded. `OpenInvoiceBalanceTest` covers the
+  reported paid-plus-returned invoice, partial/cancelled returns and supplier
+  returns. Unlinked supplier returns remain party credits, not invoice credits.
 - FIFO: sale posting depends on earliest expiry then id unless a batch is explicitly chosen.
 - Incentives: rules fill line fields; posting math should not special-case incentive internals.
 - Reports: netting returns, bonus quantities, sample/loan segregation, and PHP date grouping exist to keep SQLite tests and MySQL production aligned. Keep invoice-cohort reports distinct from transaction-date activity reports, and always net returned COGS with returned revenue. The Stock on Loan report uses `loan_date`, groups rows by product, includes settled loan transactions, and derives dated returns from stock movements while loan items retain aggregate quantities. Dashboard period figures and charts must use the selected range and `ReportService` math so posted credit/debit notes are deducted consistently.
