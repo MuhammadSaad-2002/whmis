@@ -73,6 +73,18 @@ export const navGroups: { label: string; items: PermittedNavItem[] }[] = [
         ],
     },
     {
+        label: 'Human Resources',
+        items: [
+            { title: 'Employees', url: '/hr/employees', icon: Users, permission: 'employees.view' },
+            { title: 'Attendance', url: '/hr/attendance', icon: ClipboardList, permission: 'hr.attendance.view' },
+            { title: 'Leave', url: '/hr/leave', icon: ClipboardList, permission: 'hr.leave.view' },
+            { title: 'Payroll', url: '/hr/payroll', icon: Banknote, permission: 'hr.payroll.view' },
+            { title: 'Employee Finance', url: '/hr/finance', icon: BookUser, permission: 'hr.payroll.view' },
+            { title: 'HR Settings', url: '/hr/settings', icon: UserCog, permission: 'hr.settings.manage' },
+            { title: 'My HR', url: '/hr/my-profile', icon: Users, permission: 'hr.self.view' },
+        ],
+    },
+    {
         label: 'Master Data',
         items: [
             { title: 'Customers', url: '/customers', icon: Store, permission: 'customers.view' },

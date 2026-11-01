@@ -65,6 +65,10 @@ User management protects Super Admin accounts:
 Bookers are scoped to assigned pharmacies/customers. Customer and booking flows
 must respect primary and assigned Booker relationships. Assignment changes are
 logged in `booker_assignment_logs`.
+Employee-profile bulk assignment requires both `employees.view` and
+`bookers.assign`. Only active Booker logins may receive assignments. Booking
+create/update validates assigned active customer access on the server; the
+booking list's customer filter is scoped with the same customer options.
 
 ## License gating
 
@@ -77,6 +81,20 @@ license or the license is expired, non-Super-Admin users are redirected to
 Auditable models use OwenIt auditing, and custom events are written through
 `AuditLogger` for events such as permission syncing. Audit reference formatting
 is supported by backend reference resolution and frontend audit formatting.
+
+## HR access
+
+HR permission families: `employees.view/manage`, `hr.settings.manage`,
+`hr.attendance.view/manage`, `hr.leave.view/manage/approve`,
+`hr.payroll.view/manage/approve/post/pay/cancel`, `hr.reports.view`, `hr.self.view`.
+The additive `HrPermissionSeeder` adds HR Manager and grants HR rights to existing
+roles without resetting them; see [HR_MODULE.md](HR_MODULE.md) for exact policy.
+
+Self-service verifies the user/employee link and scopes payslips and leave
+requests. Salary payloads are hidden without payroll-view access (except own
+profile). Audit HR records require the corresponding HR view permission, including
+salary audits. HR reports enforce permission before PDF/Excel export. Existing
+dashboard/ledger/general report permissions expose aggregate HR financial totals.
 
 ## Sensitive deployment rules
 

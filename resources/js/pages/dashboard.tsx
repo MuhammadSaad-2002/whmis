@@ -14,6 +14,7 @@ interface Kpis {
     today_purchases: number;
     month_sales: number;
     month_profit: number;
+    month_payroll_expense: number;
     receivable: number;
     payable: number;
     inventory_value: number;
@@ -174,6 +175,8 @@ export default function Dashboard(props: Props) {
                     <Kpi label="Today's Purchases" value={money(fullKpis.today_purchases)} />
                     <Kpi label="This Month — Sales" value={money(fullKpis.month_sales)} />
                     <Kpi label="This Month — Profit" value={money(fullKpis.month_profit)} />
+                    <Kpi label="This Month — Payroll Expense" value={money(fullKpis.month_payroll_expense)} />
+                    <Kpi label="This Month — Profit after Payroll" value={money(fullKpis.month_profit - fullKpis.month_payroll_expense)} />
                     <Kpi label="Receivable from Customers" value={money(fullKpis.receivable)} />
                     <Kpi label="Payable to Suppliers" value={money(fullKpis.payable)} />
                     <Kpi label="Inventory Value (cost)" value={money(fullKpis.inventory_value)} />

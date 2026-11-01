@@ -45,6 +45,57 @@ class BookingFlowTest extends TestCase
         ]);
     }
 
+    public function test_booking_lifecycle_records_distinct_server_timestamps(): void
+    {
+        $this->travelTo(now()->startOfSecond());
+        $booking = $this->createBooking();
+        $created = $booking->created_at->copy();
+        $this->assertNull($booking->submitted_at);
+        $this->assertNull($booking->last_edited_at);
+        $this->travel(5)->minutes();
+        $this->put(route('bookings.update', $booking), [
+            'customer_id' => $this->customer->id, 'warehouse_id' => 1,
+            'booking_date' => now()->toDateString(),
+            'items' => [['product_id' => $this->product->id, 'quantity' => 20, 'trade_price' => 100]],
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $edited = now()->copy();
+        $this->assertTrue($booking->refresh()->last_edited_at->equalTo($edited));
+        $this->travel(5)->minutes();
+        $this->post(route('bookings.submit', $booking))->assertRedirect();
+        $submitted = now()->copy();
+        $this->assertTrue($booking->refresh()->submitted_at->equalTo($submitted));
+        $this->travel(5)->minutes();
+        $this->actingAs($this->admin)->post(route('bookings.approve', $booking))->assertRedirect();
+        $approved = now()->copy();
+        $this->assertTrue($booking->refresh()->approved_at->equalTo($approved));
+        $this->travel(5)->minutes();
+        $this->post(route('bookings.convert', $booking))->assertRedirect();
+        $this->assertTrue($booking->refresh()->converted_at->equalTo(now()));
+        $this->assertTrue($booking->created_at->equalTo($created));
+        $this->assertTrue($booking->last_edited_at->equalTo($edited));
+        $this->assertTrue($booking->submitted_at->equalTo($submitted));
+        $this->assertTrue($booking->approved_at->equalTo($approved));
+        $this->actingAs($this->booker)->get(route('bookings.edit', $booking))
+            ->assertInertia(fn (Assert $page) => $page->where('booking.created_at', $created->toJSON())
+                ->where('booking.submitted_at', $submitted->toJSON()));
+        $this->travelBack();
+    }
+
+    public function test_rejection_and_cancellation_keep_their_own_timestamps(): void
+    {
+        $this->travelTo(now()->startOfSecond());
+        $booking = $this->createBooking();
+        $this->post(route('bookings.submit', $booking))->assertRedirect();
+        $this->actingAs($this->admin)->post(route('bookings.reject', $booking))->assertRedirect();
+        $rejected = now()->copy();
+        $this->assertTrue($booking->refresh()->rejected_at->equalTo($rejected));
+        $this->travel(10)->minutes();
+        $this->post(route('bookings.cancel', $booking))->assertRedirect();
+        $this->assertTrue($booking->refresh()->cancelled_at->equalTo(now()));
+        $this->assertTrue($booking->rejected_at->equalTo($rejected));
+        $this->travelBack();
+    }
+
     private function createBooking(): Booking
     {
         $this->actingAs($this->booker);
@@ -63,6 +114,34 @@ class BookingFlowTest extends TestCase
         ])->assertRedirect();
 
         return Booking::latest('id')->firstOrFail();
+    }
+
+    public function test_saved_booking_loads_supplier_retail_and_live_warehouse_stock_for_admin_and_booker(): void
+    {
+        $this->product->update(['retail_price'=>120, 'purchase_price'=>80]);
+        $batch = \App\Models\Batch::create(['product_id'=>$this->product->id,'warehouse_id'=>1,'batch_number'=>'BOOKING-1','qty_available'=>35]);
+        \App\Models\Batch::create(['product_id'=>$this->product->id,'warehouse_id'=>1,'batch_number'=>'BOOKING-2','qty_available'=>7]);
+        $other = \App\Models\Warehouse::create(['code'=>'OTHER','name'=>'Other Warehouse']);
+        \App\Models\Batch::create(['product_id'=>$this->product->id,'warehouse_id'=>$other->id,'batch_number'=>'OTHER-1','qty_available'=>99]);
+        $booking = $this->createBooking();
+        // Current catalogue prices must not replace the saved booking's price.
+        $this->product->update(['trade_price'=>150]);
+        foreach ([$this->admin, $this->booker] as $viewer) {
+            $this->actingAs($viewer)->get(route('bookings.edit',$booking))->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->where('booking.items.0.product.company.name','Getz Pharma')
+                ->where('booking.items.0.product.retail_price','120.00')
+                ->where('booking.items.0.product.stock',fn ($stock) => (float)$stock === 42.0)
+                ->where('booking.items.0.trade_price','100.00')
+                ->where('booking.items.0.quantity','20.00')
+                ->where('booking.items.0.requested_bonus','2.00')
+                ->where('booking.items.0.discount_percent','5.00')
+                ->missing('booking.items.0.product.purchase_price'));
+        }
+        $batch->update(['qty_available'=>30]);
+        $booking->update(['status'=>'pending']);
+        $this->actingAs($this->admin)->get(route('bookings.edit',$booking))->assertInertia(fn (Assert $page) => $page
+            ->where('booking.status','pending')
+            ->where('booking.items.0.product.stock',fn ($stock) => (float)$stock === 37.0));
     }
 
     public function test_booker_creates_and_submits_booking_with_computed_totals(): void

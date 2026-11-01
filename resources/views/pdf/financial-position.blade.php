@@ -22,6 +22,8 @@
     </table>
 
     @php $t = $data['totals']; @endphp
+    <p>Employee salary payable: {{ number_format($t['employee_payable'], 2) }} · Employee advances: {{ number_format($t['employee_advances'], 2) }}</p>
+    <p>Period payroll expense: {{ number_format($t['payroll_expense'], 2) }} · Employee cash out: {{ number_format($t['employee_cash_out'], 2) }} · Combined net cash flow: {{ number_format($t['net_cash_flow'], 2) }}</p>
 
     <table class="items" style="width: 70%; margin-bottom: 12px;">
         <thead>

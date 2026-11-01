@@ -48,7 +48,7 @@ class BookingController extends Controller
 
         return Inertia::render('bookings/index', [
             'bookings' => $bookings,
-            'customers' => Customer::active()->orderBy('name')->get(['id', 'name']),
+            'customers' => $this->customerOptions($request),
             'filters' => $request->only('search', 'status', 'customer_id'),
         ]);
     }
@@ -93,7 +93,10 @@ class BookingController extends Controller
         $this->authorizeView($request, $booking);
 
         $booking->load([
-            'items.product:id,name,generic_name',
+            'items.product' => fn ($q) => $q->withTrashed()
+                ->select(['id', 'name', 'generic_name', 'company_id', 'retail_price'])
+                ->with('company:id,name')
+                ->withSum(['batches as stock' => fn ($batches) => $batches->where('warehouse_id', $booking->warehouse_id)], 'qty_available'),
             'items.incentives.rule:id,name,rule_type,base_qty,bonus_qty,slabs,value',
             'customer:id,name,city', 'booker:id,name', 'approver:id,name',
         ]);
@@ -125,6 +128,7 @@ class BookingController extends Controller
                 // Approvers may re-attribute a draft to a different booker; a field
                 // booker's submitted booker_id is ignored (stays whoever it was).
                 'booker_id' => $this->resolveBookerId($request, $data, $booking->booker_id),
+                'last_edited_at' => now(),
             ]);
             $booking->items()->delete();
             $this->syncItems($booking, $data['items']);
@@ -144,7 +148,7 @@ class BookingController extends Controller
             return back()->with('error', 'Add at least one item before submitting.');
         }
 
-        $booking->update(['status' => Booking::STATUS_PENDING]);
+        $booking->update(['status' => Booking::STATUS_PENDING, 'submitted_at' => now()]);
 
         app(\App\Services\AlertService::class)->send('bookings.approve', new \App\Notifications\SystemAlert(
             'booking_pending',
@@ -182,6 +186,7 @@ class BookingController extends Controller
 
         $booking->update([
             'status' => Booking::STATUS_REJECTED,
+            'rejected_at' => now(),
             'approved_by' => auth()->id(),
             'approved_at' => now(),
         ]);
@@ -197,7 +202,7 @@ class BookingController extends Controller
             return back()->with('error', 'This booking can no longer be cancelled.');
         }
 
-        $booking->update(['status' => Booking::STATUS_CANCELLED]);
+        $booking->update(['status' => Booking::STATUS_CANCELLED, 'cancelled_at' => now()]);
 
         return back()->with('success', "Booking {$booking->booking_number} cancelled.");
     }
@@ -270,7 +275,11 @@ class BookingController extends Controller
     private function validated(Request $request): array
     {
         return $request->validate([
-            'customer_id' => ['required', 'exists:customers,id'],
+            'customer_id' => ['required', 'exists:customers,id', function ($attribute, $value, $fail) use ($request) {
+                if (! $request->user()->can('bookings.approve') && ! Customer::active()->forBooker($request->user()->id)->whereKey($value)->exists()) {
+                    $fail('Choose an active customer assigned to your Booker login. Ask your administrator to update your customer assignments.');
+                }
+            }],
             'booker_id' => ['nullable', 'exists:users,id'],
             'warehouse_id' => ['required', 'exists:warehouses,id'],
             'booking_date' => ['required', 'date'],

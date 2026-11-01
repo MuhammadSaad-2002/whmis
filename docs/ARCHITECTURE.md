@@ -38,6 +38,14 @@ return Inertia pages for interactive screens and Blade views for PDFs.
 - `LicenseService`: license status, activation, and banner payload.
 - `AlertService`: permission-targeted notifications.
 - `NumberSeriesService`: row-locked document number generation.
+- `HrService`: employee attendance/leave validation, salary versions, payroll snapshots,
+  approval/posting locks, employee cash entries, and counter-entry reversals.
+- `HrReportService`: HR report registry and signed employee subledger totals,
+  consumed by existing dashboards, reports, and financial position.
+
+HR uses `HrController`, `resources/js/pages/hr/`, and `pdf/payslip.blade.php`.
+It has a dedicated `hr_transactions` employee subledger; trade ledger and stock
+services remain unchanged. See [HR_MODULE.md](HR_MODULE.md) for accounting policy.
 
 ## Stock and finance flow
 

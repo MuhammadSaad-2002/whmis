@@ -41,6 +41,15 @@ or it throws.
 RBAC: spatie/laravel-permission; permissions like `sales.post` are route middleware
 (`can:`) and shared to React via `HandleInertiaRequests` → `usePermissions()` hook.
 
+## Employees and HR (October 2026)
+
+Read `docs/HR_MODULE.md` before changing payroll or employee finance. `HrService`
+owns salary/attendance/leave and payroll lifecycle. `hr_transactions` is an
+append-only employee subledger (expense/payable/advance/cash-out), integrated
+into financial position and aggregate profit reporting. Do not put employee
+payments into customer/supplier ledger entries or change product COGS. Production
+needs the matching HR schema and additive permission SQL in `database/manual/`.
+
 ## Frontend conventions
 
 - Pages in `resources/js/pages/<module>/`; use `AppLayout`, `route()` (Ziggy),

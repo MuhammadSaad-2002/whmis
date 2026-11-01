@@ -38,6 +38,16 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Relation::enforceMorphMap([
+            'hr_department' => \App\Models\HrDepartment::class,
+            'hr_designation' => \App\Models\HrDesignation::class,
+            'employee' => \App\Models\Employee::class,
+            'employee_salary' => \App\Models\EmployeeSalary::class,
+            'employee_attendance' => \App\Models\EmployeeAttendance::class,
+            'hr_leave_type' => \App\Models\HrLeaveType::class,
+            'employee_leave' => \App\Models\EmployeeLeave::class,
+            'payroll' => \App\Models\Payroll::class,
+            'payroll_item' => \App\Models\PayrollItem::class,
+            'hr_transaction' => \App\Models\HrTransaction::class,
             'customer' => Customer::class,
             'company' => Company::class,
             'product' => Product::class,

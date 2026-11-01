@@ -138,6 +138,14 @@ class UserController extends Controller
             return back()->with('error', 'Cannot delete the last Super Admin.');
         }
 
+        $hasHrHistory = \App\Models\Employee::where('user_id', $user->id)->exists()
+            || \App\Models\Payroll::where('created_by', $user->id)->orWhere('approved_by', $user->id)->orWhere('posted_by', $user->id)->exists()
+            || \App\Models\HrTransaction::where('created_by', $user->id)->exists()
+            || \App\Models\EmployeeLeave::where('approved_by', $user->id)->exists();
+        if ($hasHrHistory) {
+            return back()->with('error', 'This login is linked to an employee or HR history. Deactivate it instead to preserve the records.');
+        }
+
         $user->delete();
 
         return back()->with('success', 'User deleted.');

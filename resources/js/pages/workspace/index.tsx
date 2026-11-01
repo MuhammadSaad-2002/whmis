@@ -14,8 +14,15 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 export default function Workspace() {
     // Scope the open-tabs set to the signed-in user so it never leaks to whoever
     // logs in next on the same browser.
-    const userId = (usePage().props as { auth?: { user?: { id?: number } } }).auth?.user?.id;
-    const { tabs, activeId, openTab, focusTab, closeTab, closeAll, updateTab } = useTabs(userId);
+    const auth = (usePage().props as { auth?: { user?: { id?: number }; permissions?: string[] } }).auth;
+    const home = useMemo(() => {
+        const permissions = auth?.permissions ?? [];
+        if (permissions.includes('dashboard.view')) return { url: '/dashboard', title: 'Dashboard' };
+        if (permissions.includes('employees.view')) return { url: '/hr/employees', title: 'Employees' };
+        if (permissions.includes('hr.self.view')) return { url: '/hr/my-profile', title: 'My HR' };
+        return { url: '/settings/profile', title: 'Profile' };
+    }, [auth?.permissions]);
+    const { tabs, activeId, openTab, focusTab, closeTab, closeAll, updateTab } = useTabs(auth?.user?.id, home);
     // Phones don't get the tab strip — navigation just swaps the visible page.
     const isMobile = useIsMobile();
 

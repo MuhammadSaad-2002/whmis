@@ -30,6 +30,8 @@ interface Kpis {
 }
 
 interface Financials {
+    employee_payable: number;
+    employee_advances: number;
     receivable: number;
     payable: number;
     net_position: number;
@@ -82,6 +84,7 @@ interface ExpiringBatch {
 }
 
 export interface ExecutiveProps {
+    hr: {expense:number;cash_out:number};
     filterValues: { period: string; from: string; to: string };
     kpis: Kpis;
     financials: Financials;
@@ -229,12 +232,18 @@ export default function ExecutiveDashboard(props: ExecutiveProps) {
                     <KpiCard label="Net Margin" value={pct(kpis.margin_pct)} hint={`Previous period ${pct(kpis.prev_margin_pct)}`} icon={Landmark} tone="violet" />
                     <KpiCard label="Net Purchases" value={money(kpis.purchases)} delta={<Delta value={kpis.purchases_delta} invert />} icon={ShoppingCart} tone="amber" />
                 </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <KpiCard label="Payroll Expense" value={money(props.hr.expense)} hint="Selected accounting period" icon={Banknote} />
+                    <KpiCard label="Profit after Payroll" value={money(kpis.profit-props.hr.expense)} hint="Sales contribution less payroll; before other expenses" icon={TrendingUp} />
+                    <KpiCard label="Employee Salary Payable" value={money(financials.employee_payable)} hint="Current balance" icon={Banknote} />
+                    <KpiCard label="Employee Advances" value={money(financials.employee_advances)} hint="Current recoverable balance" icon={ReceiptText} />
+                </div>
 
                 {/* KPI band B — snapshot position */}
                 <div className="grid gap-3 md:grid-cols-4">
                     <KpiCard label="Customer Receivables" value={money(financials.receivable)} hint="Live ledger balance" icon={ReceiptText} tone="blue" />
                     <KpiCard label="Supplier Payables" value={money(financials.payable)} hint="Live ledger balance" icon={Landmark} tone="amber" />
-                    <KpiCard label="Net Position" value={money(financials.net_position)} hint="Receivables minus payables" icon={Banknote} tone="violet" />
+                    <KpiCard label="Net Position" value={money(financials.net_position)} hint="Includes employee advances and salary payable" icon={Banknote} tone="violet" />
                     <KpiCard label="Inventory at Cost" value={money(financials.inventory_value)} hint="Current sellable stock" icon={Boxes} tone="emerald" />
                 </div>
 

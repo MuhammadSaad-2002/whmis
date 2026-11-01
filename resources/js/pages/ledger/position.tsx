@@ -50,6 +50,11 @@ interface PaymentLog {
 }
 
 interface Totals {
+    employee_payable: number;
+    employee_advances: number;
+    payroll_expense: number;
+    employee_cash_out: number;
+    net_cash_flow: number;
     total_receivable: number;
     total_payable: number;
     net: number;
@@ -90,7 +95,7 @@ export default function FinancialPosition({ data, filters }: Props) {
                     <div>
                         <h1 className="text-4xl font-bold">Financial Position</h1>
                         <p className="text-sm text-muted-foreground">
-                            What customers owe us vs. what we owe suppliers. Balances are current; the payments log and
+                            Customer, supplier and employee balances. Balances are current; the payments log and
                             per-party paid amounts cover the selected period.
                         </p>
                     </div>
@@ -134,8 +139,14 @@ export default function FinancialPosition({ data, filters }: Props) {
                         <div className={`text-2xl font-bold tabular-nums ${totals.net >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                             {money(totals.net)}
                         </div>
-                        <div className="text-xs text-muted-foreground">{totals.net >= 0 ? 'Net owed to us' : 'Net we owe'}</div>
+                        <div className="text-xs text-muted-foreground">Includes employee advances and salary payable</div>
                     </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                    {([['Salary Payable',totals.employee_payable],['Employee Advances',totals.employee_advances],['Payroll Expense (Period)',totals.payroll_expense],['Employee Cash Out (Period)',totals.employee_cash_out],['Net Cash Flow (Period)',totals.net_cash_flow]] as const).map(([label,value])=>(
+                        <div key={label} className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="text-xl font-semibold">{money(value)}</p></div>
+                    ))}
                 </div>
 
                 {/* Receivables */}

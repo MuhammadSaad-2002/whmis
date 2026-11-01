@@ -23,6 +23,7 @@ class ReportController extends Controller
     public function index()
     {
         $catalog = collect(ReportService::catalog())
+            ->filter(fn ($meta) => ! isset($meta['permission']) || auth()->user()->can($meta['permission']))
             ->map(fn ($meta, $key) => $meta + ['key' => $key])
             ->groupBy('category')
             ->map(fn ($group) => $group->values());
@@ -36,6 +37,7 @@ class ReportController extends Controller
         abort_unless(isset($catalog[$key]), 404);
 
         $meta = $catalog[$key];
+        abort_unless(! isset($meta['permission']) || $request->user()->can($meta['permission']), 403);
         $filters = $request->only('from', 'to', 'customer_id', 'company_id', 'product_id', 'direction', 'expiry_window', 'order');
         $data = $this->reports->build($key, $filters);
 

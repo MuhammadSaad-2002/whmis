@@ -1,4 +1,5 @@
 import { Paginator, type PaginatedData } from '@/components/paginator';
+import { bookingDateTime, type BookingTimestamps } from '@/components/booking-timestamps';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +16,7 @@ import { Head, Link, router } from '@inertiajs/react';
 import { ArrowRight, Check, Plus, Search, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-interface BookingRow {
+interface BookingRow extends BookingTimestamps {
     id: number;
     booking_number: string;
     booking_date: string;
@@ -111,7 +112,7 @@ export default function BookingsIndex({ bookings, customers, filters }: Props) {
                                 <TableHead>Booking #</TableHead>
                                 <TableHead>Customer</TableHead>
                                 <TableHead>Booker</TableHead>
-                                <TableHead>Date</TableHead>
+                                <TableHead>Created / Updated (PKT)</TableHead>
                                 <TableHead className="text-right">Total</TableHead>
                                 <TableHead>Status</TableHead>
                                 <TableHead className="w-48" />
@@ -137,10 +138,21 @@ export default function BookingsIndex({ bookings, customers, filters }: Props) {
                                         <div className="text-xs text-muted-foreground">{booking.customer?.city}</div>
                                     </TableCell>
                                     <TableCell>{booking.booker?.name}</TableCell>
-                                    <TableCell>{shortDate(booking.booking_date)}</TableCell>
+                                    <TableCell>
+                                        <div>{bookingDateTime(booking.created_at)}</div>
+                                        <div className="text-xs text-muted-foreground">Updated: {bookingDateTime(booking.updated_at)}</div>
+                                        <div className="text-xs text-muted-foreground">Booking date: {shortDate(booking.booking_date)}</div>
+                                    </TableCell>
                                     <TableCell className="text-right tabular-nums">{money(booking.total_amount)}</TableCell>
                                     <TableCell>
                                         <Badge variant={statusVariant(booking.status)}>{booking.status}</Badge>
+                                        {booking.status !== 'draft' && <div className="mt-1 text-xs text-muted-foreground">
+                                            {bookingDateTime(booking.status === 'pending' ? booking.submitted_at
+                                                : booking.status === 'approved' ? booking.approved_at
+                                                : booking.status === 'rejected' ? booking.rejected_at
+                                                : booking.status === 'converted' ? booking.converted_at
+                                                : booking.cancelled_at)}
+                                        </div>}
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex justify-end gap-1">

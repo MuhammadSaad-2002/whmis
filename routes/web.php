@@ -31,6 +31,25 @@ use Inertia\Inertia;
 Route::get('/', fn () => redirect()->route('workspace'))->name('home');
 
 Route::middleware(['auth', 'licensed'])->group(function () {
+    Route::get('hr/my-profile', [\App\Http\Controllers\HrController::class, 'selfProfile'])->middleware('can:hr.self.view')->name('hr.self');
+    Route::get('hr/employees/{employee}', [\App\Http\Controllers\HrController::class, 'employee'])->middleware('can:employees.view')->name('hr.employee');
+    Route::put('hr/employees/{employee}/customers', [\App\Http\Controllers\HrController::class, 'assignCustomers'])->middleware(['can:employees.view', 'can:bookers.assign'])->name('hr.employee.customers');
+    Route::post('hr/employees', [\App\Http\Controllers\HrController::class, 'saveEmployee'])->middleware('can:employees.manage')->name('hr.employees.store');
+    Route::put('hr/employees/{employee}', [\App\Http\Controllers\HrController::class, 'saveEmployee'])->middleware('can:employees.manage')->name('hr.employees.update');
+    Route::post('hr/employees/{employee}/salary', [\App\Http\Controllers\HrController::class, 'salary'])->middleware('can:hr.payroll.manage')->name('hr.salary');
+    Route::post('hr/attendance', [\App\Http\Controllers\HrController::class, 'attendance'])->middleware('can:hr.attendance.manage')->name('hr.attendance');
+    Route::delete('hr/attendance/{attendance}', [\App\Http\Controllers\HrController::class, 'removeAttendance'])->middleware('can:hr.attendance.manage')->name('hr.attendance.delete');
+    Route::post('hr/leave', [\App\Http\Controllers\HrController::class, 'leave'])->name('hr.leave');
+    Route::post('hr/leave/{leave}/decision', [\App\Http\Controllers\HrController::class, 'leaveDecision'])->middleware('can:hr.leave.approve')->name('hr.leave.decision');
+    Route::post('hr/settings/{type}', [\App\Http\Controllers\HrController::class, 'setting'])->middleware('can:hr.settings.manage')->name('hr.setting');
+    Route::post('hr/payroll', [\App\Http\Controllers\HrController::class, 'generate'])->middleware('can:hr.payroll.manage')->name('hr.payroll.generate');
+    Route::get('hr/payroll/{payroll}', [\App\Http\Controllers\HrController::class, 'payroll'])->middleware('can:hr.payroll.view')->name('hr.payroll');
+    Route::post('hr/payroll/{payroll}/{action}', [\App\Http\Controllers\HrController::class, 'payrollAction'])->middleware('can:hr.payroll.view')->name('hr.payroll.action');
+    Route::put('hr/payslips/{item}', [\App\Http\Controllers\HrController::class, 'adjust'])->middleware('can:hr.payroll.manage')->name('hr.payroll.adjust');
+    Route::get('hr/payslips/{item}/pdf', [\App\Http\Controllers\HrController::class, 'payslip'])->name('hr.payslip');
+    Route::post('hr/finance', [\App\Http\Controllers\HrController::class, 'cash'])->middleware('can:hr.payroll.pay')->name('hr.cash');
+    Route::post('hr/finance/{transaction}/reverse', [\App\Http\Controllers\HrController::class, 'reverse'])->middleware('can:hr.payroll.cancel')->name('hr.cash.reverse');
+    Route::get('hr/{section}', [\App\Http\Controllers\HrController::class, 'index'])->name('hr.index');
     // Licensing "system inactive" screen — self-exempted inside EnsureLicensed so
     // gated users can actually reach it (must stay reachable while locked).
     Route::get('license/locked', [LicenseController::class, 'locked'])->name('license.locked');

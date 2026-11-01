@@ -46,6 +46,8 @@
     </table>
 
     <h2 style="margin-top:14px;">Financial position · as of now</h2>
+    <p>Payroll expense (period): {{ $rs($hr['expense']) }} · Profit after payroll: {{ $rs($kpis['profit'] - $hr['expense']) }}</p>
+    <p>Employee salary payable: {{ $rs($financials['employee_payable']) }} · Recoverable advances: {{ $rs($financials['employee_advances']) }}</p>
     <table class="kpi-grid">
         <tr>
             <td><div class="label">Receivable</div><div class="value">{{ $rs($financials['receivable']) }}</div></td>

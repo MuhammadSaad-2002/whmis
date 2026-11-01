@@ -27,6 +27,22 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
 
 ## Logic hotspots
 
+- `BookerScopingTest` covers employee-profile bulk assignments, preservation of
+  other Bookers and primary assignments, audit records, inactive/unlinked
+  rejection, and booking submission against unassigned customers.
+
+- HR: `HrModuleTest` covers payroll reconciliation, proration, leave/attendance
+  conflicts, month-end dates, stale drafts, locks, duplicate posting/reversal,
+  overpayment protection, self-service and audit privacy, reports and exports.
+- HR calculations and limitations are documented in [HR_MODULE.md](HR_MODULE.md).
+  Never treat salary payments/advances as a second payroll expense or change
+  product COGS when posting HR. Apply HR schema before serving updated dashboards.
+  Payroll duties are permission-separated, not mandatory two-person approval.
+- Full-suite Excel exports may require `php -d memory_limit=512M vendor/bin/phpunit`
+  (setting memory on the Artisan wrapper does not propagate to its test subprocess).
+  `npx tsc --noEmit` currently reports pre-existing errors in login/reset-password
+  form types and welcome-page `mixBlendMode`; production Vite build is separate.
+
 - Money math: `MarginCalculator` and `resources/js/lib/invoice-math.ts` must stay aligned.
 - Stock mutation: `InventoryService` should remain the single mutation path.
 - Posting/cancellation: invoice, return, sample, loan, and payment cancellation must reverse effects without losing history.

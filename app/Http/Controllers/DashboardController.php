@@ -50,6 +50,7 @@ class DashboardController extends Controller
                 'today_purchases' => $todayPurchases['net_purchases'],
                 'month_sales' => $monthSales['net_sales'],
                 'month_profit' => $monthSales['net_profit'],
+                'month_payroll_expense' => app(\App\Services\HrReportService::class)->totals(now()->startOfMonth(), now())['expense'],
                 'receivable' => $receivable,
                 'payable' => $payable,
                 'inventory_value' => (float) Batch::selectRaw('COALESCE(SUM(qty_available * effective_cost), 0) as v')->value('v'),

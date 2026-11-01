@@ -103,6 +103,7 @@ class BookingService
 
             $booking->update([
                 'status' => Booking::STATUS_CONVERTED,
+                'converted_at' => now(),
                 'sales_invoice_id' => $invoice->id,
             ]);
 

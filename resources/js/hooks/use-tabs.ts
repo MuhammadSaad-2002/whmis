@@ -37,7 +37,7 @@ interface Persisted {
     active: number;
 }
 
-function loadInitial(key: string): { tabs: Tab[]; activeId: string } {
+function loadInitial(key: string, home: Omit<Tab, 'id'>): { tabs: Tab[]; activeId: string } {
     let items: { url: string; title: string }[] = [];
     let active = 0;
 
@@ -56,16 +56,17 @@ function loadInitial(key: string): { tabs: Tab[]; activeId: string } {
         }
     }
 
-    if (items.length === 0) items = [HOME];
+    if (items.length === 0) items = [home];
+    if (home.url !== HOME.url) items = items.map(item => pathOf(item.url) === HOME.url ? home : item);
     const tabs = items.slice(0, MAX_TABS).map((i) => ({ id: newId(), url: i.url, title: i.title || i.url }));
 
     return { tabs, activeId: tabs[active]?.id ?? tabs[0].id };
 }
 
-export function useTabs(scope?: string | number) {
+export function useTabs(scope?: string | number, home: Omit<Tab, 'id'> = HOME) {
     const key = storageKey(scope);
     const initialRef = useRef<{ tabs: Tab[]; activeId: string } | null>(null);
-    const seed = (initialRef.current ??= loadInitial(key));
+    const seed = (initialRef.current ??= loadInitial(key, home));
 
     const [tabs, setTabs] = useState<Tab[]>(seed.tabs);
     const [activeId, setActiveId] = useState<string>(seed.activeId);
@@ -112,21 +113,21 @@ export function useTabs(scope?: string | number) {
 
         const next = current.filter((t) => t.id !== id);
         if (next.length === 0) {
-            const home: Tab = { id: newId(), url: HOME.url, title: HOME.title };
-            setTabs([home]);
-            setActiveId(home.id);
+            const homeTab: Tab = { id: newId(), ...home };
+            setTabs([homeTab]);
+            setActiveId(homeTab.id);
             return;
         }
         setTabs(next);
         setActiveId((active) => (active === id ? (next[index] ?? next[index - 1]).id : active));
-    }, []);
+    }, [home]);
 
-    // Close every tab and return to a single Dashboard tab.
+    // Close every tab and return to the user's accessible home page.
     const closeAll = useCallback(() => {
-        const home: Tab = { id: newId(), url: HOME.url, title: HOME.title };
-        setTabs([home]);
-        setActiveId(home.id);
-    }, []);
+        const homeTab: Tab = { id: newId(), ...home };
+        setTabs([homeTab]);
+        setActiveId(homeTab.id);
+    }, [home]);
 
     // Relabel / re-url a tab from a frame's tab-state message (mount or in-tab redirect).
     const updateTab = useCallback((id: string, patch: { url?: string; title?: string }) => {

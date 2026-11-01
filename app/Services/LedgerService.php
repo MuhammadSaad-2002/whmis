@@ -203,6 +203,8 @@ class LedgerService
         $paid = round((float) $payments->where('direction', Payment::DIRECTION_OUT)->sum('amount'), 2);
         $totalReceivable = round((float) $receivables->sum('balance'), 2);
         $totalPayable = round((float) $payables->sum('balance'), 2);
+        $hr = app(HrReportService::class)->totals();
+        $hrPeriod = app(HrReportService::class)->totals($from, $to);
 
         return [
             'receivables' => $receivables->all(),
@@ -211,7 +213,12 @@ class LedgerService
             'totals' => [
                 'total_receivable' => $totalReceivable,
                 'total_payable' => $totalPayable,
-                'net' => round($totalReceivable - $totalPayable, 2),
+                'net' => round($totalReceivable + $hr['advance'] - $totalPayable - $hr['payable'], 2),
+                'employee_payable' => $hr['payable'],
+                'employee_advances' => $hr['advance'],
+                'payroll_expense' => $hrPeriod['expense'],
+                'employee_cash_out' => $hrPeriod['cash_out'],
+                'net_cash_flow' => round($received - $paid - $hrPeriod['cash_out'], 2),
                 // Counts cover outstanding parties only; settled shown separately.
                 'customer_count' => $receivables->where('balance', '!=', 0.0)->count(),
                 'supplier_count' => $payables->where('balance', '!=', 0.0)->count(),

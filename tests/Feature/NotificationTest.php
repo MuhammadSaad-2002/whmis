@@ -84,13 +84,14 @@ class NotificationTest extends TestCase
 
         $booker = User::factory()->create();
         $booker->assignRole('Booker');
+        $customer->update(['booker_id' => $booker->id]);
 
         $this->actingAs($booker);
         $this->post(route('bookings.store'), [
             'customer_id' => $customer->id, 'warehouse_id' => 1,
             'booking_date' => now()->toDateString(),
             'items' => [['product_id' => $product->id, 'quantity' => 5, 'trade_price' => 10]],
-        ]);
+        ])->assertRedirect()->assertSessionHasNoErrors();
         $booking = \App\Models\Booking::firstOrFail();
         $this->post(route('bookings.submit', $booking));
 

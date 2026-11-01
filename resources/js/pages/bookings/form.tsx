@@ -1,4 +1,5 @@
 import InputError from '@/components/input-error';
+import { BookingActivity, type BookingTimestamps } from '@/components/booking-timestamps';
 import { ProductSearchCell, type ProductHit } from '@/components/product-search-cell';
 import { RulePickerDialog, type RuleHit } from '@/components/rule-picker-dialog';
 import { SearchableSelect } from '@/components/searchable-select';
@@ -33,14 +34,14 @@ interface ItemRow {
     discount_percent: string;
     gst_percent: string;
     remarks: string;
-    // Display-only (from the product picker): supplier, live stock, retail price.
+    // Display-only (from the product picker or saved booking payload): supplier, live stock, retail price.
     // Helps the booker take the order; never sent back / recomputed on the server.
     retail_price: string;
     company: string | null;
     stock: number;
 }
 
-interface BookingDto {
+interface BookingDto extends BookingTimestamps {
     id: number;
     booking_number: string;
     customer_id: number;
@@ -54,7 +55,7 @@ interface BookingDto {
     approver?: { id: number; name: string } | null;
     items: {
         product_id: number;
-        product?: { id: number; name: string };
+        product?: { id: number; name: string; company?: { id: number; name: string } | null; retail_price: string | number; stock: string | number | null };
         quantity: string;
         requested_bonus: string;
         trade_price: string;
@@ -128,6 +129,7 @@ const statusVariant = (status: string) =>
 
 export default function BookingForm({ customers, warehouse, bookers, booking }: Props) {
     const { can } = usePermissions();
+    const showAdminDetails = can('bookings.approve');
     const isMobile = useIsMobile();
     const isDraft = !booking || booking.status === 'draft';
     const readonly = !isDraft;
@@ -151,7 +153,9 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                   discount_percent: dec2(item.discount_percent),
                   gst_percent: dec2(item.gst_percent),
                   remarks: item.remarks ?? '',
-                  retail_price: '', company: null, stock: 0,
+                  retail_price: item.product ? dec2(item.product.retail_price) : '',
+                  company: item.product?.company?.name ?? null,
+                  stock: Number(item.product?.stock ?? 0),
               }))
             : [emptyRow()],
     );
@@ -481,6 +485,10 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                     </div>
                 </div>
 
+                {customers.length === 0 && !readonly && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+                    {can('bookings.approve') ? 'No active customers are available. Add or activate a customer in Customers first.' : 'No active customers are assigned to your login. Ask your administrator to open Employees → your profile → Assign Customers. Then reopen New Booking.'}
+                </div>}
+                {booking && <BookingActivity booking={booking} />}
                 <div
                     data-enter-nav
                     className="grid grid-cols-1 gap-3 rounded-xl border p-2.5 [&>div]:min-w-0 [&>div>label]:mb-1 [&>div>label]:block sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-5 xl:gap-x-2 xl:gap-y-1.5 xl:[&>div>button]:h-8 xl:[&>div>input]:h-8 xl:[&>div>label]:whitespace-nowrap xl:[&>div>label]:text-[11px]"
@@ -522,7 +530,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                             />
                         </div>
                     )}
-                    <div>
+                    {showAdminDetails && <div>
                         <Label>Booking Date *</Label>
                         <Input
                             type="date" value={header.booking_date} disabled={readonly}
@@ -535,11 +543,11 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                                 }
                             }}
                         />
-                    </div>
-                    <div>
+                    </div>}
+                    {showAdminDetails && <div>
                         <Label>Warehouse</Label>
                         <Input value={warehouse.name} disabled />
-                    </div>
+                    </div>}
                     <div className="sm:col-span-2 xl:col-span-1">
                         <Label>Remarks</Label>
                         <Input
@@ -577,6 +585,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                                             <Label className="text-xs text-muted-foreground">Product</Label>
                                             <div className={`rounded-md border ${rowErrors[rowIndex]?.product_id ? 'ring-1 ring-destructive' : ''}`}>
                                                 <ProductSearchCell
+                                                    showSupplier={showAdminDetails}
                                                     value={row.product_name}
                                                     warehouseId={warehouse.id}
                                                     disabled={readonly}
@@ -590,7 +599,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                                             )}
                                             {row.product_id && (
                                                 <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                                                    <span>{row.company ?? '—'}</span>
+                                                    {showAdminDetails && <span className="break-words">{row.company ?? '—'}</span>}
                                                     <span className={row.stock <= 0 ? 'text-destructive' : ''}>Stock {qty(row.stock)}</span>
                                                     {row.retail_price && <span>Retail {amount(row.retail_price)}</span>}
                                                 </div>
@@ -723,7 +732,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                             <tr className="[&>th]:border-b [&>th]:px-2 [&>th]:py-2 [&>th]:text-left">
                                 <th className="w-8">#</th>
                                 <th className="min-w-56">Product <kbd className="opacity-50">F2</kbd></th>
-                                <th className="w-32">Supplier</th>
+                                {showAdminDetails && <th className="w-32">Supplier</th>}
                                 <th className="w-16 text-right">Stock</th>
                                 <th className="w-20 text-right">Qty</th>
                                 <th className="w-20 text-right">Bonus</th>
@@ -746,6 +755,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                                         title={rowErrors[rowIndex]?.product_id}
                                     >
                                         <ProductSearchCell
+                                            showSupplier={showAdminDetails}
                                             value={row.product_name}
                                             warehouseId={warehouse.id}
                                             disabled={readonly}
@@ -755,9 +765,9 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                                             inputRef={grid.registerCell(rowIndex, 0)}
                                         />
                                     </td>
-                                    <td className="truncate px-2 text-muted-foreground" title={row.company ?? undefined}>
+                                    {showAdminDetails && <td className="truncate px-2 text-muted-foreground" title={row.company ?? undefined}>
                                         {row.product_id ? (row.company ?? '—') : ''}
-                                    </td>
+                                    </td>}
                                     <td className={`px-2 text-right tabular-nums ${row.stock <= 0 && row.product_id ? 'text-destructive' : 'text-muted-foreground'}`}>
                                         {row.product_id ? qty(row.stock) : ''}
                                     </td>

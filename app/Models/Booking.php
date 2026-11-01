@@ -26,6 +26,11 @@ class Booking extends Model implements AuditableContract
         return [
             'booking_date' => 'date',
             'approved_at' => 'datetime',
+            'last_edited_at' => 'datetime',
+            'submitted_at' => 'datetime',
+            'rejected_at' => 'datetime',
+            'converted_at' => 'datetime',
+            'cancelled_at' => 'datetime',
             'subtotal' => 'decimal:2',
             'item_discount_total' => 'decimal:2',
             'item_gst_total' => 'decimal:2',

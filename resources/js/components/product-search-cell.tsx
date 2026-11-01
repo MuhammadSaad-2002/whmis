@@ -23,6 +23,7 @@ interface Props {
     value: string; // selected product name, shown while the dropdown is closed
     warehouseId: number;
     companyId?: number;
+    showSupplier?: boolean;
     disabled?: boolean;
     /** Increment to force-open the dropdown (F2 pressed elsewhere in the row). */
     openSignal?: number;
@@ -39,12 +40,16 @@ interface Props {
  * Esc closes. While closed, all keys flow to the invoice grid's handler.
  */
 export function ProductSearchCell({
-    value, warehouseId, companyId, disabled, openSignal, onSelect, onGridKeyDown, inputRef,
+    value, warehouseId, companyId, showSupplier = true, disabled, openSignal, onSelect, onGridKeyDown, inputRef,
 }: Props) {
     const { can } = usePermissions();
     const showCost = can('products.view_cost');
     // Stacks into a single card row on phones; becomes a table grid from `sm` up.
-    const gridCols = showCost
+    const gridCols = !showSupplier
+        ? showCost
+            ? 'sm:grid sm:grid-cols-[minmax(13rem,1fr)_4.5rem_5.5rem_5.5rem_5.5rem] sm:items-center sm:gap-2 px-3'
+            : 'sm:grid sm:grid-cols-[minmax(14rem,1fr)_5rem_6rem_6rem] sm:items-center sm:gap-2 px-3'
+        : showCost
         ? 'sm:grid sm:grid-cols-[minmax(13rem,1fr)_4.5rem_9rem_5.5rem_5.5rem_5.5rem] sm:items-center sm:gap-2 px-3'
         : 'sm:grid sm:grid-cols-[minmax(14rem,1fr)_5rem_10rem_6rem_6rem] sm:items-center sm:gap-2 px-3';
     const [open, setOpen] = useState(false);
@@ -184,7 +189,7 @@ export function ProductSearchCell({
                 <div className={`${gridCols} hidden border-b bg-muted/50 py-1.5 text-[11px] font-semibold uppercase text-muted-foreground sm:grid`}>
                     <span>Product Name</span>
                     <span className="text-right">Stock</span>
-                    <span>Supplier</span>
+                    {showSupplier && <span>Supplier</span>}
                     {showCost && <span className="text-right">Pur Price</span>}
                     <span className="text-right">Trade</span>
                     <span className="text-right">Retail</span>
@@ -222,14 +227,14 @@ export function ProductSearchCell({
                             <span className={`hidden text-right tabular-nums sm:block ${product.stock <= 0 ? 'text-destructive' : ''}`}>
                                 {qty(product.stock)}
                             </span>
-                            <span className="hidden truncate text-muted-foreground sm:block">{product.company ?? '—'}</span>
+                            {showSupplier && <span className="hidden truncate text-muted-foreground sm:block">{product.company ?? '—'}</span>}
                             {showCost && <span className="hidden text-right tabular-nums sm:block">{amount(product.purchase_price ?? 0)}</span>}
                             <span className="hidden text-right tabular-nums sm:block">{amount(product.trade_price)}</span>
                             <span className="hidden text-right tabular-nums sm:block">{amount(product.retail_price)}</span>
                             {/* Phone-only summary line — the grid columns above are hidden below sm. */}
                             <span className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground sm:hidden">
                                 <span className={product.stock <= 0 ? 'text-destructive' : ''}>Stock {qty(product.stock)}</span>
-                                <span>{product.company ?? '—'}</span>
+                                {showSupplier && <span>{product.company ?? '—'}</span>}
                                 {showCost && <span>Cost {amount(product.purchase_price ?? 0)}</span>}
                                 <span>TP {amount(product.trade_price)}</span>
                                 <span>RP {amount(product.retail_price)}</span>

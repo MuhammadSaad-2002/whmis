@@ -42,6 +42,7 @@ class DashboardService
                 'to' => $to->toDateString(),
             ],
             'kpis' => $this->periodKpis($from, $to),
+            'hr' => app(HrReportService::class)->totals($from, $to),
             'financials' => $this->financials(),
             'monthlyTrend' => $this->reports->salesProfitTrend($from, $to),
             'aging' => $this->aging(),
@@ -115,11 +116,14 @@ class DashboardService
         $payable = (float) LedgerEntry::where('party_type', 'company')
             ->selectRaw('COALESCE(SUM(credit - debit), 0) as v')->value('v');
         $inventory = (float) Batch::selectRaw('COALESCE(SUM(qty_available * effective_cost), 0) as v')->value('v');
+        $hr = app(HrReportService::class)->totals();
 
         return [
             'receivable' => $receivable,
             'payable' => $payable,
-            'net_position' => round($receivable - $payable, 2),
+            'net_position' => round($receivable + $hr['advance'] - $payable - $hr['payable'], 2),
+            'employee_payable' => $hr['payable'],
+            'employee_advances' => $hr['advance'],
             'inventory_value' => $inventory,
         ];
     }

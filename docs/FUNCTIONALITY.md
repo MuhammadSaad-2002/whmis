@@ -29,6 +29,21 @@ likely to matter when changing each module.
 - Purchases: list/create/edit/post/cancel/duplicate/print under `/purchases`.
 - Sales: list/create/edit/post/cancel/print/summary/net-position under `/sales`.
 - Bookings: draft, submit, approve, reject, cancel, and convert to linked draft sales invoice.
+- Booking lists show first-save and latest-change timestamps, with current-status
+  time. The form's expandable activity panel shows creation, last draft save,
+  submission, approval/rejection, conversion, and cancellation in Asia/Karachi
+  (PKT), independently of the business booking date. This is a milestone summary,
+  not a log of every draft save. Unknown historical times remain unrecorded.
+- Reopened bookings load supplier, current retail price, and live stock for the
+  booking warehouse using the same quantity aggregation as the product picker.
+  Saved quantities, bonuses, trade prices, discounts, tax, remarks, and incentive
+  selections remain on the booking items; displayed stock is current, not a
+  historical stock snapshot or reservation.
+- The field-Booker booking form hides booking date, warehouse, and supplier
+  labels (including product search); booking approvers retain these details.
+  Hidden date/warehouse values are retained, and stock/retail remain visible.
+  The incentive picker wraps mobile rule details, bounds its scroll area to
+  the viewport, and provides a Done button without changing rule eligibility.
 - Returns: sales and purchase return flows under `/returns`; lookups expose returnable invoice/item data.
 
 ## Samples
@@ -139,6 +154,24 @@ sales/profit trend graph when the report supplies time-series chart data.
 Negative report values are highlighted and carry an information tooltip that
 explains the likely row-level cause from revenue, returns, COGS, quantities, or
 balances. PDFs render the same negative values in red with a printable guide.
+
+## Human Resources
+
+- `/hr/employees`: employee/Booker register and profiles; salary versions on profiles.
+- Booker profiles include searchable bulk customer assignment through
+  `/hr/employees/{employee}/customers`; active assignments populate new bookings.
+- `/hr/attendance`: dated attendance, overtime, corrections before payroll lock.
+- `/hr/leave`: leave requests, approvals, rejections, cancellations.
+- `/hr/payroll`: monthly draft generation, review, approval, posting, reversal.
+- `/hr/finance`: salary payments, recoverable advances/repayments, reversals.
+- `/hr/settings`: departments, designations, annual leave policy.
+- `/hr/my-profile`: linked employee self-service, own leave requests and payslips.
+- `/hr/payslips/{item}/pdf`: posted/cancelled payslip PDF, owner or payroll viewer only.
+- Eight `hr-*` reports are registered by `HrReportService` under Human Resources,
+  with generic Excel/PDF export and selected ranked charts.
+- Financial position includes employee advances/payables/cash; dashboards and
+  monthly profit report show payroll expense and profit after payroll separately
+  from sales contribution. See [HR_MODULE.md](HR_MODULE.md) for formulas and limits.
 
 ## Administration
 

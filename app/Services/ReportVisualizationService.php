@@ -11,6 +11,19 @@ class ReportVisualizationService
      * The first metric is the default metric used in PDFs.
      */
     private const RANKED = [
+        'hr-payroll' => ['labelKey' => 'name', 'metrics' => [
+            ['key' => 'net_pay', 'label' => 'Net Salary', 'format' => 'money'],
+            ['key' => 'expense', 'label' => 'Salary Expense', 'format' => 'money'],
+            ['key' => 'due', 'label' => 'Unpaid Salary', 'format' => 'money'],
+        ]],
+        'hr-balances' => ['labelKey' => 'name', 'metrics' => [
+            ['key' => 'payable', 'label' => 'Salary Payable', 'format' => 'money'],
+            ['key' => 'advance', 'label' => 'Recoverable Advances', 'format' => 'money'],
+        ]],
+        'hr-bookers' => ['labelKey' => 'name', 'metrics' => [
+            ['key' => 'net_sales', 'label' => 'Net Sales', 'format' => 'money'],
+            ['key' => 'collections', 'label' => 'Allocated Collections', 'format' => 'money'],
+        ]],
         'sales-register' => ['labelKey' => 'customer', 'metrics' => [
             ['key' => 'net_amount', 'label' => 'Net Sales', 'format' => 'money'],
             ['key' => 'net_profit', 'label' => 'Net Profit', 'format' => 'money'],

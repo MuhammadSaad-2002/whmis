@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
     CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList,
 } from '@/components/ui/command';
@@ -80,15 +81,15 @@ export function RulePickerDialog({ open, onOpenChange, productId, customerId, qt
     const lockedCount = rules.filter((rule) => rule.eligible === false).length;
 
     return (
-        <CommandDialog open={open} onOpenChange={onOpenChange} contentClassName="max-w-2xl">
-            <CommandInput placeholder="Stack incentive rules — Esc when done…" />
+        <CommandDialog open={open} onOpenChange={onOpenChange} contentClassName="w-[calc(100%-1rem)] max-w-2xl max-h-[85dvh] rounded-lg [&_[cmdk-root]]:min-h-0 [&_[cmdk-root]]:max-h-[85dvh]">
+            <CommandInput placeholder="Search incentive rules…" className="pr-8 text-base sm:text-sm" />
             {productId && (
-                <div className="border-b px-3 py-2 text-xs text-muted-foreground">
+                <div className="shrink-0 border-b px-3 py-2 text-xs text-muted-foreground">
                     {loading ? 'Loading rules…' : `${rules.length} matching rule${rules.length === 1 ? '' : 's'}`}
                     {!loading && lockedCount > 0 && ` · ${lockedCount} locked until quantity qualifies`}
                 </div>
             )}
-            <CommandList className="max-h-[60vh]">
+            <CommandList className="min-h-0 max-h-[55dvh] flex-1 overscroll-contain">
                 <CommandEmpty>
                     {!productId ? 'Pick a product first.' : loading ? 'Loading…' : 'No rules apply to this line.'}
                 </CommandEmpty>
@@ -105,18 +106,18 @@ export function RulePickerDialog({ open, onOpenChange, productId, customerId, qt
                                 if (isApplied) onRemove(rule);
                                 else if (!blocked && !locked) onAdd(rule);
                             }}
-                            className="flex items-center justify-between gap-3 data-[disabled=true]:opacity-40"
+                            className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3 data-[disabled=true]:opacity-60"
                         >
-                            <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                    <span className="truncate font-medium">{rule.name}</span>
+                            <div className="min-w-0 max-w-full">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="break-words font-medium">{rule.name}</span>
                                     {isApplied && <Badge variant="default">applied · ✕ remove</Badge>}
                                     {blocked && (
                                         <Badge variant="outline">{TYPE_LABELS[rule.rule_type] ?? rule.rule_type} taken</Badge>
                                     )}
                                     {locked && <Badge variant="outline">{rule.eligibility_label ?? 'increase qty'}</Badge>}
                                 </div>
-                                <div className="truncate text-xs text-muted-foreground">
+                                <div className="break-words text-xs text-muted-foreground sm:truncate">
                                     {rule.summary} · {rule.scope}
                                 </div>
                             </div>
@@ -127,6 +128,9 @@ export function RulePickerDialog({ open, onOpenChange, productId, customerId, qt
                     );
                 })}
             </CommandList>
+            <div className="flex shrink-0 justify-end border-t p-2">
+                <Button type="button" size="sm" onClick={() => onOpenChange(false)}>Done</Button>
+            </div>
         </CommandDialog>
     );
 }

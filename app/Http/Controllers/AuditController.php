@@ -16,6 +16,7 @@ class AuditController extends Controller
         $auditModel = config('audit.implementation', \OwenIt\Auditing\Models\Audit::class);
 
         $audits = $auditModel::query()
+            ->where(fn ($q) => $q->whereNull('auditable_type')->orWhereNotIn('auditable_type', $this->hiddenHrTypes($request)))
             ->with('user:id,name,email')
             ->when($request->user_id, fn ($q, $id) => $q->where('user_id', $id))
             ->when($request->event, fn ($q, $event) => $q->where('event', $event))
@@ -57,7 +58,7 @@ class AuditController extends Controller
             'filters' => $request->only('user_id', 'event', 'model', 'from', 'to', 'search'),
             'users' => User::orderBy('name')->get(['id', 'name']),
             'events' => $auditModel::query()->distinct()->orderBy('event')->pluck('event'),
-            'models' => $this->modelOptions($auditModel),
+            'models' => $this->modelOptions($auditModel, $request),
         ]);
     }
 
@@ -73,14 +74,31 @@ class AuditController extends Controller
      * @param  class-string<\Illuminate\Database\Eloquent\Model>  $auditModel
      * @return array<int, array{value: string, label: string}>
      */
-    private function modelOptions(string $auditModel): array
+    private function modelOptions(string $auditModel, Request $request): array
     {
         return $auditModel::query()
+            ->whereNotIn('auditable_type', $this->hiddenHrTypes($request))
             ->whereNotNull('auditable_type')
             ->distinct()
             ->orderBy('auditable_type')
             ->pluck('auditable_type')
             ->map(fn ($type) => ['value' => $type, 'label' => $this->label($type)])
             ->all();
+    }
+
+    private function hiddenHrTypes(Request $request): array
+    {
+        $groups = [
+            'hr.payroll.view' => [\App\Models\EmployeeSalary::class, \App\Models\Payroll::class, \App\Models\PayrollItem::class, \App\Models\HrTransaction::class],
+            'employees.view' => [\App\Models\Employee::class],
+            'hr.attendance.view' => [\App\Models\EmployeeAttendance::class],
+            'hr.leave.view' => [\App\Models\EmployeeLeave::class],
+        ];
+        $hidden = [];
+        foreach ($groups as $permission => $models) {
+            if ($request->user()->can($permission)) continue;
+            foreach ($models as $model) array_push($hidden, $model, (new $model)->getMorphClass());
+        }
+        return $hidden;
     }
 }

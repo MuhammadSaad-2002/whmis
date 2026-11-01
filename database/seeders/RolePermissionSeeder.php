@@ -92,5 +92,6 @@ class RolePermissionSeeder extends Seeder
             ['name' => 'Super Admin', 'password' => 'password', 'email_verified_at' => now()]
         );
         $admin->assignRole('Super Admin');
+        $this->call(HrPermissionSeeder::class);
     }
 }

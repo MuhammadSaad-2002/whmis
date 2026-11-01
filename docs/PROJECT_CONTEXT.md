@@ -32,6 +32,9 @@ notifications, users, roles, audit logs, and license control.
 - Transactions: bookings, purchase invoices, sales invoices, returns.
 - Special stock: sample receipts/issues and loan stock in/out.
 - Finance: payments, party ledgers, financial position, auto-settlements.
+- Human Resources: employees (including linked Bookers), departments/designations,
+  attendance, annual leave, salary history, payroll, advances, salary payments,
+  self-service, payslips, and HR reports. See [HR_MODULE.md](HR_MODULE.md).
 - Inventory: stock position, batches, movements, adjustments.
 - Reporting: registry-driven reports using one generic report view/export shape.
 - Administration: users, roles, permission catalog, audit log, Booker assignment log, license screen.

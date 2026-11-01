@@ -6,6 +6,20 @@ changing cPanel/manual deployment assumptions.
 
 ## Main entities
 
+### Booking lifecycle timestamps
+
+`created_at` is the first persisted draft, not the business `booking_date`.
+`updated_at` tracks the latest header change (including status changes).
+`last_edited_at` records the latest successful draft save separately.
+`submitted_at`, `rejected_at`, `converted_at`, and `cancelled_at` record server
+times for their transitions; `approved_at` already exists. Historically
+`approved_at` also stored rejection time; the additive migration copies that
+value for currently rejected bookings only. Other unknown historical milestone
+times remain NULL; they must not be invented from `updated_at`.
+Deploy using the migration or
+`database/manual/2026_11_01_add_booking_lifecycle_timestamps.sql`, not both.
+These timestamps have no stock, ledger, or calculation effects.
+
 - Users, roles, and permissions drive access.
 - Companies are suppliers in the UI.
 - Customers are pharmacies and may have one primary Booker plus many assigned Bookers.
@@ -60,6 +74,8 @@ changing cPanel/manual deployment assumptions.
 
 ## Number series
 
+HR adds `EMP`, `PRL`, and `HRT` employee/payroll/employee-transaction series.
+
 `NumberSeriesService` generates row-locked sequence numbers. Defaults are seeded
 by `SystemSeeder`. Existing prefixes include purchase, sales, booking, receipt,
 payment, return, adjustment, sample, and loan-related document series.
@@ -81,6 +97,31 @@ Every DB-related change must include a manual SQL companion when production may
 need phpMyAdmin import instead of `artisan migrate` or `artisan db:seed`.
 Permission/role seed changes also need manual SQL, even when no migration is
 created.
+
+## HR entities and accounting
+
+`employees` optionally links one-to-one to `users`, with department, designation,
+and reporting manager FKs. Linked users cannot be deleted/replaced. Employment
+dates determine payroll eligibility. No HR feature changes stock quantities.
+
+`employee_salaries` has unique employee/effective-month versions;
+`employee_attendances` has unique employee/day records. `hr_leave_types` configures
+paid status and annual allowance; `employee_leaves` snapshots paid status and
+working-day count, with pending/approved/rejected/cancelled lifecycle.
+
+`payrolls` are draft/approved/posted/cancelled; nullable unique `active_period`
+permits replacement only after cancellation. `payroll_items` stores one employee
+snapshot per payroll, including base, overtime, bonus, commission, deductions,
+recovery, expense, and net salary. Approved/posted payroll locks its inputs.
+
+`hr_transactions` records signed expense, payable, advance, and cash-out changes.
+Reversals negate all four amounts and uniquely reference the original row.
+Expense/payable arise on posting, not salary payment. Advance recovery offsets
+an asset, not expense. HR entries do not enter the trade morphic ledger.
+All HR models have audited morph aliases; see [HR_MODULE.md](HR_MODULE.md).
+
+Production companions: `2026_10_31_create_hr_tables.sql` and
+`2026_10_31_seed_hr_permissions.sql` under `database/manual/`.
 
 For stock loaning on a production database that does not yet have the module,
 import the existing schema SQL files first, then

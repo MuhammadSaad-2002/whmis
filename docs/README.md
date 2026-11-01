@@ -13,6 +13,7 @@ reports.
 5. `DATA_MODEL.md` - entity relationships, lifecycle states, stock, ledger, and schema notes.
 6. `SECURITY_AND_PERMISSIONS.md` - RBAC, license gating, Booker scoping, and audit.
 7. `QUALITY_AND_RISKS.md` - verification commands, test coverage, and known risk areas.
+8. [HR_MODULE.md](HR_MODULE.md) - employee/Booker setup, attendance, leave, payroll, accounting policies, reports, and production installation.
 
 ## Existing docs
 

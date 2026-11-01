@@ -181,4 +181,47 @@ class BookerScopingTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->component('admin/booker-assignments/index'));
     }
+
+    public function test_employee_bulk_assignment_populates_booking_options_and_preserves_other_bookers(): void
+    {
+        $employee = \App\Models\Employee::create(['employee_number'=>'EMP-TEST','name'=>'Booker Bob','user_id'=>$this->booker->id,'is_booker'=>true,'joining_date'=>'2026-10-01','weekly_off_days'=>[0]]);
+        $a = Customer::create(['name'=>'Alpha Pharmacy','status'=>'active']);
+        $b = Customer::create(['name'=>'Beta Pharmacy','status'=>'active']);
+        $other = User::factory()->create(); $other->assignRole('Booker');
+        $a->bookers()->attach($other->id);
+        $this->actingAs($this->admin)->put(route('hr.employee.customers',$employee),['customer_ids'=>[$a->id,$b->id]])->assertSessionHasNoErrors();
+        $this->assertTrue($a->bookers()->whereKey($other->id)->exists());
+        $this->assertEquals(2,BookerAssignmentLog::where('booker_id',$this->booker->id)->where('action','assigned')->count());
+        $this->actingAs($this->booker)->get(route('bookings.create'))->assertInertia(fn(Assert $page)=>$page->has('customers',2));
+        $this->get(route('bookings.index'))->assertInertia(fn(Assert $page)=>$page->has('customers',2));
+        $this->get(route('hr.self'))->assertInertia(fn(Assert $page)=>$page->where('customerOptions',null));
+        $this->put(route('hr.employee.customers',$employee),['customer_ids'=>[]])->assertForbidden();
+        $this->actingAs($this->admin)->put(route('hr.employee.customers',$employee),['customer_ids'=>[$b->id]])->assertSessionHasNoErrors();
+        $this->assertTrue($a->bookers()->whereKey($other->id)->exists());
+        $this->assertEquals(1,BookerAssignmentLog::where('booker_id',$this->booker->id)->where('action','unassigned')->count());
+        $this->actingAs($this->booker)->get(route('bookings.create'))->assertInertia(fn(Assert $page)=>$page->has('customers',1)->where('customers.0.id',$b->id));
+    }
+
+    public function test_assignment_rejects_unlinked_employees_inactive_customers_and_primary_removal(): void
+    {
+        $employee = \App\Models\Employee::create(['employee_number'=>'EMP-TEST','name'=>'Booker Bob','is_booker'=>true,'joining_date'=>'2026-10-01','weekly_off_days'=>[0]]);
+        $this->actingAs($this->admin)->put(route('hr.employee.customers',$employee),['customer_ids'=>[]])->assertSessionHasErrors('customer_ids');
+        $employee->update(['user_id'=>$this->booker->id]);
+        $primary = Customer::create(['name'=>'Primary','booker_id'=>$this->booker->id]);
+        $inactive = Customer::create(['name'=>'Inactive','status'=>'inactive']);
+        $this->put(route('hr.employee.customers',$employee),['customer_ids'=>[]])->assertSessionHasErrors('customer_ids');
+        $this->put(route('hr.employee.customers',$employee),['customer_ids'=>[$primary->id,$inactive->id]])->assertSessionHasErrors('customer_ids');
+        $this->assertEquals(0,BookerAssignmentLog::count());
+    }
+
+    public function test_booker_cannot_submit_booking_for_unassigned_customer(): void
+    {
+        $customer = Customer::create(['name'=>'Unassigned']);
+        $payload = ['customer_id'=>$customer->id,'warehouse_id'=>1,'booking_date'=>now()->toDateString(),'items'=>[['product_id'=>$this->product->id,'quantity'=>1,'trade_price'=>100]]];
+        $this->actingAs($this->booker)->post(route('bookings.store'),$payload)->assertSessionHasErrors('customer_id');
+        $this->assertEquals(0,Booking::count());
+        $customer->bookers()->attach($this->booker->id);
+        $this->post(route('bookings.store'),$payload)->assertSessionHasNoErrors();
+        $this->assertEquals(1,Booking::count());
+    }
 }

@@ -17,6 +17,9 @@ class NumberSeries extends Model
      * @var array<string, string>
      */
     public const DEFAULTS = [
+        'employee' => 'EMP',
+        'payroll' => 'PRL',
+        'hr_transaction' => 'HRT',
         'purchase_invoice' => 'PI',
         'sales_invoice' => 'SI',
         'payment_in' => 'RCV',
