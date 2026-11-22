@@ -24,6 +24,16 @@ class PaymentService
     /** Invoice balances available for allocation, net of linked return credits. */
     public function openInvoices(Customer|Company $party): array
     {
+        if ($party instanceof Customer) {
+            return app(InvoiceBalanceService::class)->openSales()->where('customer_id', $party->id)
+                ->orderBy('invoice_date')->get()->map(fn ($invoice) => [
+                    'id' => $invoice->id, 'invoice_type' => $invoice->getMorphClass(),
+                    'invoice_number' => $invoice->invoice_number,
+                    'invoice_date' => $invoice->invoice_date->toDateString(),
+                    'total_amount' => (float) $invoice->total_amount,
+                    'outstanding' => (float) $invoice->outstanding,
+                ])->all();
+        }
         $isCustomer = $party instanceof Customer;
         $invoiceModel = $isCustomer ? new SalesInvoice : new PurchaseInvoice;
         $invoiceKey = $isCustomer ? 'sales_invoice_id' : 'purchase_invoice_id';

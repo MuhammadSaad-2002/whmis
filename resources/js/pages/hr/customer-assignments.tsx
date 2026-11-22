@@ -7,8 +7,8 @@ import type { Option } from './shared';
 
 export type AssignmentOption = Option & { city: string | null; status: string; primary: boolean };
 
-export default function CustomerAssignments({ employeeId, linked, customers, options }: {
-    employeeId: number; linked: boolean; customers: Option[]; options: AssignmentOption[] | null;
+export default function CustomerAssignments({ employeeId, linked, customers, options, issue }: {
+    employeeId: number; linked: boolean; customers: Option[]; options: AssignmentOption[] | null; issue?: string | null;
 }) {
     const [open, setOpen] = useState(false);
     return <section className="space-y-3 rounded-xl border p-4">
@@ -17,7 +17,8 @@ export default function CustomerAssignments({ employeeId, linked, customers, opt
                 <p className="text-sm text-muted-foreground">Active assigned customers appear in this Booker’s booking form.</p></div>
             {options !== null && <Button variant="outline" onClick={() => setOpen(true)}>Assign Customers</Button>}
         </div>
-        {!linked ? <p className="text-sm text-amber-700">Edit this employee and select their Booker system login before assigning customers.</p>
+        {issue && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">{issue}</p>}
+        {!linked ? !issue && <p className="text-sm text-amber-700">Edit this employee and select their Booker system login before assigning customers.</p>
             : <div className="flex max-h-40 flex-wrap gap-2 overflow-auto">{customers.map(c => <span key={c.id} className="rounded-md bg-muted px-3 py-1.5 text-sm">{c.name}</span>)}
                 {!customers.length && <p className="text-sm text-muted-foreground">No customers assigned yet.</p>}</div>}
         {open && options !== null && <AssignmentDialog employeeId={employeeId} customers={customers} options={options} onClose={() => setOpen(false)}/>}

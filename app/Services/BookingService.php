@@ -12,6 +12,28 @@ use RuntimeException;
 
 class BookingService
 {
+    /** Repeat quantities using today's catalogue; old prices and promotions are not promises. */
+    public function repeatPrefill(Booking $booking, int $warehouseId): array
+    {
+        $items = [];
+        $skipped = [];
+        foreach ($booking->items()->with('product')->get()->groupBy('product_id') as $productId => $lines) {
+            $product = \App\Models\Product::active()->whereKey($productId)->with('company:id,name')
+                ->withSum(['batches as stock' => fn ($q) => $q->where('warehouse_id', $warehouseId)], 'qty_available')->first();
+            if (! $product) {
+                $skipped[] = $lines->first()->product?->name ?? "Product #{$productId}";
+                continue;
+            }
+            $items[] = ['product_id' => $product->id, 'product_name' => $product->name,
+                'quantity' => (string) $lines->sum('quantity'), 'requested_bonus' => '0', 'incentives' => [],
+                'trade_price' => (string) $product->trade_price, 'discount_percent' => (string) $product->default_discount_percent,
+                'gst_percent' => (string) $product->tax_percent, 'remarks' => '',
+                'retail_price' => (string) $product->retail_price, 'company' => $product->company?->name,
+                'stock' => (float) ($product->stock ?? 0)];
+        }
+        return ['customer_id' => $booking->customer_id, 'items' => $items, 'source' => $booking->booking_number, 'skipped' => $skipped];
+    }
+
     public function __construct(
         private readonly NumberSeriesService $numbers,
         private readonly IncentiveEngine $incentives,

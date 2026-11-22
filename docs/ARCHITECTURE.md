@@ -67,7 +67,17 @@ services remain unchanged. See [HR_MODULE.md](HR_MODULE.md) for accounting polic
 
 ## Runtime and deployment
 
+- Distribution operations use `DispatchService`, `CollectionService`,
+  `InvoiceBalanceService`, `OperationsController`, and `BookerWorkdayController`.
+  Invoice balances are shared with customer payment allocation lookups.
+  Operational events reference existing invoices but never repost stock or money.
+- `whmis:provision` applies additive upgrade seeds; `whmis:doctor` and
+  `/system/health` expose read-only readiness checks. See
+  [DISTRIBUTION_OPERATIONS.md](DISTRIBUTION_OPERATIONS.md).
+
 - Local development can use `composer dev` for server, queue listener, logs, and Vite.
 - Production uses committed PHP dependencies and compiled assets.
-- `.cpanel.yml` is tolerant with `|| true`, so deployment may not hard-fail even if a task did not run. Verify production after deploy.
+- `.cpanel.yml` now chains migration, provisioning, cache clearing, and readiness
+  checks so failures are not suppressed. App-up and an existing storage link
+  remain tolerant. Verify the production workflows after deployment.
 - Queue, session, and cache drivers can use database tables created by migrations.

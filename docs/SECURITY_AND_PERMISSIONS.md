@@ -1,5 +1,12 @@
 # WHMIS Security and Permissions
 
+Distribution operations add `dispatch.view/manage`, `collections.view/manage`,
+and `system.health`. Default grants, scoped Booker workday, and safe assignee
+selection are detailed in [DISTRIBUTION_OPERATIONS.md](DISTRIBUTION_OPERATIONS.md).
+Employee profiles explicitly explain Booker setup requirements. Permission SQL
+is additive and also restores the existing Admin/Super Admin `bookers.assign`
+grant; field Bookers receive no organization-wide operations or health access.
+
 WHMIS uses Laravel session authentication with Spatie Laravel Permission. Routes
 are permission-gated with `can:` middleware, and React receives roles and
 permissions from `HandleInertiaRequests`.

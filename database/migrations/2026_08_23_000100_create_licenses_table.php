@@ -18,8 +18,10 @@ return new class extends Migration
         Schema::create('licenses', function (Blueprint $table) {
             $table->id();
             $table->string('key')->unique();
-            $table->timestamp('expires_at');
-            $table->timestamp('activated_at');
+            // Explicit defaults avoid implicit zero dates on strict MySQL/MariaDB.
+            // LicenseService supplies both dates on every activation.
+            $table->timestamp('expires_at')->useCurrent();
+            $table->timestamp('activated_at')->useCurrent();
             $table->foreignId('activated_by')->nullable()->constrained('users')->nullOnDelete();
             $table->string('notes')->nullable();
             $table->timestamps();

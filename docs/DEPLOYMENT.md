@@ -7,7 +7,7 @@ the cPanel host needs **only PHP 8.2+ and MySQL** — no Node, no Composer.
 
 Deployment uses **cPanel Git™ Version Control**: after each pull, cPanel runs the
 `.cpanel.yml` script in the repo root. That script now **provisions the database
-on its own** — `migrate → db:seed → storage:link → optimize:clear` — so a first
+on its own** — `migrate → whmis:provision → optimize:clear → whmis:doctor` — so a first
 deploy needs no phpMyAdmin import.
 
 Production is `whms.digitalupthrust.com.pk`. Required PHP extensions:
@@ -50,14 +50,24 @@ them to `775` via File Manager → Permissions.
 Select **PHP 8.4** for the domain. `.cpanel.yml` calls the CloudLinux alt-php CLI
 at `/opt/alt/php84/usr/bin/php`. If the host isn't CloudLinux or the path differs,
 find it (`which php` in Terminal, or cPanel MultiPHP) and update `.cpanel.yml`
-first — otherwise the deploy tasks silently no-op (`|| true`) and the DB won't seed.
+first — otherwise the critical deployment task fails and setup remains incomplete.
 
 ### 6. Deploy
 Git Version Control → the repo → **Manage** → **Update from Remote**, then
 **Deploy HEAD Commit**. The pull triggers `.cpanel.yml`:
 ```
-artisan up → migrate --force → db:seed --force → storage:link → optimize:clear
+artisan up → storage:link → migrate --force → whmis:provision → optimize:clear → whmis:doctor
 ```
+
+Critical steps are chained so migration/provision/readiness failures are visible.
+`whmis:provision` preserves existing role grants on an established installation;
+it applies baseline seeds only when no roles exist. `storage:link` tolerates an
+already-existing link. `whmis:doctor` is read-only and also available at System
+Readiness for authorized administrators.
+
+For manual phpMyAdmin upgrades, use the exact SQL files and order in
+[DISTRIBUTION_OPERATIONS.md](DISTRIBUTION_OPERATIONS.md). Do not import schema SQL
+already applied by a migration. The schema SQL registers its migration.
 
 ### 7. Scheduler cron (optional)
 cPanel → **Cron Jobs**, every minute (adjust the PHP path + app path):

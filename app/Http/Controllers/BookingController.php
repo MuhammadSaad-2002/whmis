@@ -55,11 +55,24 @@ class BookingController extends Controller
 
     public function create(Request $request)
     {
+        $data = $request->validate(['customer_id' => 'nullable|integer', 'repeat_booking_id' => 'nullable|integer']);
+        $warehouse = Warehouse::default();
+        $prefill = null;
+        if (! empty($data['repeat_booking_id'])) {
+            $source = Booking::findOrFail($data['repeat_booking_id']);
+            $this->authorizeView($request, $source);
+            abort_unless($this->customerOptions($request)->contains('id', $source->customer_id), 403);
+            $prefill = $this->bookings->repeatPrefill($source, $warehouse->id);
+        } elseif (! empty($data['customer_id'])) {
+            abort_unless($this->customerOptions($request)->contains('id', (int) $data['customer_id']), 403);
+            $prefill = ['customer_id' => (int) $data['customer_id'], 'items' => [], 'source' => null, 'skipped' => []];
+        }
         return Inertia::render('bookings/form', [
             'customers' => $this->customerOptions($request),
-            'warehouse' => Warehouse::default()->only(['id', 'name']),
+            'warehouse' => $warehouse->only(['id', 'name']),
             'bookers' => $this->bookerOptions($request),
             'booking' => null,
+            'bookingPrefill' => $prefill,
         ]);
     }
 

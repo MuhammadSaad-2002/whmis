@@ -19,8 +19,8 @@
 CREATE TABLE IF NOT EXISTS `licenses` (
     `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `key`          VARCHAR(255) NOT NULL,
-    `expires_at`   TIMESTAMP NOT NULL,
-    `activated_at` TIMESTAMP NOT NULL,
+    `expires_at`   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `activated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `activated_by` BIGINT UNSIGNED NULL,
     `notes`        VARCHAR(255) NULL,
     `created_at`   TIMESTAMP NULL DEFAULT NULL,

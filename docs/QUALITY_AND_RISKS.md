@@ -40,8 +40,12 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
   Payroll duties are permission-separated, not mandatory two-person approval.
 - Full-suite Excel exports may require `php -d memory_limit=512M vendor/bin/phpunit`
   (setting memory on the Artisan wrapper does not propagate to its test subprocess).
-  `npx tsc --noEmit` currently reports pre-existing errors in login/reset-password
-  form types and welcome-page `mixBlendMode`; production Vite build is separate.
+  `npx tsc --noEmit` now passes after correcting auth form type aliases and moving
+  the welcome-page blend mode to CSS. Production Vite build is a separate check.
+- `DistributionOperationsTest` covers scoped visits/repeat bookings, dispatch
+  caps/corrections/retries/returns, collection balance parity and promises, role
+  boundaries, setup messaging, and additive provisioning. Manual operations SQL
+  is verified against a disposable MariaDB schema, not the working database.
 
 - Money math: `MarginCalculator` and `resources/js/lib/invoice-math.ts` must stay aligned.
 - Stock mutation: `InventoryService` should remain the single mutation path.
@@ -73,7 +77,9 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
 
 ## Evidence-backed risks
 
-- `.cpanel.yml` uses tolerant `|| true` deployment tasks. Safe deploys need manual verification because failed migrate/seed/link/clear tasks may not fail the cPanel deployment.
+- `.cpanel.yml` now chains critical migration/provision/cache/doctor steps. It
+  does not make a live deployment atomic; production workflow checks and a backup
+  are still required. Doctor checks setup, not financial reconciliation or restore.
 - `vendor/` and `public/build` are intentionally committed for cPanel. Package or frontend changes must update and commit the generated/runtime assets needed by production.
 - `CLAUDE.md` contains important existing architecture rules. Keep this docs set and `CLAUDE.md` synchronized or future agents may follow stale guidance.
 - The route inventory is large, so route/permission changes should be checked with `php artisan route:list` and at least targeted HTTP tests.

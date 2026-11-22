@@ -6,6 +6,17 @@ changing cPanel/manual deployment assumptions.
 
 ## Main entities
 
+### Distribution operations
+
+`booker_visits` is unique per Booker/customer/date. `dispatches` has one optional
+tracker per sales invoice; `dispatch_events` and `dispatch_event_items` preserve
+delivery actions and signed delivery/correction quantities. A unique request UUID
+prevents duplicate event submission. `collection_follow_ups` stores append-only
+contact/promise history with assignee, actor, dates and notes. None of these tables
+is a stock or financial subledger. Their audit actions attach to the existing
+customer/invoice morph aliases, so no additional morph map entries are required.
+Schema and permission SQL: `database/manual/2026_11_16_*.sql`.
+
 ### Booking lifecycle timestamps
 
 `created_at` is the first persisted draft, not the business `booking_date`.

@@ -34,6 +34,15 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     Route::get('hr/my-profile', [\App\Http\Controllers\HrController::class, 'selfProfile'])->middleware('can:hr.self.view')->name('hr.self');
     Route::get('hr/employees/{employee}', [\App\Http\Controllers\HrController::class, 'employee'])->middleware('can:employees.view')->name('hr.employee');
     Route::put('hr/employees/{employee}/customers', [\App\Http\Controllers\HrController::class, 'assignCustomers'])->middleware(['can:employees.view', 'can:bookers.assign'])->name('hr.employee.customers');
+    Route::get('booker/workday', [\App\Http\Controllers\BookerWorkdayController::class, 'index'])->middleware('can:bookings.create')->name('booker.workday');
+    Route::put('booker/customers/{customer}/visit', [\App\Http\Controllers\BookerWorkdayController::class, 'visit'])->middleware('can:bookings.create')->name('booker.visit');
+    Route::get('dispatch', [\App\Http\Controllers\OperationsController::class, 'dispatches'])->middleware('can:dispatch.view')->name('dispatch.index');
+    Route::get('dispatch/{sale}', [\App\Http\Controllers\OperationsController::class, 'dispatch'])->middleware('can:dispatch.view')->name('dispatch.show');
+    Route::post('dispatch/{sale}/events', [\App\Http\Controllers\OperationsController::class, 'dispatchAction'])->middleware('can:dispatch.manage')->name('dispatch.record');
+    Route::get('collections', [\App\Http\Controllers\OperationsController::class, 'collections'])->middleware('can:collections.view')->name('collections.index');
+    Route::get('collections/{sale}', [\App\Http\Controllers\OperationsController::class, 'collection'])->middleware('can:collections.view')->name('collections.show');
+    Route::post('collections/{sale}/follow-ups', [\App\Http\Controllers\OperationsController::class, 'followUp'])->middleware('can:collections.manage')->name('collections.follow-up');
+    Route::get('system/health', fn (\App\Services\SystemHealthService $health) => \Inertia\Inertia::render('operations/health', ['checks' => $health->checks()]))->middleware('can:system.health')->name('system.health');
     Route::post('hr/employees', [\App\Http\Controllers\HrController::class, 'saveEmployee'])->middleware('can:employees.manage')->name('hr.employees.store');
     Route::put('hr/employees/{employee}', [\App\Http\Controllers\HrController::class, 'saveEmployee'])->middleware('can:employees.manage')->name('hr.employees.update');
     Route::post('hr/employees/{employee}/salary', [\App\Http\Controllers\HrController::class, 'salary'])->middleware('can:hr.payroll.manage')->name('hr.salary');

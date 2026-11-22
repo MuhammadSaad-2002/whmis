@@ -37,10 +37,12 @@ export const navGroups: { label: string; items: PermittedNavItem[] }[] = [
     {
         label: 'Transactions',
         items: [
+            { title: 'My Workday', url: '/booker/workday', icon: ClipboardList, permission: 'bookings.create' },
             { title: 'Bookings', url: '/bookings', icon: ClipboardList, permission: 'bookings.view' },
             { title: 'Sales Invoices', url: '/sales', icon: TrendingUp, permission: 'sales.view' },
             { title: 'Purchase Invoices', url: '/purchases', icon: ShoppingCart, permission: 'purchases.view' },
             { title: 'Returns', url: '/returns/sales', icon: Undo2, permission: 'returns.view' },
+            { title: 'Dispatch & Delivery', url: '/dispatch', icon: Boxes, permission: 'dispatch.view' },
         ],
     },
     {
@@ -61,6 +63,7 @@ export const navGroups: { label: string; items: PermittedNavItem[] }[] = [
         label: 'Finance',
         items: [
             { title: 'Payments', url: '/payments', icon: Banknote, permission: 'payments.view' },
+            { title: 'Collections & Recovery', url: '/collections', icon: Banknote, permission: 'collections.view' },
             { title: 'Financial Position', url: '/ledger/position', icon: BookUser, permission: 'ledger.view' },
         ],
     },
@@ -100,6 +103,7 @@ export const navGroups: { label: string; items: PermittedNavItem[] }[] = [
         label: 'Administration',
         items: [
             { title: 'Users', url: '/users', icon: Users, permission: 'users.manage' },
+            { title: 'System Readiness', url: '/system/health', icon: ShieldCheck, permission: 'system.health' },
             { title: 'Roles & Permissions', url: '/roles', icon: ShieldCheck, permission: 'roles.manage' },
             { title: 'Audit Log', url: '/audit-log', icon: ScrollText, permission: 'audit.view' },
             { title: 'Booker Assignments', url: '/booker-assignments', icon: UserCog, permission: 'audit.view' },

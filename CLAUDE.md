@@ -52,6 +52,12 @@ needs the matching HR schema and additive permission SQL in `database/manual/`.
 
 ## Frontend conventions
 
+Distribution operations: read `docs/DISTRIBUTION_OPERATIONS.md`. `DispatchService`
+tracks fulfilment only; stock remains deducted at invoice posting. Collection
+promises are not receipts. `InvoiceBalanceService` is shared with customer
+payment allocation lookups. `whmis:provision` applies additive upgrade seeds and
+`whmis:doctor` verifies production readiness without mutating business data.
+
 - Pages in `resources/js/pages/<module>/`; use `AppLayout`, `route()` (Ziggy),
   `Paginator`, `money/amount/qty` from `lib/format.ts`.
 - Invoice entry grids: `useKeyboardGrid` hook (Enter/↑↓/F2) + `useInvoiceHotkeys`

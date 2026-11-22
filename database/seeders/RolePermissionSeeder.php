@@ -93,5 +93,6 @@ class RolePermissionSeeder extends Seeder
         );
         $admin->assignRole('Super Admin');
         $this->call(HrPermissionSeeder::class);
+        $this->call(DistributionPermissionSeeder::class);
     }
 }

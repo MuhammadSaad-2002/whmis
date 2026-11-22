@@ -26,9 +26,22 @@ likely to matter when changing each module.
 
 ## Transactions
 
+- Booker Workday (`/booker/workday`): assigned-customer visit planning, account
+  balances, customer-preselected bookings and repeat quantities at current prices.
+- Dispatch (`/dispatch`): posted invoice picking/packing, staff assignment, dated
+  partial delivery attempts, corrections, return-settled closure and basic picking
+  list printing. Tracking does not move stock or create payments.
+- Collections (`/collections`): live positive invoice balances, return/payment
+  breakdown, overdue/latest-follow-up filters, responsible staff and promises.
+  Follow-ups do not settle invoices. See [DISTRIBUTION_OPERATIONS.md](DISTRIBUTION_OPERATIONS.md).
+
 - Purchases: list/create/edit/post/cancel/duplicate/print under `/purchases`.
 - Sales: list/create/edit/post/cancel/print/summary/net-position under `/sales`.
 - Bookings: draft, submit, approve, reject, cancel, and convert to linked draft sales invoice.
+- Mobile booking items use compact cards with quantity/bonus/price, stock and
+  retail information, incentive actions, and a line total. Discount, GST, and
+  remarks expand on demand; a collapsed summary indicates existing adjustments.
+  Discount/GST validation errors expand the optional fields automatically.
 - Booking lists show first-save and latest-change timestamps, with current-status
   time. The form's expandable activity panel shows creation, last draft save,
   submission, approval/rejection, conversion, and cancellation in Asia/Karachi

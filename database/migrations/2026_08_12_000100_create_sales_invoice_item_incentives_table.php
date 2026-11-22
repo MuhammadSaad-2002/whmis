@@ -27,9 +27,10 @@ return new class extends Migration
             $table->timestamps();
 
             // One incentive of a given type per line (bonuses sum across types, not within).
-            $table->unique(['sales_invoice_item_id', 'rule_type']);
-            $table->index(['sales_invoice_id']);
-            $table->index(['customer_id', 'incentive_rule_id']);
+            // Match the manual SQL names and stay within MySQL's 64-character limit.
+            $table->unique(['sales_invoice_item_id', 'rule_type'], 'sii_item_type_unique');
+            $table->index(['sales_invoice_id'], 'sii_invoice_index');
+            $table->index(['customer_id', 'incentive_rule_id'], 'sii_customer_rule_index');
         });
     }
 

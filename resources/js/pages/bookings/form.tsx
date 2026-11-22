@@ -80,6 +80,7 @@ interface BookingDto extends BookingTimestamps {
 }
 
 interface Props {
+    bookingPrefill?: { customer_id: number; items: ItemRow[]; source: string | null; skipped: string[] } | null;
     customers: { id: number; name: string; city: string | null }[];
     warehouse: { id: number; name: string };
     // Present only for approvers/admin (who may credit a booking to a booker);
@@ -127,7 +128,7 @@ const statusVariant = (status: string) =>
     status === 'approved' || status === 'converted' ? 'default'
         : status === 'rejected' || status === 'cancelled' ? 'destructive' : 'secondary';
 
-export default function BookingForm({ customers, warehouse, bookers, booking }: Props) {
+export default function BookingForm({ customers, warehouse, bookers, booking, bookingPrefill }: Props) {
     const { can } = usePermissions();
     const showAdminDetails = can('bookings.approve');
     const isMobile = useIsMobile();
@@ -135,7 +136,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
     const readonly = !isDraft;
 
     const [header, setHeader] = useState({
-        customer_id: booking ? String(booking.customer_id) : '',
+        customer_id: booking ? String(booking.customer_id) : bookingPrefill ? String(bookingPrefill.customer_id) : '',
         booker_id: booking?.booker?.id ? String(booking.booker.id) : '',
         booking_date: booking?.booking_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
         notes: booking?.notes ?? '',
@@ -157,7 +158,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                   company: item.product?.company?.name ?? null,
                   stock: Number(item.product?.stock ?? 0),
               }))
-            : [emptyRow()],
+            : bookingPrefill?.items.length ? bookingPrefill.items : [emptyRow()],
     );
 
     const [ruleOpen, setRuleOpen] = useState(false);
@@ -489,6 +490,10 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                     {can('bookings.approve') ? 'No active customers are available. Add or activate a customer in Customers first.' : 'No active customers are assigned to your login. Ask your administrator to open Employees → your profile → Assign Customers. Then reopen New Booking.'}
                 </div>}
                 {booking && <BookingActivity booking={booking} />}
+                {bookingPrefill?.source && <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+                    Repeating quantities from {bookingPrefill.source}. Current catalogue prices apply; review bonus quantities, discounts and incentive rules before saving.
+                    {bookingPrefill.skipped.length > 0 && <p className="mt-1 text-destructive">Unavailable products omitted: {bookingPrefill.skipped.join(', ')}.</p>}
+                </div>}
                 <div
                     data-enter-nav
                     className="grid grid-cols-1 gap-3 rounded-xl border p-2.5 [&>div]:min-w-0 [&>div>label]:mb-1 [&>div>label]:block sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-5 xl:gap-x-2 xl:gap-y-1.5 xl:[&>div>button]:h-8 xl:[&>div>input]:h-8 xl:[&>div>label]:whitespace-nowrap xl:[&>div>label]:text-[11px]"
@@ -564,26 +569,25 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                     )}
                 </div>
 
-                <div className="rounded-xl border">
+                <div className={isMobile ? '' : 'rounded-xl border'}>
                     {isMobile && (
-                        <div className="space-y-3 p-3">
+                        <div className="space-y-3">
                             {rows.map((row, rowIndex) => {
                                 const line = computed[rowIndex];
                                 const hasDiscountIncentive = row.incentives.some((inc) => isDiscountType(inc.rule_type));
                                 return (
-                                    <div key={rowIndex} className="space-y-3 rounded-lg border p-3">
+                                    <div key={rowIndex} className="min-w-0 space-y-3 rounded-xl border bg-card p-3 shadow-sm [&_input]:min-w-0 [&_input]:text-base [&_label]:mb-1 [&_label]:block">
                                         <div className="flex items-center justify-between">
-                                            <span className="text-xs font-semibold uppercase text-muted-foreground">Line {rowIndex + 1}</span>
+                                            <span className="rounded-md bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground">Item {rowIndex + 1}</span>
                                             {!readonly && (
-                                                <button type="button" onClick={() => removeRow(rowIndex)} className="text-muted-foreground hover:text-destructive">
+                                                <button type="button" aria-label={`Remove item ${rowIndex + 1}`} onClick={() => removeRow(rowIndex)} className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                                                     <Trash2 className="size-4" />
                                                 </button>
                                             )}
                                         </div>
 
                                         <div>
-                                            <Label className="text-xs text-muted-foreground">Product</Label>
-                                            <div className={`rounded-md border ${rowErrors[rowIndex]?.product_id ? 'ring-1 ring-destructive' : ''}`}>
+                                            <div className={`overflow-hidden rounded-md border [&_input]:h-10 [&_input]:font-medium ${rowErrors[rowIndex]?.product_id ? 'ring-1 ring-destructive' : ''}`}>
                                                 <ProductSearchCell
                                                     showSupplier={showAdminDetails}
                                                     value={row.product_name}
@@ -600,13 +604,13 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                                             {row.product_id && (
                                                 <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                                                     {showAdminDetails && <span className="break-words">{row.company ?? '—'}</span>}
-                                                    <span className={row.stock <= 0 ? 'text-destructive' : ''}>Stock {qty(row.stock)}</span>
+                                                    <span className={`rounded bg-muted px-1.5 py-0.5 ${row.stock <= 0 ? 'text-destructive' : ''}`}>Stock {qty(row.stock)}</span>
                                                     {row.retail_price && <span>Retail {amount(row.retail_price)}</span>}
                                                 </div>
                                             )}
                                         </div>
 
-                                        <div className="grid grid-cols-3 gap-2">
+                                        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)] gap-2 [&_input]:h-10">
                                             <div>
                                                 <Label className="text-xs text-muted-foreground">Qty</Label>
                                                 <Input
@@ -645,7 +649,14 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-3 gap-2">
+                                        <details className="rounded-lg bg-muted/30 px-3 py-2" open={rowErrors[rowIndex]?.discount_percent || rowErrors[rowIndex]?.gst_percent ? true : undefined}>
+                                            <summary className="cursor-pointer py-1 text-xs font-medium text-muted-foreground">
+                                                Discount / GST / Remarks
+                                                {(Number(row.discount_percent) > 0 || Number(row.gst_percent) > 0 || hasDiscountIncentive || row.remarks) && (
+                                                    <span className="ml-1"> · {qty(effectiveDiscountPercent(line.gross, line.discount_amount))}% off · {qty(row.gst_percent)}% GST{row.remarks ? ' · Note added' : ''}</span>
+                                                )}
+                                            </summary>
+                                        <div className="mt-2 grid grid-cols-2 gap-2">
                                             <div>
                                                 <Label className="text-xs text-muted-foreground">Disc %</Label>
                                                 {hasDiscountIncentive ? (
@@ -681,22 +692,21 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                                                     className="text-right"
                                                 />
                                             </div>
-                                            <div>
-                                                <Label className="text-xs text-muted-foreground">Net</Label>
-                                                <div className="flex h-9 items-center justify-end rounded-md border bg-muted/40 px-2 text-sm font-medium tabular-nums">
-                                                    {amount(line.net_amount)}
-                                                </div>
-                                            </div>
                                         </div>
+                                            <div className="mt-2">
+                                                <Label className="text-xs text-muted-foreground">Remarks</Label>
+                                                <Input value={row.remarks} disabled={readonly} placeholder="Add a note (optional)"
+                                                    onChange={(e) => setCell(rowIndex, 'remarks', e.target.value)} />
+                                            </div>
+                                        </details>
 
-                                        <div>
-                                            <Label className="text-xs text-muted-foreground">Incentives</Label>
+                                        <div className="flex flex-wrap items-end justify-between gap-2 border-t pt-3">
                                             <div className="flex flex-wrap items-center gap-1">
                                                 {row.incentives.map((inc) => (
-                                                    <Badge key={inc.id} variant="outline" className="gap-1 pr-1">
+                                                    <Badge key={inc.id} variant="outline" className="max-w-full gap-1 pr-1">
                                                         <span className="truncate">{inc.name}</span>
                                                         {!readonly && (
-                                                            <button type="button" onClick={() => removeRule(rowIndex, inc)} className="rounded-sm hover:text-destructive">
+                                                            <button type="button" aria-label={`Remove ${inc.name}`} onClick={() => removeRule(rowIndex, inc)} className="flex size-8 shrink-0 items-center justify-center rounded-sm hover:text-destructive">
                                                                 <X className="size-3" />
                                                             </button>
                                                         )}
@@ -705,20 +715,17 @@ export default function BookingForm({ customers, warehouse, bookers, booking }: 
                                                 {!readonly && (
                                                     <Button
                                                         type="button" variant="outline" size="sm" disabled={!row.product_id}
+                                                        className="h-10"
                                                         onClick={() => { setActiveRow(rowIndex); setRuleOpen(true); }}
                                                     >
-                                                        <Plus className="mr-1 size-3" /> Rule
+                                                        <Plus className="mr-1 size-3" /> Incentive
                                                     </Button>
                                                 )}
                                             </div>
-                                        </div>
-
-                                        <div>
-                                            <Label className="text-xs text-muted-foreground">Remarks</Label>
-                                            <Input
-                                                value={row.remarks} disabled={readonly}
-                                                onChange={(e) => setCell(rowIndex, 'remarks', e.target.value)}
-                                            />
+                                            <div className="ml-auto text-right">
+                                                <div className="text-[11px] text-muted-foreground">Line total</div>
+                                                <div className="text-base font-semibold tabular-nums">{money(line.net_amount)}</div>
+                                            </div>
                                         </div>
                                     </div>
                                 );
