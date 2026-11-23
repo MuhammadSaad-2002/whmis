@@ -10,6 +10,7 @@ use App\Services\ReportService;
 use App\Services\ReportVisualizationService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
 
@@ -51,7 +52,7 @@ class ReportController extends Controller
         if ($request->format === 'pdf') {
             return Pdf::loadView('pdf.report', [
                 'title' => $meta['title'],
-                'filters' => $filters,
+                'filters' => in_array('date_range', $meta['filters'], true) ? $filters : Arr::except($filters, ['from', 'to']),
                 'columns' => $data['columns'],
                 'rows' => $data['rows'],
                 'totals' => $data['totals'] ?? [],

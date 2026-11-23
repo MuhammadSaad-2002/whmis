@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Batch;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
@@ -9,9 +10,11 @@ use App\Models\PurchaseInvoice;
 use App\Models\SalesInvoice;
 use App\Models\User;
 use App\Services\InvoicePostingService;
+use App\Services\InventoryService;
 use App\Services\NumberSeriesService;
 use App\Services\ReportService;
 use App\Services\ReportVisualizationService;
+use App\Services\ReturnService;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -131,6 +134,74 @@ class ReportTest extends TestCase
             'from' => now()->toDateString(), 'to' => now()->toDateString()]))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('rows', 1));
+    }
+
+    public function test_all_time_purchases_stock_distinguishes_drafts_reservations_and_live_stock(): void
+    {
+        $sale = SalesInvoice::where('status', 'posted')->firstOrFail();
+        $sale->update(['invoice_date' => now()->subYears(2)->toDateString()]);
+        $purchase = PurchaseInvoice::create([
+            'invoice_number' => 'PI-OLDER', 'company_id' => $this->product->company_id,
+            'warehouse_id' => 1, 'invoice_date' => now()->subYears(2)->toDateString(), 'purchase_type' => 'credit',
+        ]);
+        $purchase->items()->create([
+            'product_id' => $this->product->id, 'batch_number' => 'B2', 'quantity' => 10,
+            'bonus_quantity' => 2, 'purchase_rate' => 80, 'trade_price' => 100,
+        ]);
+        app(InvoicePostingService::class)->postPurchase($purchase);
+        $returnedPurchaseItem = $purchase->items()->firstOrFail();
+        $date = now()->toDateString();
+        app(ReturnService::class)->createPurchaseReturn($purchase->refresh(), [
+            ['purchase_invoice_item_id' => $returnedPurchaseItem->id, 'quantity' => 3],
+        ], $date);
+        app(ReturnService::class)->createSalesReturn($sale, [
+            ['sales_invoice_item_id' => $sale->items()->firstOrFail()->id, 'quantity' => 4],
+        ], $date);
+
+        $batch = Batch::where('batch_number', 'B1')->firstOrFail();
+        foreach (['reserved' => 7, 'unreserved' => 6, 'cancelled' => 50] as $kind => $units) {
+            $draft = SalesInvoice::create([
+                'invoice_number' => 'SI-'.$kind, 'customer_id' => $this->customer->id, 'warehouse_id' => 1,
+                'invoice_date' => $date, 'sale_type' => 'credit', 'status' => $kind === 'cancelled' ? 'cancelled' : 'draft',
+                'stock_reserved' => $kind === 'reserved',
+            ]);
+            $draft->items()->create([
+                'product_id' => $this->product->id, 'quantity' => $units, 'bonus_quantity' => $kind === 'reserved' ? 1 : 0,
+                'trade_price' => 100, 'batch_id' => $kind === 'reserved' ? $batch->id : null,
+            ]);
+            if ($kind === 'reserved') {
+                app(InventoryService::class)->reserve($batch, 8, $draft);
+            }
+        }
+
+        // Special stock stays outside the saleable inventory figures.
+        foreach (['is_sample', 'is_loan'] as $flag) {
+            Batch::create(['product_id' => $this->product->id, 'warehouse_id' => 1,
+                'batch_number' => $flag, 'qty_available' => 100, $flag => true]);
+        }
+        $other = Product::create(['name' => 'Stock-only product', 'company_id' => Company::create(['name' => 'Other Supplier'])->id]);
+        Batch::create(['product_id' => $other->id, 'warehouse_id' => 1, 'batch_number' => 'OPENING', 'qty_available' => 10]);
+
+        $url = route('reports.show', ['key' => 'all-time-purchases-stock', 'company_id' => $this->product->company_id, 'from' => $date, 'to' => $date]);
+        $this->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->component('reports/show')
+            ->where('report.filters', ['supplier'])
+            ->has('columns', 6)
+            ->has('rows', 1)
+            ->where('rows.0.product', 'Panadol 500mg')
+            ->missing('rows.0.supplier')->missing('rows.0.qty_returned')
+            ->where('rows.0.purchased', 109)
+            ->where('rows.0.sold', 18)
+            ->where('rows.0.on_hold', 14)
+            ->where('rows.0.on_hand', 91)
+            ->where('rows.0.available', 83)
+            ->where('totals.available', 83));
+
+        $this->get($url.'&format=xlsx')->assertOk()->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        $this->get($url.'&format=pdf')->assertOk()->assertHeader('content-type', 'application/pdf');
+
+        $this->get(route('reports.show', 'all-time-purchases-stock'))->assertInertia(fn (Assert $page) => $page
+            ->has('rows', 2)->where('rows.1.purchased', 0)->where('rows.1.available', 10)->where('totals.available', 93));
     }
 
     public function test_booker_sales_groups_by_assigned_booker(): void

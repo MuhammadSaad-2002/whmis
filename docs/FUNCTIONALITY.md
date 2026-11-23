@@ -105,6 +105,16 @@ report and buckets returns on their actual return date.
 bonus units, returned quantity, net quantity sold, gross COGS, return COGS, and
 net COGS per product, with grand totals and an optional supplier filter.
 
+`all-time-purchases-stock` (Reports → Inventory → All-Time Purchases, Sales & Stock)
+shows one row per product and a grand total. Its only filter is the product's
+supplier, with no supplier column. Net Purchased and Net Sold include bonus units
+and deduct effective purchase and posted sales returns respectively. On Hold
+counts all draft sales invoice units, including drafts without reservations.
+Stock on Hand adds available and reserved batch stock. Available Now reads the
+live available quantity, which already accounts for reservations and stock
+movements. Both stock columns exclude sample and borrowed-in stock. Excel and
+PDF use the same figures.
+
 `stock-on-loan` uses `stock_loans.loan_date` as the transaction date and returns
 one row per loan item within the selected period. Posted, partially returned,
 returned, and closed loans are included; pending drafts and cancelled loans are
@@ -131,6 +141,7 @@ Current report keys:
 - `sales-register`
 - `product-sales`
 - `all-time-product-cogs`
+- `all-time-purchases-stock`
 - `product-sales-daily`
 - `customer-sales`
 - `booker-sales`

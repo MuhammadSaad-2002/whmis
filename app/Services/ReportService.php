@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\PurchaseInvoice;
 use App\Models\PurchaseInvoiceItem;
 use App\Models\PurchaseReturn;
+use App\Models\PurchaseReturnItem;
 use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceItem;
 use App\Models\SalesInvoiceItemIncentive;
@@ -48,6 +49,12 @@ class ReportService
             'supplier-purchases' => ['title' => 'Supplier Purchases', 'category' => 'Purchases', 'description' => 'Purchase volume and margin per supplier', 'filters' => ['date_range']],
             'bonus-analysis' => ['title' => 'Bonus Analysis', 'category' => 'Purchases', 'description' => 'Bonus received vs bonus given away per product', 'filters' => ['date_range']],
             'stock-position' => ['title' => 'Stock Position', 'category' => 'Inventory', 'description' => 'Current stock and value at cost', 'filters' => ['supplier']],
+            'all-time-purchases-stock' => [
+                'title' => 'All-Time Purchases, Sales & Stock',
+                'category' => 'Inventory',
+                'description' => 'Purchased and sold units include bonus units and reflect returns. On Hold includes all draft sales invoices. On Hand includes reserved stock, and Available is stock free of reservations.',
+                'filters' => ['supplier'],
+            ],
             'stock-movement' => ['title' => 'Stock Movement', 'category' => 'Inventory', 'description' => 'Per-product opening, purchases, billed vs bonus units sold, closing and value at cost', 'filters' => ['date_range', 'supplier', 'product']],
             'expiry' => ['title' => 'Expiry Report', 'category' => 'Inventory', 'description' => 'In-stock batches by expiry window', 'filters' => ['expiry_window']],
             'sample-stock' => ['title' => 'Sample Stock', 'category' => 'Samples', 'description' => 'Free-sample stock on hand per product and batch (segregated from actual stock)', 'filters' => ['supplier', 'product']],
@@ -79,6 +86,7 @@ class ReportService
             'supplier-purchases' => $this->supplierPurchases($from, $to),
             'bonus-analysis' => $this->bonusAnalysis($from, $to),
             'stock-position' => $this->stockPosition($filters),
+            'all-time-purchases-stock' => $this->allTimePurchasesStock($filters),
             'stock-movement' => $this->stockMovement($from, $to, $filters),
             'expiry' => $this->expiry($filters),
             'sample-stock' => $this->sampleStock($filters),
@@ -743,6 +751,74 @@ class ReportService
                 'given' => (float) $rows->sum('given'),
                 'net' => (float) $rows->sum('net'),
             ],
+        ];
+    }
+
+    private function allTimePurchasesStock(array $filters): array
+    {
+        $purchases = PurchaseInvoiceItem::query()
+            ->whereHas('invoice', fn ($q) => $q->where('status', PurchaseInvoice::STATUS_POSTED))
+            ->selectRaw('product_id, SUM(quantity + bonus_quantity) AS units')->groupBy('product_id');
+
+        // Purchase returns take effect on creation, including historical unlinked returns.
+        $purchaseReturns = PurchaseReturnItem::query()
+            ->selectRaw('product_id, SUM(quantity) AS units')->groupBy('product_id');
+
+        $sales = SalesInvoiceItem::query()
+            ->join('sales_invoices', 'sales_invoices.id', '=', 'sales_invoice_items.sales_invoice_id')
+            ->whereIn('sales_invoices.status', [SalesInvoice::STATUS_POSTED, SalesInvoice::STATUS_DRAFT])
+            ->selectRaw('product_id, SUM(CASE WHEN sales_invoices.status = ? THEN quantity + bonus_quantity ELSE 0 END) AS sold', [SalesInvoice::STATUS_POSTED])
+            ->selectRaw('SUM(CASE WHEN sales_invoices.status = ? THEN quantity + bonus_quantity ELSE 0 END) AS on_hold', [SalesInvoice::STATUS_DRAFT])
+            ->groupBy('product_id');
+
+        $salesReturns = SalesReturnItem::query()
+            ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED))
+            ->whereHas('invoiceItem.invoice', fn ($q) => $q->where('status', SalesInvoice::STATUS_POSTED))
+            ->selectRaw('product_id, SUM(quantity) AS units')->groupBy('product_id');
+
+        $stock = Batch::normal()
+            ->selectRaw('product_id, SUM(qty_available) AS available, SUM(qty_reserved) AS reserved')
+            ->groupBy('product_id');
+
+        // Aggregate first so multiple invoices, returns and batches cannot multiply each other.
+        $rows = Product::withTrashed()
+            ->when($filters['company_id'] ?? null, fn ($q, $id) => $q->where('products.company_id', $id))
+            ->leftJoinSub($purchases, 'purchases', 'purchases.product_id', '=', 'products.id')
+            ->leftJoinSub($purchaseReturns, 'purchase_returns', 'purchase_returns.product_id', '=', 'products.id')
+            ->leftJoinSub($sales, 'sales', 'sales.product_id', '=', 'products.id')
+            ->leftJoinSub($salesReturns, 'sales_returns', 'sales_returns.product_id', '=', 'products.id')
+            ->leftJoinSub($stock, 'stock', 'stock.product_id', '=', 'products.id')
+            ->where(fn ($q) => $q->whereNotNull('purchases.product_id')
+                ->orWhereNotNull('purchase_returns.product_id')
+                ->orWhereNotNull('sales.product_id')
+                ->orWhereRaw('COALESCE(stock.available, 0) <> 0 OR COALESCE(stock.reserved, 0) <> 0'))
+            ->selectRaw('products.name AS product, COALESCE(purchases.units, 0) - COALESCE(purchase_returns.units, 0) AS purchased')
+            ->selectRaw('COALESCE(sales.sold, 0) - COALESCE(sales_returns.units, 0) AS sold, COALESCE(sales.on_hold, 0) AS on_hold')
+            ->selectRaw('COALESCE(stock.available, 0) + COALESCE(stock.reserved, 0) AS on_hand, COALESCE(stock.available, 0) AS available')
+            ->orderBy('products.name')->orderBy('products.id')
+            ->toBase()->get()->map(fn ($row) => [
+                'product' => $row->product,
+                'purchased' => round((float) $row->purchased, 2),
+                'sold' => round((float) $row->sold, 2),
+                'on_hold' => round((float) $row->on_hold, 2),
+                'on_hand' => round((float) $row->on_hand, 2),
+                'available' => round((float) $row->available, 2),
+            ]);
+
+        $columns = [['key' => 'product', 'label' => 'Product']];
+        $totals = [];
+        foreach ([
+            'purchased' => 'Net Purchased', 'sold' => 'Net Sold', 'on_hold' => 'On Hold (Drafts)',
+            'on_hand' => 'Stock on Hand', 'available' => 'Available Now',
+        ] as $key => $label) {
+            $columns[] = ['key' => $key, 'label' => $label, 'align' => 'right', 'format' => 'qty'];
+            $totals[$key] = round((float) $rows->sum($key), 2);
+        }
+
+        return [
+            'columns' => $columns,
+            'rows' => $rows->all(),
+            'totals' => $totals,
         ];
     }
 
