@@ -1,6 +1,10 @@
 <?php
 
 return [
+    // Product identity is independent of the installation name (APP_NAME).
+    'product_name' => 'Tradentra',
+    'product_tagline' => 'The Complete Business Management Platform',
+
     /*
     |--------------------------------------------------------------------------
     | Document branding (PDF header & footer)

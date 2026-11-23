@@ -187,7 +187,6 @@ export default function ExecutiveDashboard(props: ExecutiveProps) {
                     <div className="absolute -right-20 -top-24 size-72 rounded-full bg-white/10 blur-3xl" />
                     <div className="relative flex flex-wrap items-end justify-between gap-4">
                     <div>
-                        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-white/60">WHMIS command centre</p>
                         <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Executive Overview</h1>
                         <p className="mt-1 text-sm text-white/70">
                             {PERIOD_LABELS[filterValues.period] ?? 'This Month'} · {shortDate(filterValues.from)} — {shortDate(filterValues.to)}

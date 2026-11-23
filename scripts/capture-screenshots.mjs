@@ -95,12 +95,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     }
   }
 
-  // 3) Workspace showcase — open several tabs from the sidebar.
+  // 3) Workspace showcase — open several tabs through the workspace deep link.
   try {
     await page.evaluate((key) => sessionStorage.removeItem(key), TABS_KEY);
-    await page.goto(`${BASE}/workspace`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    for (const title of ['Sales Invoices', 'Bookings', 'Inventory', 'Reports', 'Customers']) {
-      await page.getByRole('button', { name: title, exact: true }).click();
+    for (const route of ['/sales', '/bookings', '/inventory', '/reports', '/customers']) {
+      await page.goto(`${BASE}/workspace?open=${encodeURIComponent(route)}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.locator(`iframe[src=${JSON.stringify(route)}]`).waitFor({ state: 'attached', timeout: 15000 });
     }
     await page.getByRole('tab', { name: 'Sales Invoices' }).click();
     await sleep(2500);

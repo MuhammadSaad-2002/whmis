@@ -19,6 +19,19 @@ class AuthenticationTest extends TestCase
         $response->assertStatus(200);
     }
 
+    public function test_login_displays_tradentra_on_an_existing_installation(): void
+    {
+        config(['app.name' => 'Legacy WHMIS Installation']);
+
+        $response = $this->get('/login')
+            ->assertOk()
+            ->assertSee('<title inertia>Tradentra</title>', false)
+            ->assertSee('The Complete Business Management Platform')
+            ->assertSee('branding/tradentra-mark.svg');
+
+        $this->assertSame('Tradentra', $response->inertiaProps('name'));
+    }
+
     public function test_users_can_authenticate_using_the_login_screen()
     {
         $user = User::factory()->create();

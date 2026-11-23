@@ -14,7 +14,7 @@ export function stamp(value: string): string {
     return new Date(value).toLocaleString('en-GB', { timeZone: 'Asia/Karachi', dateStyle: 'medium', timeStyle: 'short' }) + ' PKT';
 }
 export function Layout({ title, description, children, actions }: { title: string; description: string; children: ReactNode; actions?: ReactNode }) {
-    return <AppLayout><Head title={title}/><main className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-4 p-4">
+    return <AppLayout><Head title={title}/><main className="flex w-full min-w-0 flex-col gap-4 p-4">
         <header className="flex flex-wrap items-start justify-between gap-3 border-b pb-4"><div><h1 className="text-2xl font-bold sm:text-3xl">{title}</h1><p className="mt-1 text-sm text-muted-foreground">{description}</p></div>{actions}</header>
         {children}
     </main></AppLayout>;

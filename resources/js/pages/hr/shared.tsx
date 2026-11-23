@@ -21,7 +21,10 @@ export const fieldLabel = (key: string) => key.replaceAll('_', ' ').replace(/\b\
 export function HrLayout({title,children,actions}:{title:string;children:ReactNode;actions?:ReactNode}) {
     return <AppLayout breadcrumbs={[{title:'Human Resources',href:'/hr/employees'},{title,href:'#'}]}>
         <Head title={title}/><div className="flex flex-col gap-5 p-4 md:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4"><div><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">People & Payroll</p><h1 className="text-3xl font-bold">{title}</h1></div>{actions}</div>
+            <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+                <h1 className="text-3xl font-bold">{title}</h1>
+                {actions}
+            </header>
             {children}
         </div>
     </AppLayout>;

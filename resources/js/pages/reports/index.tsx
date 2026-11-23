@@ -28,8 +28,7 @@ export default function ReportsIndex({ catalog }: { catalog: Record<string, Repo
             <Head title="Reports" />
             <div className="flex h-full flex-col gap-5 bg-gradient-to-b from-muted/30 to-background p-4 md:p-6">
                 <div className="rounded-2xl border border-primary/10 bg-gradient-to-br from-slate-950 via-slate-900 to-primary/80 p-6 text-white shadow-xl shadow-primary/10">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Business intelligence</p>
-                    <h1 className="mt-1 text-3xl font-bold tracking-tight md:text-4xl">Reports Centre</h1>
+                    <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Reports Centre</h1>
                     <p className="mt-2 max-w-2xl text-sm text-white/70">Grouped by workflow so the right operational or financial view is easy to find. Every report exports to Excel and PDF.</p>
                 </div>
 

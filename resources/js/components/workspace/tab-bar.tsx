@@ -1,6 +1,17 @@
-import { cn } from '@/lib/utils';
-import { X, XCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { type Tab } from '@/hooks/use-tabs';
+import { cn } from '@/lib/utils';
+import { ChevronDown, Layers, X, XCircle } from 'lucide-react';
 
 interface TabBarProps {
     tabs: Tab[];
@@ -8,6 +19,44 @@ interface TabBarProps {
     onFocus: (id: string) => void;
     onClose: (id: string) => void;
     onCloseAll: () => void;
+}
+
+export function MobileTabBar({ tabs, activeId, onFocus, onClose, onCloseAll }: TabBarProps) {
+    const activeTab = tabs.find((tab) => tab.id === activeId) ?? tabs[0];
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" className="h-11 w-full min-w-0 justify-start gap-2 px-1.5" aria-label={`Workspace tabs: ${activeTab.title}, ${tabs.length} open`}>
+                    <Layers aria-hidden="true" className="text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate text-left">{activeTab.title}</span>
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{tabs.length} open</span>
+                    <ChevronDown aria-hidden="true" className="text-muted-foreground" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" collisionPadding={8} className="max-h-[min(70dvh,var(--radix-dropdown-menu-content-available-height))] w-[var(--radix-dropdown-menu-trigger-width)] touch-pan-y overflow-y-auto overscroll-contain">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">Open tabs</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={activeTab.id} onValueChange={onFocus}>
+                    {tabs.map((tab) => (
+                        <DropdownMenuRadioItem key={tab.id} value={tab.id} className="min-h-11 cursor-pointer py-2">
+                            <span className="min-w-0 break-words">{tab.title}</span>
+                        </DropdownMenuRadioItem>
+                    ))}
+                </DropdownMenuRadioGroup>
+                {tabs.length > 1 && (
+                    <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="min-h-11 cursor-pointer" onSelect={() => onClose(activeTab.id)}>
+                            <X aria-hidden="true" /> Close current tab
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="min-h-11 cursor-pointer" onSelect={onCloseAll}>
+                            <XCircle aria-hidden="true" /> Close all tabs
+                        </DropdownMenuItem>
+                    </>
+                )}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
 }
 
 export function TabBar({ tabs, activeId, onFocus, onClose, onCloseAll }: TabBarProps) {

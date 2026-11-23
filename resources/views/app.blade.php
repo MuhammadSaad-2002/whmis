@@ -4,7 +4,10 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
-        <title inertia>{{ config('app.name', 'Laravel') }}</title>
+        <title inertia>{{ config('branding.product_name', 'Tradentra') }}</title>
+        <meta name="application-name" content="{{ config('branding.product_name', 'Tradentra') }}">
+        <meta name="description" content="{{ config('branding.product_tagline', 'The Complete Business Management Platform') }}">
+        <link rel="icon" type="image/svg+xml" href="{{ asset('branding/tradentra-mark.svg') }}">
 
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />

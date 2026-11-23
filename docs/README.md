@@ -1,6 +1,6 @@
-# WHMIS Engineering Docs
+# Tradentra Engineering Docs
 
-This folder is the engineering context map for WHMIS. Read it before changing
+This folder is the engineering context map for Tradentra (formerly WHMIS). Read it before changing
 business logic, stock movement, ledger behavior, permissions, deployment, or
 reports.
 
@@ -19,6 +19,7 @@ reports.
 ## Existing docs
 
 - `DEPLOYMENT.md` remains the production cPanel deployment guide.
+- [BRAND.md](BRAND.md) contains the current product identity and vector assets.
 - `commercial/` contains business/commercial documents.
 - `presentation/` contains generated presentation docs and screenshots.
 

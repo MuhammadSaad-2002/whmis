@@ -3,11 +3,13 @@ import { AppShell } from '@/components/app-shell';
 import { AppSidebar } from '@/components/app-sidebar';
 import { NotificationBell } from '@/components/notification-bell';
 import { SidebarTrigger } from '@/components/ui/sidebar';
-import { TabBar } from '@/components/workspace/tab-bar';
+import { MobileTabBar, TabBar } from '@/components/workspace/tab-bar';
 import { WorkspaceFrame } from '@/components/workspace/workspace-frame';
-import { clearWorkspaceTabs, useTabs, WORKSPACE_LOGOUT_EVENT } from '@/hooks/use-tabs';
+import { WorkspaceTopBar } from '@/components/workspace/workspace-top-bar';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { clearWorkspaceTabs, useTabs, WORKSPACE_LOGOUT_EVENT } from '@/hooks/use-tabs';
 import { WORKSPACE_PATH, type ShellMessage } from '@/lib/embedded';
+import { type SharedData } from '@/types';
 import { Head, usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
@@ -16,7 +18,12 @@ export default function Workspace({ tabScope }: { tabScope: string }) {
 }
 
 function WorkspaceSession({ tabScope }: { tabScope: string }) {
-    const auth = (usePage().props as { auth?: { permissions?: string[] } }).auth;
+    const { auth } = usePage<SharedData>().props;
+    const isSuperAdmin = auth.roles?.includes('Super Admin') ?? false;
+    const isMobile = useIsMobile();
+    const useTopBar = isSuperAdmin || isMobile;
+    // Keep the shell wrapper stable across viewport changes so open frames stay mounted.
+    const layout = isSuperAdmin ? 'header' : 'sidebar';
     const home = useMemo(() => {
         const permissions = auth?.permissions ?? [];
         if (permissions.includes('dashboard.view')) return { url: '/dashboard', title: 'Dashboard' };
@@ -25,8 +32,6 @@ function WorkspaceSession({ tabScope }: { tabScope: string }) {
         return { url: '/settings/profile', title: 'Profile' };
     }, [auth?.permissions]);
     const { tabs, activeId, openTab, focusTab, closeTab, closeAll, updateTab } = useTabs(tabScope, home);
-    // Phones don't get the tab strip — navigation just swaps the visible page.
-    const isMobile = useIsMobile();
 
     // Map tab id → its iframe element, so incoming tab-state messages can be
     // attributed to the frame that sent them.
@@ -102,19 +107,20 @@ function WorkspaceSession({ tabScope }: { tabScope: string }) {
     }, [activeId]);
 
     return (
-        <AppShell variant="sidebar">
+        <AppShell variant={layout}>
             <Head title={activeTab?.title ?? 'Workspace'} />
-            <AppSidebar onNavigate={openTab} activeUrl={activePath} />
-            <AppContent variant="sidebar" className="h-svh overflow-hidden">
-                <header className="border-sidebar-border/50 flex h-12 shrink-0 items-center gap-2 border-b px-4">
-                    <SidebarTrigger className="-ml-1 shrink-0" />
+            {!useTopBar && <AppSidebar onNavigate={openTab} activeUrl={activePath} />}
+            <AppContent variant={layout} className="flex h-svh w-full min-w-0 flex-col overflow-hidden">
+                {useTopBar && <WorkspaceTopBar activePath={activePath} home={home} isSuperAdmin={isSuperAdmin} onNavigate={openTab} />}
+                <div className="border-sidebar-border/50 flex h-12 shrink-0 items-center gap-2 border-b px-3 md:px-4">
+                    {!useTopBar && <SidebarTrigger className="-ml-1 shrink-0" />}
                     {isMobile ? (
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium">{activeTab?.title}</span>
+                        <MobileTabBar tabs={tabs} activeId={activeId} onFocus={focusTab} onClose={closeTab} onCloseAll={closeAll} />
                     ) : (
                         <TabBar tabs={tabs} activeId={activeId} onFocus={focusTab} onClose={closeTab} onCloseAll={closeAll} />
                     )}
-                    <NotificationBell />
-                </header>
+                    {!useTopBar && <NotificationBell />}
+                </div>
 
                 <div className="relative flex-1 overflow-hidden bg-background">
                     {tabs.map((tab) => (

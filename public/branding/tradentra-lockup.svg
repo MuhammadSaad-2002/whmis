@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="418" height="100" viewBox="0 0 418 100" role="img" aria-labelledby="title description">
+  <title id="title">Tradentra</title>
+  <desc id="description">The Complete Business Management Platform</desc>
+  <g transform="translate(8 18)">
+    <rect x="2" y="2" width="60" height="60" rx="15" fill="#10243A"/>
+    <path d="M13 18h31l-7 9h-3v18l-9 6V27H13z" fill="#F8FAFC"/>
+    <path d="M48 18h6l-7 9h-6z" fill="#35D6B2"/>
+  </g>
+  <g font-family="'Instrument Sans', Arial, sans-serif">
+    <text x="88" y="52" fill="#10243A" font-size="46" font-weight="700" letter-spacing="-1.7">Tradentra</text>
+    <text x="90" y="76" fill="#40566D" font-size="15" font-weight="500">The Complete Business Management Platform</text>
+  </g>
+</svg>

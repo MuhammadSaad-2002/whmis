@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 import { router } from '@inertiajs/react';
 import { Bell, CheckCheck } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -17,7 +18,7 @@ interface NotificationRow {
     created_at: string;
 }
 
-export function NotificationBell() {
+export function NotificationBell({ className }: { className?: string } = {}) {
     const [unread, setUnread] = useState(0);
     const [notifications, setNotifications] = useState<NotificationRow[]>([]);
 
@@ -68,7 +69,7 @@ export function NotificationBell() {
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
+                <Button variant="ghost" size="icon" className={cn('relative', className)} aria-label="Notifications">
                     <Bell className="size-5" />
                     {unread > 0 && (
                         <Badge className="absolute -top-1 -right-1 h-4 min-w-4 rounded-full px-1 text-[10px] tabular-nums">
@@ -77,7 +78,7 @@ export function NotificationBell() {
                     )}
                 </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-96 p-0">
+            <DropdownMenuContent align="end" collisionPadding={8} className="w-[min(24rem,calc(100vw-1rem))] p-0">
                 <div className="flex items-center justify-between border-b px-3 py-2">
                     <span className="text-sm font-semibold">Notifications</span>
                     {unread > 0 && (

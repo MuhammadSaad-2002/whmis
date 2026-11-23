@@ -16,6 +16,10 @@ likely to matter when changing each module.
 - Workspace: `/workspace`; tabbed shell that hosts the app navigation experience.
   Open tabs refresh within the same login and browser tab. Each new login starts
   at that user's home page. Changes to permissions invalidate saved tab state.
+  On desktop, Super Admin uses top navigation, with Daily Work links visible
+  on wide screens. Other roles use the sidebar. On phones, all roles use top
+  navigation with a **Pages** menu for permitted destinations and an **Open tabs**
+  switcher for switching or closing workspace tabs.
 - Navigation source: `resources/js/components/nav-config.ts`.
 
 ## Master data

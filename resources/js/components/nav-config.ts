@@ -9,6 +9,7 @@ import {
     Boxes,
     Building2,
     ClipboardList,
+    ContactRound,
     FlaskConical,
     Gift,
     KeyRound,
@@ -26,10 +27,11 @@ import {
 } from 'lucide-react';
 
 export type PermittedNavItem = NavItem & { permission: string };
+type PermittedNavGroup = { label: string; icon?: NavItem['icon']; items: PermittedNavItem[] };
 
 // Single source of truth for the sidebar navigation, shared by the normal
 // AppSidebar and the workspace (tabbed) shell so permissions and ordering match.
-export const navGroups: { label: string; items: PermittedNavItem[] }[] = [
+export const navGroups: PermittedNavGroup[] = [
     {
         label: 'Overview',
         items: [{ title: 'Dashboard', url: '/dashboard', icon: LayoutGrid, permission: 'dashboard.view' }],
@@ -109,5 +111,47 @@ export const navGroups: { label: string; items: PermittedNavItem[] }[] = [
             { title: 'Booker Assignments', url: '/booker-assignments', icon: UserCog, permission: 'audit.view' },
             { title: 'License', url: '/license', icon: KeyRound, permission: 'license.view' },
         ],
+    },
+];
+
+// Both menus use the same links and permission keys.
+const navItemsByUrl = new Map(navGroups.flatMap(({ items }) => items.map((item) => [item.url, item] as const)));
+
+function itemsFor(...urls: string[]): PermittedNavItem[] {
+    return urls.flatMap((url) => {
+        const item = navItemsByUrl.get(url);
+        return item ? [item] : [];
+    });
+}
+
+export const superAdminNavGroups: PermittedNavGroup[] = [
+    {
+        label: 'Daily Work',
+        items: itemsFor('/dashboard', '/sales', '/bookings', '/purchases', '/inventory', '/payments', '/dispatch', '/reports'),
+    },
+    {
+        label: 'Customers & Sales',
+        icon: ContactRound,
+        items: itemsFor('/customers', '/returns/sales', '/incentives', '/booker/workday'),
+    },
+    {
+        label: 'Stock & Suppliers',
+        icon: Boxes,
+        items: itemsFor('/suppliers', '/products', '/categories', '/loans/in', '/loans/out', '/samples/receipts', '/samples/issues'),
+    },
+    {
+        label: 'Finance & Recovery',
+        icon: Banknote,
+        items: itemsFor('/collections', '/ledger/position'),
+    },
+    {
+        label: 'People & Payroll',
+        icon: Users,
+        items: itemsFor('/hr/employees', '/hr/attendance', '/hr/leave', '/hr/payroll', '/hr/finance', '/hr/settings', '/hr/my-profile'),
+    },
+    {
+        label: 'Administration',
+        icon: ShieldCheck,
+        items: itemsFor('/users', '/roles', '/booker-assignments', '/audit-log', '/system/health', '/license'),
     },
 ];

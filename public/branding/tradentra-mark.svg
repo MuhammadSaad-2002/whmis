@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Tradentra</title>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#10243A"/>
+  <path d="M13 18h31l-7 9h-3v18l-9 6V27H13z" fill="#F8FAFC"/>
+  <path d="M48 18h6l-7 9h-6z" fill="#35D6B2"/>
+</svg>

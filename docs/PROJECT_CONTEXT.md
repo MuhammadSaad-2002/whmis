@@ -1,6 +1,8 @@
-# WHMIS Project Context
+# Tradentra Project Context
 
-WHMIS is a pharmaceutical distribution ERP for Pakistan-market wholesale flows.
+**Tradentra — The Complete Business Management Platform** is the product name
+for the ERP formerly shown as WHMIS. The current workflows are built for
+Pakistan-market wholesale pharmaceutical distribution.
 It manages suppliers, products, pharmacies/customers, purchases, sales, bookings,
 returns, sample stock, loan stock, inventory, payments, ledgers, reports,
 notifications, users, roles, audit logs, and license control.
@@ -50,6 +52,8 @@ Secrets stay out of Git. Production `.env` is created on the server from
 
 ## Current-state notes
 
+- [Brand assets and usage](BRAND.md) are separate from installation identifiers
+  and customer-facing PDF letterheads.
 - Self-registration is disabled; users are provisioned by Super Admin/admin flows.
 - The seeded login is `admin@whmis.local` / `password`; production docs require changing it immediately.
 - The scheduler runs `whmis:check-alerts` daily at 08:00 when cron calls `artisan schedule:run`.

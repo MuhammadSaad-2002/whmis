@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@/lib/brand';
 import { router } from '@inertiajs/react';
 
 // Shared contract between the workspace shell (top document) and the pages it
@@ -8,9 +9,8 @@ const SOURCE = 'whmis';
 
 // Page <title>s are templated as "<Page> - <AppName>" (see app.tsx). Tabs show
 // only the page part, so strip the app-name suffix before labelling a tab.
-const APP_NAME = import.meta.env.VITE_APP_NAME || 'Laravel';
 function stripAppName(title: string): string {
-    const suffix = ` - ${APP_NAME}`;
+    const suffix = ` - ${PRODUCT_NAME}`;
     return title.endsWith(suffix) ? title.slice(0, -suffix.length) : title;
 }
 
