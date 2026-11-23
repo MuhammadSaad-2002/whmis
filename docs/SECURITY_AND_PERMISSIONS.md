@@ -55,7 +55,7 @@ access decisions.
 
 - `HandleInertiaRequests` shares `auth.permissions` and `auth.roles`.
 - `usePermissions()` exposes `can()` and `canAny()` in React.
-- `nav-config.ts` is the shared navigation source for sidebar and workspace shell.
+- `nav-config.ts` defines the workspace top bar's groups and page permission keys.
 - Server-side route middleware remains the real authorization boundary.
 
 ## Super Admin protections
@@ -76,6 +76,17 @@ Employee-profile bulk assignment requires both `employees.view` and
 `bookers.assign`. Only active Booker logins may receive assignments. Booking
 create/update validates assigned active customer access on the server; the
 booking list's customer filter is scoped with the same customer options.
+
+Field Booker accounts (Booker without Admin or Super Admin) cannot access
+supplier identities or purchase costs. The Products catalogue, product search,
+and booking details/repeats omit supplier data on the server. Supplier filters
+are ignored for these accounts. The `view-supplier-details` gate also protects
+supplier-bearing operations and exports if a field Booker has extra grants.
+
+Products hidden through **Show to Bookers** are excluded from field Booker
+catalogue, product/batch and incentive lookups, and repeat bookings. The server
+rejects hidden products when a field Booker saves or submits a draft. Previously
+saved order lines are retained for history. Admins can still process them.
 
 ## License gating
 

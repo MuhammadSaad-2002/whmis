@@ -15,6 +15,7 @@ use App\Services\NumberSeriesService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use RuntimeException;
 
@@ -62,7 +63,7 @@ class BookingController extends Controller
             $source = Booking::findOrFail($data['repeat_booking_id']);
             $this->authorizeView($request, $source);
             abort_unless($this->customerOptions($request)->contains('id', $source->customer_id), 403);
-            $prefill = $this->bookings->repeatPrefill($source, $warehouse->id);
+            $prefill = $this->bookings->repeatPrefill($source, $warehouse->id, $request->user());
         } elseif (! empty($data['customer_id'])) {
             abort_unless($this->customerOptions($request)->contains('id', (int) $data['customer_id']), 403);
             $prefill = ['customer_id' => (int) $data['customer_id'], 'items' => [], 'source' => null, 'skipped' => []];
@@ -104,11 +105,12 @@ class BookingController extends Controller
     public function edit(Request $request, Booking $booking)
     {
         $this->authorizeView($request, $booking);
+        $showSupplier = $request->user()->canViewSupplierDetails();
 
         $booking->load([
             'items.product' => fn ($q) => $q->withTrashed()
-                ->select(['id', 'name', 'generic_name', 'company_id', 'retail_price'])
-                ->with('company:id,name')
+                ->select(['id', 'name', 'generic_name', 'retail_price'])
+                ->when($showSupplier, fn ($q) => $q->addSelect('company_id')->with('company:id,name'))
                 ->withSum(['batches as stock' => fn ($batches) => $batches->where('warehouse_id', $booking->warehouse_id)], 'qty_available'),
             'items.incentives.rule:id,name,rule_type,base_qty,bonus_qty,slabs,value',
             'customer:id,name,city', 'booker:id,name', 'approver:id,name',
@@ -159,6 +161,11 @@ class BookingController extends Controller
         }
         if ($booking->items()->count() === 0) {
             return back()->with('error', 'Add at least one item before submitting.');
+        }
+        if ($request->user()->isFieldBooker() && $booking->items()
+            ->whereDoesntHave('product', fn ($products) => $products->visibleTo($request->user()))
+            ->exists()) {
+            return back()->with('error', 'This draft contains a product no longer available to Bookers. Remove the item or ask an administrator to review the draft.');
         }
 
         $booking->update(['status' => Booking::STATUS_PENDING, 'submitted_at' => now()]);
@@ -298,7 +305,8 @@ class BookingController extends Controller
             'booking_date' => ['required', 'date'],
             'notes' => ['nullable', 'string'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.product_id' => ['required', 'exists:products,id'],
+            'items.*.product_id' => ['required', Rule::exists('products', 'id')
+                ->when($request->user()->isFieldBooker(), fn ($rule) => $rule->where('visible_to_bookers', true)->withoutTrashed())],
             'items.*.quantity' => ['required', 'numeric', 'min:1'],
             'items.*.requested_bonus' => ['nullable', 'numeric', 'min:0'],
             'items.*.incentive_rule_ids' => ['nullable', 'array'],
@@ -307,7 +315,7 @@ class BookingController extends Controller
             'items.*.discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'items.*.gst_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'items.*.remarks' => ['nullable', 'string', 'max:255'],
-        ]);
+        ], ['items.*.product_id.exists' => 'Choose an available product.']);
     }
 
     private function headerAttributes(array $data): array

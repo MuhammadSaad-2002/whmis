@@ -50,7 +50,7 @@ class ImportTest extends TestCase
     public function test_products_import_creates_updates_and_reports_bad_rows(): void
     {
         Company::create(['name' => 'Getz Pharma']);
-        Product::create(['name' => 'Panadol 500mg', 'company_id' => 1, 'trade_price' => 50]);
+        Product::create(['name' => 'Panadol 500mg', 'company_id' => 1, 'trade_price' => 50, 'visible_to_bookers' => false]);
 
         $file = $this->makeXlsxUpload([
             ['name', 'generic_name', 'supplier', 'category', 'pack_size', 'barcode', 'sku', 'purchase_price', 'trade_price', 'retail_price', 'mrp', 'gst_percent', 'default_discount_percent', 'min_stock', 'reorder_level'],
@@ -73,7 +73,8 @@ class ImportTest extends TestCase
         $this->assertStringContainsString('Row 5', $error);
 
         $this->assertEqualsWithDelta(100.0, (float) Product::where('name', 'Panadol 500mg')->first()->trade_price, 0.01);
-        $this->assertNotNull(Product::where('name', 'Augmentin 625mg')->first());
+        $this->assertFalse(Product::where('name', 'Panadol 500mg')->firstOrFail()->visible_to_bookers);
+        $this->assertTrue(Product::where('name', 'Augmentin 625mg')->firstOrFail()->visible_to_bookers);
         $this->assertNotNull(Company::where('name', 'GSK')->first());
         $this->assertNull(Product::where('name', 'Orphan Med')->first());
         $this->assertSame(2, Product::count());

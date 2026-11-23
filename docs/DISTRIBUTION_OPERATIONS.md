@@ -5,19 +5,23 @@ dispatch tracking, a collections worklist, and deployment readiness checks.
 
 ## Booker workday
 
-Open **Transactions → My Workday** (`/booker/workday`). Only the current login's
+Open **My Workday** from the workspace top bar (`/booker/workday`). Only the current login's
 active assigned customers appear, including primary and additional assignments.
-The date selects that login's visits. Search is by customer or city. A visit can
-be planned, visited, no order, or closed (outlet closed). Future visits can only
+Use the date arrows or date picker for visits and search by customer or city.
+The customer cards put order and visit actions together, with a bottom-sheet
+visit editor on phones. A visit can be planned, visited, no order, or closed
+(outlet closed). Future visits can only
 be planned. One record exists per Booker/customer/day; updates are audited.
 
 The customer account balance comes from the existing customer ledger, including
 unallocated receipts. A negative balance is customer credit, not a loss.
 New Order preselects the customer; Repeat Last Order uses that Booker's latest
 non-rejected/non-cancelled booking for the assigned customer. Repeating creates
-an unsaved form, never an automatic order. Current product prices, default
+an unsaved form, never an automatic order. Customer and repeat shortcuts use
+separate draft tabs when their prefill differs. Current product prices, default
 discounts, tax and stock are loaded; old bonus quantities and incentive selections
-are cleared for review. Unavailable products are explicitly listed as omitted.
+are cleared for review. Unavailable products are flagged as omitted. Products
+hidden from Bookers are counted without displaying their names.
 Neither another Booker's booking nor an unassigned customer can be used as a
 repeat source by a field Booker.
 

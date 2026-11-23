@@ -113,7 +113,7 @@ export function ReturnLineCell({ value, options, disabled, invalid, openSignal, 
                     }}
                     value={open ? query : value}
                     disabled={disabled}
-                    placeholder="Type to search… (F2)"
+                    placeholder="Type to search…"
                     aria-invalid={invalid}
                     onChange={(e) => {
                         if (!open) setOpen(true);

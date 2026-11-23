@@ -12,8 +12,19 @@ class ProductController extends Controller
 {
     public function index(Request $request)
     {
+        $showSupplier = $request->user()->canViewSupplierDetails();
+        $filters = $request->only('search', 'category_id', 'status');
+        if ($showSupplier) {
+            $filters += $request->only('company_id');
+        }
+
         $products = Product::query()
-            ->with(['company:id,name', 'category:id,name'])
+            ->visibleTo($request->user())
+            ->when($showSupplier, fn ($q) => $q->with(['company:id,name', 'category:id,name']))
+            ->when(! $showSupplier, fn ($q) => $q->select([
+                'id', 'name', 'generic_name', 'pack_size', 'trade_price', 'retail_price',
+                'tax_percent', 'reorder_level', 'status',
+            ]))
             ->withSum('batches as stock', 'qty_available')
             ->when($request->search, function ($q, $search) {
                 $q->where(fn ($w) => $w
@@ -22,18 +33,18 @@ class ProductController extends Controller
                     ->orWhere('barcode', $search)
                     ->orWhere('sku', $search));
             })
-            ->when($request->company_id, fn ($q, $id) => $q->where('company_id', $id))
+            ->when($filters['company_id'] ?? null, fn ($q, $id) => $q->where('company_id', $id))
             ->when($request->category_id, fn ($q, $id) => $q->where('category_id', $id))
             ->when($request->status, fn ($q, $status) => $q->where('status', $status))
             ->orderBy('name')
             ->paginate(15)
-            ->withQueryString();
+            ->appends($filters);
 
         return Inertia::render('products/index', [
             'products' => $products,
-            'companies' => Company::active()->orderBy('name')->get(['id', 'name']),
+            ...($showSupplier ? ['companies' => Company::active()->orderBy('name')->get(['id', 'name'])] : []),
             'categories' => ProductCategory::orderBy('name')->get(['id', 'name']),
-            'filters' => $request->only('search', 'company_id', 'category_id', 'status'),
+            'filters' => $filters,
         ]);
     }
 
@@ -111,6 +122,7 @@ class ProductController extends Controller
             'min_stock' => ['nullable', 'numeric', 'min:0'],
             'reorder_level' => ['nullable', 'numeric', 'min:0'],
             'status' => ['required', 'in:active,inactive'],
+            'visible_to_bookers' => ['sometimes', 'boolean'],
             'notes' => ['nullable', 'string'],
         ]);
     }

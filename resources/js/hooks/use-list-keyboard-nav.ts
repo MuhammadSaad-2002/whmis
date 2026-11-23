@@ -11,9 +11,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export function useListKeyboardNav({
     rowCount,
     onActivate,
+    autoFocus = true,
 }: {
     rowCount: number;
     onActivate: (index: number) => void;
+    autoFocus?: boolean;
 }) {
     const searchRef = useRef<HTMLInputElement>(null);
     const rowRefs = useRef<Map<number, HTMLElement>>(new Map());
@@ -21,8 +23,8 @@ export function useListKeyboardNav({
 
     // Focus the search box on first mount.
     useEffect(() => {
-        searchRef.current?.focus();
-    }, []);
+        if (autoFocus) searchRef.current?.focus();
+    }, [autoFocus]);
 
     // Keep the highlight within range as the (filtered) row set changes.
     useEffect(() => {

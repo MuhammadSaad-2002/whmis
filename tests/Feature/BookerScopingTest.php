@@ -6,6 +6,7 @@ use App\Models\BookerAssignmentLog;
 use App\Models\Booking;
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\IncentiveRule;
 use App\Models\Product;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
@@ -83,13 +84,14 @@ class BookerScopingTest extends TestCase
                 ->has('topCustomers'));
     }
 
-    public function test_lookup_products_hides_purchase_price_from_booker(): void
+    public function test_lookup_products_hides_supplier_and_purchase_price_from_booker(): void
     {
         $this->actingAs($this->booker);
-        $this->getJson(route('lookup.products'))
+        $this->getJson(route('lookup.products', ['company_id' => $this->product->company_id + 1]))
             ->assertOk()
             ->assertJsonPath('0.trade_price', 100)
             ->assertJsonPath('0.retail_price', 120)
+            ->assertJsonMissingPath('0.company')
             ->assertJsonMissingPath('0.purchase_price');
     }
 
@@ -98,7 +100,190 @@ class BookerScopingTest extends TestCase
         $this->actingAs($this->admin);
         $this->getJson(route('lookup.products'))
             ->assertOk()
+            ->assertJsonPath('0.company', 'Getz Pharma')
             ->assertJsonPath('0.purchase_price', 80);
+    }
+
+    public function test_product_catalogue_omits_supplier_data_and_ignores_supplier_filters_for_bookers(): void
+    {
+        $this->product->update(['notes' => 'Internal Getz Pharma purchasing note']);
+
+        $this->actingAs($this->booker)->get(route('products.index', ['company_id' => $this->product->company_id + 1]))
+            ->assertOk()
+            ->assertDontSee('Getz Pharma')
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('products/index')
+                ->where('auth.canViewSupplierDetails', false)
+                ->has('products.data', 1)
+                ->where('products.data.0.name', 'Panadol 500mg')
+                ->where('products.data.0.trade_price', '100.00')
+                ->missing('products.data.0.company_id')
+                ->missing('products.data.0.company')
+                ->missing('products.data.0.purchase_price')
+                ->missing('products.data.0.notes')
+                ->missing('companies')
+                ->missing('filters.company_id'));
+
+        $this->actingAs($this->admin)->get(route('products.index', ['company_id' => $this->product->company_id]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('auth.canViewSupplierDetails', true)
+                ->where('products.data.0.company.name', 'Getz Pharma')
+                ->where('companies.0.name', 'Getz Pharma')
+                ->has('filters.company_id'));
+    }
+
+    public function test_booker_booking_details_and_repeat_payload_omit_supplier(): void
+    {
+        $customer = Customer::create(['name' => 'City Pharmacy', 'booker_id' => $this->booker->id]);
+        $booking = Booking::create([
+            'booking_number' => 'BK-1', 'customer_id' => $customer->id, 'booker_id' => $this->booker->id,
+            'warehouse_id' => 1, 'booking_date' => now(), 'status' => 'draft',
+        ]);
+        $booking->items()->create(['product_id' => $this->product->id, 'quantity' => 3, 'trade_price' => 50]);
+
+        $this->actingAs($this->booker)->get(route('bookings.edit', $booking))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('booking.items.0.product.name', 'Panadol 500mg')
+                ->missing('booking.items.0.product.company')
+                ->missing('booking.items.0.product.company_id'));
+        $repeatUrl = route('bookings.create', ['repeat_booking_id' => $booking->id]);
+        $this->get($repeatUrl)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('bookingPrefill.items.0.quantity', '3')
+                ->missing('bookingPrefill.items.0.company'));
+
+        $this->actingAs($this->admin)->get(route('bookings.edit', $booking))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('booking.items.0.product.company.name', 'Getz Pharma'));
+        $this->get($repeatUrl)->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('bookingPrefill.items.0.company', 'Getz Pharma'));
+    }
+
+    public function test_booker_can_use_a_company_scoped_offer_without_seeing_its_supplier_scope(): void
+    {
+        IncentiveRule::create([
+            'name' => 'Welcome offer', 'company_id' => $this->product->company_id,
+            'rule_type' => IncentiveRule::TYPE_PERCENT_DISCOUNT, 'value' => 10, 'active' => true,
+        ]);
+
+        $this->actingAs($this->booker)->getJson(route('lookup.rules', ['product_id' => $this->product->id, 'qty' => 1]))
+            ->assertOk()
+            ->assertJsonPath('0.name', 'Welcome offer')
+            ->assertJsonPath('0.scope', 'Available offer')
+            ->assertJsonPath('0.eligible', true)
+            ->assertJsonMissingPath('0.company_id');
+    }
+
+    public function test_extra_permissions_do_not_expose_supplier_modules_for_field_bookers(): void
+    {
+        $extras = ['suppliers.view', 'reports.view', 'products.manage', 'dashboard.executive'];
+        $this->booker->givePermissionTo($extras);
+        $this->actingAs($this->booker);
+        foreach ([
+            route('suppliers.index'),
+            route('reports.index'),
+            route('reports.show', ['key' => 'product-sales', 'format' => 'pdf']),
+            route('dashboard.executive.pdf'),
+            route('lookup.all-batches', $this->product),
+            route('lookup.open-invoices', ['party_type' => 'company', 'party_id' => $this->product->company_id]),
+        ] as $url) {
+            $this->get($url)->assertForbidden();
+        }
+        $this->put(route('products.update', $this->product))->assertForbidden();
+        $this->get(route('dashboard'))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('scope', 'booker')->missing('salesBySupplier'));
+        $this->get(route('workspace'))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('auth.permissions', fn ($permissions) => collect($permissions)->intersect($extras)->isEmpty()));
+    }
+
+    public function test_customer_ledger_visibility_matches_route_access(): void
+    {
+        $customer = Customer::create(['name' => 'Ledger Pharmacy', 'booker_id' => $this->booker->id]);
+        $ledgerUrl = route('ledger.customer', $customer);
+
+        $this->booker->givePermissionTo('ledger.view');
+        $this->actingAs($this->booker)->get(route('customers.index'))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('auth.canViewSupplierDetails', false)
+                ->where('auth.permissions', fn ($permissions) => ! collect($permissions)->contains('ledger.view')));
+        $this->get($ledgerUrl)->assertForbidden();
+
+        $accountant = User::factory()->create();
+        $accountant->assignRole('Accountant');
+        $this->actingAs($accountant)->get(route('customers.index'))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('auth.canViewSupplierDetails', true)
+                ->where('auth.permissions', fn ($permissions) => collect($permissions)->contains('ledger.view')));
+        $this->get($ledgerUrl)->assertOk();
+    }
+
+    public function test_admin_can_set_product_booker_visibility_and_unrelated_edits_preserve_it(): void
+    {
+        $attributes = ['name' => 'Default catalogue item', 'company_id' => $this->product->company_id, 'status' => 'active'];
+        $this->actingAs($this->admin)->post(route('products.store'), $attributes)->assertSessionHasNoErrors();
+        $product = Product::where('name', $attributes['name'])->firstOrFail();
+        $this->assertTrue($product->visible_to_bookers);
+
+        $url = route('products.update', $product);
+        $this->put($url, $attributes + ['visible_to_bookers' => false])->assertSessionHasNoErrors();
+        $this->assertFalse($product->fresh()->visible_to_bookers);
+        $this->put($url, $attributes + ['trade_price' => 150])->assertSessionHasNoErrors();
+        $this->assertFalse($product->fresh()->visible_to_bookers);
+        $this->put($url, $attributes + ['visible_to_bookers' => true])->assertSessionHasNoErrors();
+        $this->assertTrue($product->fresh()->visible_to_bookers);
+    }
+
+    public function test_field_bookers_cannot_browse_hidden_products_but_admins_can(): void
+    {
+        $this->product->update(['visible_to_bookers' => false]);
+        Product::create(['name' => 'Public catalogue item', 'company_id' => $this->product->company_id]);
+
+        $this->actingAs($this->booker);
+        $this->get(route('products.index'))->assertInertia(fn (Assert $page) => $page
+            ->has('products.data', 1)->where('products.data.0.name', 'Public catalogue item'));
+        $this->getJson(route('lookup.products', ['q' => $this->product->name]))->assertOk()->assertJsonCount(0);
+        $this->getJson(route('lookup.batches', $this->product))->assertNotFound();
+        $this->getJson(route('lookup.rules', ['product_id' => $this->product->id]))->assertUnprocessable()
+            ->assertJsonValidationErrors('product_id');
+
+        $this->actingAs($this->admin)->get(route('products.index'))->assertInertia(fn (Assert $page) => $page
+            ->has('products.data', 2)->where('products.data.0.visible_to_bookers', false));
+        $this->getJson(route('lookup.products', ['q' => $this->product->name]))->assertOk()->assertJsonCount(1);
+        $this->getJson(route('lookup.batches', $this->product))->assertOk();
+
+        $this->product->update(['visible_to_bookers' => true]);
+        $this->actingAs($this->booker)->getJson(route('lookup.products', ['q' => $this->product->name]))
+            ->assertOk()->assertJsonPath('0.id', $this->product->id);
+    }
+
+    public function test_hidden_products_cannot_be_rebooked_or_submitted_by_field_bookers(): void
+    {
+        $customer = Customer::create(['name' => 'City Pharmacy', 'booker_id' => $this->booker->id]);
+        $booking = Booking::create([
+            'booking_number' => 'BK-HIST', 'customer_id' => $customer->id, 'booker_id' => $this->booker->id,
+            'warehouse_id' => 1, 'booking_date' => now(), 'status' => 'draft',
+        ]);
+        $booking->items()->create(['product_id' => $this->product->id, 'quantity' => 3, 'trade_price' => 100]);
+        $this->product->update(['visible_to_bookers' => false]);
+
+        $payload = [
+            'customer_id' => $customer->id, 'warehouse_id' => 1, 'booking_date' => now()->toDateString(),
+            'items' => [['product_id' => $this->product->id, 'quantity' => 1, 'trade_price' => 100]],
+        ];
+        $this->actingAs($this->booker);
+        $this->post(route('bookings.store'), $payload)->assertSessionHasErrors('items.0.product_id');
+        $this->put(route('bookings.update', $booking), $payload)->assertSessionHasErrors('items.0.product_id');
+        $this->post(route('bookings.submit', $booking))->assertSessionHas('error');
+        $this->assertSame('draft', $booking->fresh()->status);
+        $this->assertSame('3.00', $booking->items()->firstOrFail()->quantity);
+
+        $repeatUrl = route('bookings.create', ['repeat_booking_id' => $booking->id]);
+        $this->get($repeatUrl)->assertInertia(fn (Assert $page) => $page
+            ->has('bookingPrefill.items', 0)->has('bookingPrefill.skipped', 0)->where('bookingPrefill.hidden_count', 1));
+        $this->get(route('bookings.edit', $booking))->assertInertia(fn (Assert $page) => $page
+            ->where('booking.items.0.product.name', $this->product->name));
+        $this->actingAs($this->admin)->get($repeatUrl)->assertInertia(fn (Assert $page) => $page
+            ->where('bookingPrefill.items.0.product_id', $this->product->id)->where('bookingPrefill.hidden_count', 0));
     }
 
     public function test_assigning_and_unassigning_bookers_writes_pivot_and_audit_log(): void

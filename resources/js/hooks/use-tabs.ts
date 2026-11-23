@@ -44,13 +44,21 @@ function newId(): string {
     return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 }
 
-/** Tab identity is the pathname (query ignored), so filters/pagination don't fork a tab. */
 function pathOf(url: string): string {
     try {
         return new URL(url, window.location.origin).pathname;
     } catch {
         return url;
     }
+}
+
+/** Keep filters in one tab, but don't reuse a booking draft for a different customer or repeat source. */
+function tabIdentity(url: string): string {
+    const path = pathOf(url);
+    if (path !== '/bookings/create') return path;
+
+    const params = new URL(url, window.location.origin).searchParams;
+    return JSON.stringify([path, params.get('customer_id'), params.get('repeat_booking_id')]);
 }
 
 interface Persisted {
@@ -116,8 +124,8 @@ export function useTabs(scope: string, home: Omit<Tab, 'id'> = HOME) {
 
     const openTab = useCallback((url: string, title?: string) => {
         if (!isWorkspaceUrl(url)) return;
-        const path = pathOf(url);
-        const existing = tabsRef.current.find((t) => pathOf(t.url) === path);
+        const identity = tabIdentity(url);
+        const existing = tabsRef.current.find((t) => tabIdentity(t.url) === identity);
         if (existing) {
             setActiveId(existing.id);
             return;
@@ -127,7 +135,7 @@ export function useTabs(scope: string, home: Omit<Tab, 'id'> = HOME) {
             setActiveId(tabsRef.current[tabsRef.current.length - 1].id);
             return;
         }
-        const tab: Tab = { id: newId(), url, title: title || path };
+        const tab: Tab = { id: newId(), url, title: title || pathOf(url) };
         setTabs((prev) => [...prev, tab]);
         setActiveId(tab.id);
     }, []);

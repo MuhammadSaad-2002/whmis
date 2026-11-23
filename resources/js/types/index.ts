@@ -4,6 +4,7 @@ export interface Auth {
     user: User;
     permissions: string[];
     roles: string[];
+    canViewSupplierDetails: boolean;
 }
 
 export interface BreadcrumbItem {

@@ -189,7 +189,8 @@ export default function IncentivesIndex({ rules, products, companies, customers,
                     <div>
                         <h1 className="text-4xl font-bold">Incentive Rules</h1>
                         <p className="text-sm text-muted-foreground">
-                            Bonus schemes, discounts, and special prices — applied with F4 on invoice and booking lines
+                            Bonus schemes, discounts, and special prices for invoice and booking lines.
+                            <span data-shortcut-hint> Press <kbd>F4</kbd> to open the rule picker.</span>
                         </p>
                     </div>
                     {manage && (

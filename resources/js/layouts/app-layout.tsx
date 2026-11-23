@@ -12,7 +12,7 @@ interface AppLayoutProps {
 
 // Every page wraps this. Two modes:
 //  - Framed (running as a workspace tab): render only the page + toaster; the
-//    workspace shell owns the sidebar/header/footer. Report title/url up so the
+//    workspace shell owns the top bar and tab strip. Report title/url up so the
 //    owning tab stays labelled and refresh-restorable.
 //  - Top document (deep link / bookmark / post-login): hand off to the tabbed
 //    workspace so there is one consistent experience.

@@ -888,7 +888,7 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
                                 );
                             })}
                             {rows.length > 0 && Object.keys(totals).length > 0 && (
-                                <TableRow className="bg-muted hover:bg-muted sticky bottom-0 z-20 font-semibold shadow-[0_-1px_0_hsl(var(--border))]">
+                                <TableRow className="bg-muted hover:bg-muted sticky bottom-0 z-20 font-semibold shadow-[0_-1px_0_var(--border)]">
                                     {columns.map((column, index) => {
                                         const value = totals[column.key];
                                         const negative = column.key in totals && Number(value) < 0;

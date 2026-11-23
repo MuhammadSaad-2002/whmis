@@ -116,7 +116,7 @@ class BookingFlowTest extends TestCase
         return Booking::latest('id')->firstOrFail();
     }
 
-    public function test_saved_booking_loads_supplier_retail_and_live_warehouse_stock_for_admin_and_booker(): void
+    public function test_saved_booking_preserves_prices_and_stock_but_only_admin_sees_supplier(): void
     {
         $this->product->update(['retail_price'=>120, 'purchase_price'=>80]);
         $batch = \App\Models\Batch::create(['product_id'=>$this->product->id,'warehouse_id'=>1,'batch_number'=>'BOOKING-1','qty_available'=>35]);
@@ -127,15 +127,21 @@ class BookingFlowTest extends TestCase
         // Current catalogue prices must not replace the saved booking's price.
         $this->product->update(['trade_price'=>150]);
         foreach ([$this->admin, $this->booker] as $viewer) {
-            $this->actingAs($viewer)->get(route('bookings.edit',$booking))->assertOk()->assertInertia(fn (Assert $page) => $page
-                ->where('booking.items.0.product.company.name','Getz Pharma')
-                ->where('booking.items.0.product.retail_price','120.00')
-                ->where('booking.items.0.product.stock',fn ($stock) => (float)$stock === 42.0)
-                ->where('booking.items.0.trade_price','100.00')
-                ->where('booking.items.0.quantity','20.00')
-                ->where('booking.items.0.requested_bonus','2.00')
-                ->where('booking.items.0.discount_percent','5.00')
-                ->missing('booking.items.0.product.purchase_price'));
+            $this->actingAs($viewer)->get(route('bookings.edit', $booking))->assertOk()->assertInertia(function (Assert $page) use ($viewer) {
+                if ($viewer->is($this->admin)) {
+                    $page->where('booking.items.0.product.company.name', 'Getz Pharma');
+                } else {
+                    $page->missing('booking.items.0.product.company')->missing('booking.items.0.product.company_id');
+                }
+
+                $page->where('booking.items.0.product.retail_price', '120.00')
+                    ->where('booking.items.0.product.stock', fn ($stock) => (float) $stock === 42.0)
+                    ->where('booking.items.0.trade_price', '100.00')
+                    ->where('booking.items.0.quantity', '20.00')
+                    ->where('booking.items.0.requested_bonus', '2.00')
+                    ->where('booking.items.0.discount_percent', '5.00')
+                    ->missing('booking.items.0.product.purchase_price');
+            });
         }
         $batch->update(['qty_available'=>30]);
         $booking->update(['status'=>'pending']);

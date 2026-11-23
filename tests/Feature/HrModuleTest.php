@@ -126,13 +126,27 @@ class HrModuleTest extends TestCase
         $booker=User::factory()->create();$booker->assignRole('Booker');
         $e=$this->employee(['user_id'=>$booker->id,'is_booker'=>true]);$p=$this->posted($e);
         $this->actingAs($booker);
-        $this->get(route('hr.self'))->assertOk()->assertInertia(fn(Assert $page)=>$page->where('employee.id',$e->id));
+        $this->get(route('hr.self'))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('employee.id', $e->id)
+            ->where('showEmployeeDetails', false)
+            ->missing('employee.department')
+            ->missing('employee.joining_date')
+            ->missing('employee.user')
+            ->has('payslips', 1)
+            ->has('attendance')
+            ->has('leaves'));
         $this->get(route('hr.index','employees'))->assertForbidden();
         $this->get(route('hr.employee',$e))->assertForbidden();
         $this->get(route('hr.payslip',$p->items()->first()))->assertOk()->assertHeader('content-type','application/pdf');
         $this->get(route('reports.show',['key'=>'hr-payroll','format'=>'xlsx']))->assertForbidden();
         $other=User::factory()->create();$other->assignRole('Booker');$this->actingAs($other);
         $this->get(route('hr.payslip',$p->items()->first()))->assertForbidden();
+
+        $this->actingAs(User::where('email', 'admin@whmis.local')->firstOrFail())
+            ->get(route('hr.employee', $e))->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->where('showEmployeeDetails', true)
+                ->has('employee.joining_date')
+                ->where('employee.user.id', $booker->id));
     }
 
     public function test_hr_reports_pages_and_pdf_exports_work_and_salary_is_permission_scoped(): void

@@ -1,8 +1,3 @@
-import { AppContent } from '@/components/app-content';
-import { AppShell } from '@/components/app-shell';
-import { AppSidebar } from '@/components/app-sidebar';
-import { NotificationBell } from '@/components/notification-bell';
-import { SidebarTrigger } from '@/components/ui/sidebar';
 import { MobileTabBar, TabBar } from '@/components/workspace/tab-bar';
 import { WorkspaceFrame } from '@/components/workspace/workspace-frame';
 import { WorkspaceTopBar } from '@/components/workspace/workspace-top-bar';
@@ -19,11 +14,7 @@ export default function Workspace({ tabScope }: { tabScope: string }) {
 
 function WorkspaceSession({ tabScope }: { tabScope: string }) {
     const { auth } = usePage<SharedData>().props;
-    const isSuperAdmin = auth.roles?.includes('Super Admin') ?? false;
     const isMobile = useIsMobile();
-    const useTopBar = isSuperAdmin || isMobile;
-    // Keep the shell wrapper stable across viewport changes so open frames stay mounted.
-    const layout = isSuperAdmin ? 'header' : 'sidebar';
     const home = useMemo(() => {
         const permissions = auth?.permissions ?? [];
         if (permissions.includes('dashboard.view')) return { url: '/dashboard', title: 'Dashboard' };
@@ -107,34 +98,29 @@ function WorkspaceSession({ tabScope }: { tabScope: string }) {
     }, [activeId]);
 
     return (
-        <AppShell variant={layout}>
+        <div className="flex h-svh w-full min-w-0 flex-col overflow-hidden">
             <Head title={activeTab?.title ?? 'Workspace'} />
-            {!useTopBar && <AppSidebar onNavigate={openTab} activeUrl={activePath} />}
-            <AppContent variant={layout} className="flex h-svh w-full min-w-0 flex-col overflow-hidden">
-                {useTopBar && <WorkspaceTopBar activePath={activePath} home={home} isSuperAdmin={isSuperAdmin} onNavigate={openTab} />}
-                <div className="border-sidebar-border/50 flex h-12 shrink-0 items-center gap-2 border-b px-3 md:px-4">
-                    {!useTopBar && <SidebarTrigger className="-ml-1 shrink-0" />}
-                    {isMobile ? (
-                        <MobileTabBar tabs={tabs} activeId={activeId} onFocus={focusTab} onClose={closeTab} onCloseAll={closeAll} />
-                    ) : (
-                        <TabBar tabs={tabs} activeId={activeId} onFocus={focusTab} onClose={closeTab} onCloseAll={closeAll} />
-                    )}
-                    {!useTopBar && <NotificationBell />}
-                </div>
+            <WorkspaceTopBar activePath={activePath} home={home} onNavigate={openTab} />
+            <div className="border-sidebar-border/50 flex h-12 shrink-0 items-center gap-2 border-b px-3 md:px-4">
+                {isMobile ? (
+                    <MobileTabBar tabs={tabs} activeId={activeId} onFocus={focusTab} onClose={closeTab} onCloseAll={closeAll} />
+                ) : (
+                    <TabBar tabs={tabs} activeId={activeId} onFocus={focusTab} onClose={closeTab} onCloseAll={closeAll} />
+                )}
+            </div>
 
-                <div className="relative flex-1 overflow-hidden bg-background">
-                    {tabs.map((tab) => (
-                        <WorkspaceFrame
-                            key={tab.id}
-                            id={tab.id}
-                            src={tab.url}
-                            title={tab.title}
-                            active={tab.id === activeId}
-                            registerRef={registerRef}
-                        />
-                    ))}
-                </div>
-            </AppContent>
-        </AppShell>
+            <main className="relative flex-1 overflow-hidden bg-background">
+                {tabs.map((tab) => (
+                    <WorkspaceFrame
+                        key={tab.id}
+                        id={tab.id}
+                        src={tab.url}
+                        title={tab.title}
+                        active={tab.id === activeId}
+                        registerRef={registerRef}
+                    />
+                ))}
+            </main>
+        </div>
     );
 }

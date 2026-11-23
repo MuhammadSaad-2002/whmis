@@ -2,6 +2,7 @@ import { ImportDialog } from '@/components/import-dialog';
 import { Paginator, type PaginatedData } from '@/components/paginator';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -26,23 +27,24 @@ interface Product {
     id: number;
     name: string;
     generic_name: string | null;
-    brand_name: string | null;
-    company_id: number;
-    category_id: number | null;
-    product_type: string | null;
-    sku: string | null;
-    barcode: string | null;
+    brand_name?: string | null;
+    company_id?: number;
+    category_id?: number | null;
+    product_type?: string | null;
+    sku?: string | null;
+    barcode?: string | null;
     pack_size: string | null;
-    purchase_price: string;
+    purchase_price?: string;
     trade_price: string;
     retail_price: string;
-    mrp: string;
+    mrp?: string;
     tax_percent: string;
-    default_discount_percent: string;
-    min_stock: string;
+    default_discount_percent?: string;
+    min_stock?: string;
     reorder_level: string;
     status: string;
-    notes: string | null;
+    visible_to_bookers?: boolean;
+    notes?: string | null;
     stock: string | null;
     company?: { id: number; name: string };
     category?: { id: number; name: string } | null;
@@ -52,7 +54,7 @@ interface Option { id: number; name: string }
 
 interface Props {
     products: PaginatedData<Product>;
-    companies: Option[];
+    companies?: Option[];
     categories: Option[];
     filters: { search?: string; company_id?: string; category_id?: string; status?: string };
 }
@@ -66,14 +68,15 @@ const emptyForm = {
     sku: '', barcode: '', pack_size: '',
     purchase_price: '0.00', trade_price: '0.00', retail_price: '0.00', mrp: '0.00',
     tax_percent: '0.00', default_discount_percent: '0.00',
-    min_stock: 0, reorder_level: 0, status: 'active', notes: '',
+    min_stock: 0, reorder_level: 0, status: 'active', visible_to_bookers: true, notes: '',
 };
 
 const DECIMAL_FIELDS = ['purchase_price', 'trade_price', 'retail_price', 'mrp', 'tax_percent', 'default_discount_percent'] as const;
 
-export default function ProductsIndex({ products, companies, categories, filters }: Props) {
-    const { can } = usePermissions();
-    const showCost = can('products.view_cost');
+export default function ProductsIndex({ products, companies = [], categories, filters }: Props) {
+    const { can, canViewSupplierDetails: showSupplier } = usePermissions();
+    const showCost = showSupplier && can('products.view_cost');
+    const canManage = showSupplier && can('products.manage');
     const [dialogOpen, setDialogOpen] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
     const [editing, setEditing] = useState<Product | null>(null);
@@ -110,12 +113,13 @@ export default function ProductsIndex({ products, companies, categories, filters
     };
 
     const openEdit = (product: Product) => {
+        if (!canManage) return;
         setEditing(product);
         form.setData({
             name: product.name,
             generic_name: product.generic_name ?? '',
             brand_name: product.brand_name ?? '',
-            company_id: String(product.company_id),
+            company_id: String(product.company_id ?? ''),
             category_id: product.category_id ? String(product.category_id) : '',
             product_type: product.product_type ?? '',
             sku: product.sku ?? '',
@@ -127,9 +131,10 @@ export default function ProductsIndex({ products, companies, categories, filters
             mrp: dec2(product.mrp),
             tax_percent: dec2(product.tax_percent),
             default_discount_percent: dec2(product.default_discount_percent),
-            min_stock: Number(product.min_stock),
+            min_stock: Number(product.min_stock ?? 0),
             reorder_level: Number(product.reorder_level),
             status: product.status,
+            visible_to_bookers: product.visible_to_bookers ?? true,
             notes: product.notes ?? '',
         });
         form.clearErrors();
@@ -207,7 +212,7 @@ export default function ProductsIndex({ products, companies, categories, filters
                         <h1 className="text-4xl font-bold">Products</h1>
                         <p className="text-sm text-muted-foreground">Medicine and product master</p>
                     </div>
-                    {can('products.manage') && (
+                    {canManage && (
                         <div className="flex gap-2">
                             <Button variant="outline" onClick={() => setImportOpen(true)}>
                                 <Upload className="mr-1 size-4" /> Import
@@ -231,7 +236,7 @@ export default function ProductsIndex({ products, companies, categories, filters
                             onChange={(e) => setSearch(e.target.value)}
                         />
                     </div>
-                    <Select
+                    {showSupplier && <Select
                         value={filters.company_id ?? 'all'}
                         onValueChange={(v) =>
                             router.get('/products', { ...filters, company_id: v === 'all' ? undefined : v }, { preserveState: true })
@@ -244,7 +249,7 @@ export default function ProductsIndex({ products, companies, categories, filters
                                 <SelectItem key={company.id} value={String(company.id)}>{company.name}</SelectItem>
                             ))}
                         </SelectContent>
-                    </Select>
+                    </Select>}
                     <Select
                         value={filters.status ?? 'all'}
                         onValueChange={(v) =>
@@ -265,20 +270,20 @@ export default function ProductsIndex({ products, companies, categories, filters
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Product</TableHead>
-                                <TableHead>Supplier</TableHead>
+                                {showSupplier && <TableHead>Supplier</TableHead>}
                                 {showCost && <TableHead className="text-right">Purchase</TableHead>}
                                 <TableHead className="text-right">Trade</TableHead>
                                 <TableHead className="text-right">Retail</TableHead>
                                 <TableHead className="text-right">GST %</TableHead>
                                 <TableHead className="text-right">Stock</TableHead>
                                 <TableHead>Status</TableHead>
-                                <TableHead className="w-24" />
+                                {canManage && <TableHead className="w-24" />}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {products.data.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={showCost ? 9 : 8} className="py-10 text-center text-muted-foreground">
+                                    <TableCell colSpan={6 + Number(showSupplier) + Number(showCost) + Number(canManage)} className="py-10 text-center text-muted-foreground">
                                         No products found.
                                     </TableCell>
                                 </TableRow>
@@ -294,7 +299,7 @@ export default function ProductsIndex({ products, companies, categories, filters
                                                 {product.generic_name}{product.pack_size ? ` · ${product.pack_size}` : ''}
                                             </div>
                                         </TableCell>
-                                        <TableCell>{product.company?.name}</TableCell>
+                                        {showSupplier && <TableCell>{product.company?.name}</TableCell>}
                                         {showCost && <TableCell className="text-right tabular-nums">{amount(product.purchase_price)}</TableCell>}
                                         <TableCell className="text-right tabular-nums">{amount(product.trade_price)}</TableCell>
                                         <TableCell className="text-right tabular-nums">{amount(product.retail_price)}</TableCell>
@@ -303,12 +308,17 @@ export default function ProductsIndex({ products, companies, categories, filters
                                             <span className={low ? 'font-semibold text-destructive' : ''}>{qty(stock)}</span>
                                         </TableCell>
                                         <TableCell>
-                                            <Badge variant={product.status === 'active' ? 'default' : 'secondary'}>
-                                                {product.status}
-                                            </Badge>
+                                            <div className="flex flex-wrap items-center gap-1.5">
+                                                <Badge variant={product.status === 'active' ? 'default' : 'secondary'}>
+                                                    {product.status}
+                                                </Badge>
+                                                {canManage && product.visible_to_bookers === false && (
+                                                    <Badge variant="outline">Hidden from Bookers</Badge>
+                                                )}
+                                            </div>
                                         </TableCell>
-                                        <TableCell>
-                                            {can('products.manage') && (
+                                        {canManage && (
+                                            <TableCell>
                                                 <div className="flex justify-end gap-1">
                                                     <Button variant="ghost" size="icon" onClick={() => openEdit(product)}>
                                                         <Pencil className="size-4" />
@@ -324,8 +334,8 @@ export default function ProductsIndex({ products, companies, categories, filters
                                                         <Trash2 className="size-4 text-destructive" />
                                                     </Button>
                                                 </div>
-                                            )}
-                                        </TableCell>
+                                            </TableCell>
+                                        )}
                                     </TableRow>
                                 );
                             })}
@@ -414,6 +424,22 @@ export default function ProductsIndex({ products, companies, categories, filters
                                     <SelectItem value="inactive">Inactive</SelectItem>
                                 </SelectContent>
                             </Select>
+                        </div>
+                        <div className="flex items-start gap-2.5 rounded-lg border p-3 sm:col-span-2">
+                            <Checkbox
+                                id="visible-to-bookers"
+                                checked={form.data.visible_to_bookers}
+                                onCheckedChange={(checked) => form.setData('visible_to_bookers', checked === true)}
+                                aria-describedby="booker-visibility-hint"
+                                className="mt-0.5"
+                            />
+                            <div className="space-y-1">
+                                <Label htmlFor="visible-to-bookers" className="cursor-pointer">Show to Bookers</Label>
+                                <p id="booker-visibility-hint" className="text-xs text-muted-foreground">
+                                    Turning this off hides the product from Booker searches and new orders. Saved order history is kept.
+                                </p>
+                                {err('visible_to_bookers') && <p className="text-xs text-destructive">{err('visible_to_bookers')}</p>}
+                            </div>
                         </div>
                         {numberField('purchase_price', 'Purchase Price', { dec: true, hint: 'Your cost from the supplier' })}
                         {numberField('trade_price', 'Trade Price', { dec: true, hint: 'Price to the pharmacy (fills sales lines)' })}

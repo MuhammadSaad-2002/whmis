@@ -16,10 +16,10 @@ likely to matter when changing each module.
 - Workspace: `/workspace`; tabbed shell that hosts the app navigation experience.
   Open tabs refresh within the same login and browser tab. Each new login starts
   at that user's home page. Changes to permissions invalidate saved tab state.
-  On desktop, Super Admin uses top navigation, with Daily Work links visible
-  on wide screens. Other roles use the sidebar. On phones, all roles use top
-  navigation with a **Pages** menu for permitted destinations and an **Open tabs**
-  switcher for switching or closing workspace tabs.
+  All roles use the top bar. Wide screens show permitted **Daily Work** links
+  and group other pages under **More**. Narrow screens put all permitted pages
+  under **Pages**. Phones also have an **Open tabs** switcher for switching or
+  closing workspace tabs. Profile settings use a horizontal section menu.
 - Navigation source: `resources/js/components/nav-config.ts`.
 
 ## Master data
@@ -27,6 +27,9 @@ likely to matter when changing each module.
 - Suppliers: `/suppliers`; implemented by `CompanyController` and `Company`.
 - Categories: `/categories`; implemented by `ProductCategoryController`.
 - Products: `/products`, product import, and product template download.
+  Product editors can turn off **Show to Bookers** per product. The default is
+  on. This hides products from field Booker searches and new orders without
+  deactivating the product for staff or changing saved orders.
 - Customers: `/customers`, customer import, template download, primary Booker, assigned Bookers, and assignment audit.
 - Incentive rules: `/incentives`; supports global, supplier, product, and customer scopes.
 
@@ -44,12 +47,17 @@ likely to matter when changing each module.
 - Purchases: list/create/edit/post/cancel/duplicate/print under `/purchases`.
 - Sales: list/create/edit/post/cancel/print/summary/net-position under `/sales`.
 - Bookings: draft, submit, approve, reject, cancel, and convert to linked draft sales invoice.
-- Mobile booking items use compact cards with quantity/bonus/price, stock and
-  retail information, incentive actions, and a line total. Discount, GST, and
-  remarks expand on demand; a collapsed summary indicates existing adjustments.
-  Discount/GST validation errors expand the optional fields automatically.
+- On phones and tablets the booking form puts customer selection above compact
+  product cards. Product selection opens a searchable dialog; each card keeps
+  quantity, bonus, unit price, incentives, and line total within reach. Optional
+  details and adjustments expand on demand, and Discount/GST validation errors
+  expand their fields automatically. Read-only bookings show item values as text.
+  The footer keeps the total and enabled workflow actions visible, with a
+  collapsible subtotal breakdown. Desktop retains its grid and keyboard shortcuts.
 - Booking lists show first-save and latest-change timestamps, with current-status
-  time. The form's expandable activity panel shows creation, last draft save,
+  time. On phones and tablets, bookings appear as cards with collapsible filters
+  and timestamp details. The desktop table retains keyboard navigation.
+  The form's expandable activity panel shows creation, last draft save,
   submission, approval/rejection, conversion, and cancellation in Asia/Karachi
   (PKT), independently of the business booking date. This is a milestone summary,
   not a log of every draft save. Unknown historical times remain unrecorded.

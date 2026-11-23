@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -15,6 +16,8 @@ class Product extends Model implements AuditableContract
 
     protected $guarded = [];
 
+    protected $attributes = ['visible_to_bookers' => true];
+
     protected function casts(): array
     {
         return [
@@ -26,6 +29,7 @@ class Product extends Model implements AuditableContract
             'default_discount_percent' => 'decimal:2',
             'min_stock' => 'decimal:2',
             'reorder_level' => 'decimal:2',
+            'visible_to_bookers' => 'boolean',
         ];
     }
 
@@ -47,6 +51,16 @@ class Product extends Model implements AuditableContract
     public function scopeActive($query)
     {
         return $query->where('status', 'active');
+    }
+
+    public function scopeVisibleTo(Builder $query, User $user): Builder
+    {
+        return $query->when($user->isFieldBooker(), fn (Builder $products) => $products->where('visible_to_bookers', true));
+    }
+
+    public function isVisibleTo(User $user): bool
+    {
+        return ! $user->isFieldBooker() || $this->visible_to_bookers;
     }
 
     public function availableStock(?int $warehouseId = null): float

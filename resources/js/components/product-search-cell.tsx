@@ -8,7 +8,8 @@ export interface ProductHit {
     id: number;
     name: string;
     generic_name: string | null;
-    company: string | null;
+    /** Omitted by the API for field Bookers. */
+    company?: string | null;
     pack_size: string | null;
     /** Omitted by the API for roles without products.view_cost (e.g. Bookers). */
     purchase_price?: number;
@@ -40,10 +41,11 @@ interface Props {
  * Esc closes. While closed, all keys flow to the invoice grid's handler.
  */
 export function ProductSearchCell({
-    value, warehouseId, companyId, showSupplier = true, disabled, openSignal, onSelect, onGridKeyDown, inputRef,
+    value, warehouseId, companyId, showSupplier: includeSupplier = true, disabled, openSignal, onSelect, onGridKeyDown, inputRef,
 }: Props) {
-    const { can } = usePermissions();
-    const showCost = can('products.view_cost');
+    const { can, canViewSupplierDetails } = usePermissions();
+    const showSupplier = canViewSupplierDetails && includeSupplier;
+    const showCost = canViewSupplierDetails && can('products.view_cost');
     // Stacks into a single card row on phones; becomes a table grid from `sm` up.
     const gridCols = !showSupplier
         ? showCost
@@ -166,7 +168,7 @@ export function ProductSearchCell({
                     }}
                     value={open ? query : value}
                     disabled={disabled}
-                    placeholder="Type to search… (F2)"
+                    placeholder="Type to search…"
                     onChange={(e) => {
                         if (!open) setOpen(true);
                         setQuery(e.target.value);

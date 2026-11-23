@@ -128,6 +128,7 @@ const CommandShortcut = ({
 }: React.HTMLAttributes<HTMLSpanElement>) => {
   return (
     <span
+      data-shortcut-hint
       className={cn(
         "ml-auto text-xs tracking-widest text-muted-foreground",
         className

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use App\Services\LicenseService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
@@ -38,15 +39,19 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         [$message, $author] = str(Inspiring::quotes()->random())->explode('-');
+        $user = $request->user();
+        $canViewSupplierDetails = $user?->canViewSupplierDetails() ?? false;
+        $permissions = $user?->getAllPermissions()->pluck('name');
 
         return array_merge(parent::share($request), [
             ...parent::share($request),
             'name' => config('branding.product_name', 'Tradentra'),
             'quote' => ['message' => trim($message), 'author' => trim($author)],
             'auth' => [
-                'user' => $request->user(),
-                'permissions' => $request->user()?->getAllPermissions()->pluck('name') ?? [],
-                'roles' => $request->user()?->getRoleNames() ?? [],
+                'user' => $user,
+                'permissions' => $permissions?->when(! $canViewSupplierDetails, fn ($names) => $names->diff(User::SUPPLIER_MODULE_PERMISSIONS)->values()) ?? [],
+                'roles' => $user?->getRoleNames() ?? [],
+                'canViewSupplierDetails' => $canViewSupplierDetails,
             ],
             'flash' => [
                 'success' => $request->session()->get('success'),

@@ -55,8 +55,11 @@ class HrController extends Controller
         $self = $request->routeIs('hr.self');
         if ($self) abort_unless($employee->user_id === $request->user()->id,403);
         $financial = $self || $request->user()->can('hr.payroll.view');
-        $employee->load(['department','designation','user:id,name,is_active','manager:id,name']);
-        $assignmentIssue = match (true) {
+        $showEmployeeDetails = ! ($self && $request->user()->isFieldBooker());
+        if ($showEmployeeDetails) {
+            $employee->load(['department','designation','user:id,name,is_active','manager:id,name']);
+        }
+        $assignmentIssue = $self ? null : match (true) {
             ! $request->user()->can('bookers.assign') => 'Your role does not have customer assignment permission.',
             ! $employee->is_booker => 'Enable Sales Booker in Employees → Edit Employee. A Booker designation alone does not enable customer assignments.',
             ! $employee->user => 'Link an existing Booker system login in Employees → Edit Employee.',
@@ -65,7 +68,9 @@ class HrController extends Controller
             default => null,
         };
         return Inertia::render('hr/employee', [
-            'employee'=>$employee, 'self'=>$self,
+            'employee' => $showEmployeeDetails ? $employee : $employee->only(['id', 'name', 'employee_number', 'is_booker', 'user_id']),
+            'self' => $self,
+            'showEmployeeDetails' => $showEmployeeDetails,
             'salaries'=>$financial ? $employee->salaries()->get() : [],
             'balances'=>$financial ? ['advance'=>$this->hr->balance($employee->id,'advance'),'payable'=>$this->hr->balance($employee->id,'payable')] : null,
             'payslips'=>$financial ? PayrollItem::with('payroll')->where('employee_id',$employee->id)->whereHas('payroll',fn($q)=>$q->whereIn('status',['posted','cancelled']))->latest()->limit(24)->get() : [],
@@ -73,7 +78,7 @@ class HrController extends Controller
             'leaves'=>EmployeeLeave::with('leaveType')->where('employee_id',$employee->id)->latest()->limit(50)->get(),
             'attendance'=>EmployeeAttendance::where('employee_id',$employee->id)->latest('date')->limit(31)->get(),
             'customers'=>$employee->is_booker && $employee->user_id ? \App\Models\Customer::forBooker($employee->user_id)->get(['id','name']) : [],
-            'customerAssignmentIssue' => $self ? null : $assignmentIssue,
+            'customerAssignmentIssue' => $assignmentIssue,
             'customerOptions'=>! $self && $assignmentIssue === null
                 ? \App\Models\Customer::where(fn ($q) => $q->where('status', 'active')->orWhere(fn ($q) => $q->forBooker($employee->user_id)))
                     ->orderBy('name')->get(['id','name','city','status','booker_id'])->map(fn ($c) => [

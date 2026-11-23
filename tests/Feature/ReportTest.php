@@ -236,12 +236,27 @@ class ReportTest extends TestCase
         $this->assertCount(1, $ranked);
         $this->assertSame('Top 10 by Net Revenue', $ranked[0]['title']);
         $this->assertStringStartsWith('data:image/svg+xml;base64,', $ranked[0]['image']);
-        $this->assertStringContainsString('<rect', base64_decode(substr($ranked[0]['image'], 26)));
+        $rankedSvg = base64_decode(substr($ranked[0]['image'], 26));
+        $this->assertStringContainsString('fill="#234968"', $rankedSvg);
 
         $trend = $visualizations->pdfCharts('profit-by-month', $reports->build('profit-by-month', []));
         $this->assertCount(1, $trend);
         $this->assertSame('Sales and Profit Trend', $trend[0]['title']);
-        $this->assertStringContainsString('<polyline', base64_decode(substr($trend[0]['image'], 26)));
+        $trendSvg = base64_decode(substr($trend[0]['image'], 26));
+        $this->assertStringContainsString('stroke="#234968"', $trendSvg);
+        $this->assertStringContainsString('stroke="#087568"', $trendSvg);
+        $this->assertStringContainsString('stroke-dasharray="6 4"', $trendSvg);
+    }
+
+    public function test_negative_ranked_values_keep_the_alert_color_in_pdf_charts(): void
+    {
+        $charts = app(ReportVisualizationService::class)->pdfCharts('product-sales', [
+            'rows' => [['product' => 'Returned item', 'net_revenue' => -10]],
+        ]);
+
+        $svg = base64_decode(substr($charts[0]['image'], 26));
+        $this->assertStringContainsString('fill="#b4232a"', $svg);
+        $this->assertStringContainsString('Rs -10.00', $svg);
     }
 
     public function test_pdf_chart_images_preserve_their_intrinsic_aspect_ratio(): void

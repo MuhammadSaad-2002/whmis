@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Booking;
 use App\Models\IncentiveRule;
 use App\Models\SalesInvoice;
+use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -13,25 +14,39 @@ use RuntimeException;
 class BookingService
 {
     /** Repeat quantities using today's catalogue; old prices and promotions are not promises. */
-    public function repeatPrefill(Booking $booking, int $warehouseId): array
+    public function repeatPrefill(Booking $booking, int $warehouseId, User $viewer): array
     {
+        $showSupplier = $viewer->canViewSupplierDetails();
         $items = [];
         $skipped = [];
-        foreach ($booking->items()->with('product')->get()->groupBy('product_id') as $productId => $lines) {
-            $product = \App\Models\Product::active()->whereKey($productId)->with('company:id,name')
-                ->withSum(['batches as stock' => fn ($q) => $q->where('warehouse_id', $warehouseId)], 'qty_available')->first();
-            if (! $product) {
-                $skipped[] = $lines->first()->product?->name ?? "Product #{$productId}";
+        $hiddenCount = 0;
+        $linesByProduct = $booking->items()->with([
+            'product' => fn ($products) => $products
+                ->withTrashed()
+                ->when($showSupplier, fn ($q) => $q->with('company:id,name'))
+                ->withSum(['batches as stock' => fn ($q) => $q->where('warehouse_id', $warehouseId)], 'qty_available'),
+        ])->get()->groupBy('product_id');
+
+        foreach ($linesByProduct as $productId => $lines) {
+            $product = $lines->first()->product;
+            if ($product && ! $product->isVisibleTo($viewer)) {
+                $hiddenCount++;
+                continue;
+            }
+            if (! $product || $product->trashed() || $product->status !== 'active') {
+                $skipped[] = $product && ! $product->trashed() ? $product->name : "Product #{$productId}";
                 continue;
             }
             $items[] = ['product_id' => $product->id, 'product_name' => $product->name,
                 'quantity' => (string) $lines->sum('quantity'), 'requested_bonus' => '0', 'incentives' => [],
                 'trade_price' => (string) $product->trade_price, 'discount_percent' => (string) $product->default_discount_percent,
                 'gst_percent' => (string) $product->tax_percent, 'remarks' => '',
-                'retail_price' => (string) $product->retail_price, 'company' => $product->company?->name,
+                'retail_price' => (string) $product->retail_price,
+                ...($showSupplier ? ['company' => $product->company?->name] : []),
                 'stock' => (float) ($product->stock ?? 0)];
         }
-        return ['customer_id' => $booking->customer_id, 'items' => $items, 'source' => $booking->booking_number, 'skipped' => $skipped];
+        return ['customer_id' => $booking->customer_id, 'items' => $items, 'source' => $booking->booking_number,
+            'skipped' => $skipped, 'hidden_count' => $hiddenCount];
     }
 
     public function __construct(

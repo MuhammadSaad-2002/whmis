@@ -11,6 +11,7 @@ use App\Services\IncentiveEngine;
 use App\Services\PaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
 
 /**
  * JSON lookups used by the keyboard grid (F2 product search) and forms.
@@ -21,10 +22,12 @@ class LookupController extends Controller
     {
         $warehouseId = (int) ($request->warehouse_id ?: Warehouse::default()->id);
         $query = trim((string) $request->q);
+        $showSupplier = $request->user()->canViewSupplierDetails();
 
         $products = Product::query()
+            ->visibleTo($request->user())
             ->active()
-            ->with('company:id,name')
+            ->when($showSupplier, fn ($q) => $q->with('company:id,name'))
             ->withSum(
                 ['batches as stock' => fn ($q) => $q->where('warehouse_id', $warehouseId)],
                 'qty_available',
@@ -36,21 +39,20 @@ class LookupController extends Controller
                     ->orWhere('barcode', $query)
                     ->orWhere('sku', $query));
             })
-            ->when($request->company_id, fn ($q, $id) => $q->where('company_id', $id))
+            ->when($showSupplier && $request->company_id, fn ($q) => $q->where('company_id', $request->company_id))
             ->orderBy('name')
             ->limit(20)
             ->get();
 
         // Purchase price (cost) is hidden from roles without products.view_cost
         // (e.g. Bookers) — the key is simply omitted from the payload.
-        $showCost = $request->user()->can('products.view_cost');
+        $showCost = $showSupplier && $request->user()->can('products.view_cost');
 
-        return response()->json($products->map(function (Product $product) use ($showCost) {
+        return response()->json($products->map(function (Product $product) use ($showCost, $showSupplier) {
             $row = [
                 'id' => $product->id,
                 'name' => $product->name,
                 'generic_name' => $product->generic_name,
-                'company' => $product->company?->name,
                 'pack_size' => $product->pack_size,
                 'trade_price' => (float) $product->trade_price,
                 'retail_price' => (float) $product->retail_price,
@@ -59,6 +61,9 @@ class LookupController extends Controller
                 'stock' => (float) ($product->stock ?? 0),
             ];
 
+            if ($showSupplier) {
+                $row['company'] = $product->company?->name;
+            }
             if ($showCost) {
                 $row['purchase_price'] = (float) $product->purchase_price;
             }
@@ -69,6 +74,8 @@ class LookupController extends Controller
 
     public function batches(Request $request, Product $product)
     {
+        abort_unless($product->isVisibleTo($request->user()), 404);
+
         $warehouseId = (int) ($request->warehouse_id ?: Warehouse::default()->id);
 
         $batches = $product->batches()
@@ -118,7 +125,8 @@ class LookupController extends Controller
     public function rules(Request $request, IncentiveEngine $engine)
     {
         $request->validate([
-            'product_id' => ['required', 'exists:products,id'],
+            'product_id' => ['required', Rule::exists('products', 'id')
+                ->when($request->user()->isFieldBooker(), fn ($rule) => $rule->where('visible_to_bookers', true)->withoutTrashed())],
             'customer_id' => ['nullable', 'exists:customers,id'],
             'qty' => ['nullable', 'numeric', 'min:0'],
             'date' => ['nullable', 'date'],
@@ -127,6 +135,7 @@ class LookupController extends Controller
         $qty = (float) ($request->qty ?: 0);
         $price = (float) ($request->price ?: 0);
         $date = $request->date ? Carbon::parse($request->date) : null;
+        $showSupplier = $request->user()->canViewSupplierDetails();
 
         $rules = $engine->available(
             (int) $request->product_id,
@@ -134,7 +143,7 @@ class LookupController extends Controller
             $date,
         );
 
-        return response()->json($rules->map(function (IncentiveRule $rule) use ($engine, $qty, $price) {
+        return response()->json($rules->map(function (IncentiveRule $rule) use ($engine, $qty, $price, $showSupplier) {
             $eligible = $engine->meetsMinimumQuantity($rule, $qty);
             $minQty = $rule->min_qty !== null ? (float) $rule->min_qty : null;
 
@@ -146,8 +155,8 @@ class LookupController extends Controller
                 'scope' => implode(' · ', array_filter([
                     $rule->customer_id ? 'This customer' : null,
                     $rule->product_id ? 'This product' : null,
-                    $rule->company_id ? 'Company-wide' : null,
-                ])) ?: 'All customers & products',
+                    $showSupplier && $rule->company_id ? 'Company-wide' : null,
+                ])) ?: ($showSupplier ? 'All customers & products' : 'Available offer'),
                 // Rule parameters so the client can recompute the bonus live as qty changes.
                 'base_qty' => (float) $rule->base_qty,
                 'bonus_qty' => (float) $rule->bonus_qty,
@@ -176,6 +185,8 @@ class LookupController extends Controller
             'party_type' => ['required', 'in:customer,company'],
             'party_id' => ['required', 'integer'],
         ]);
+
+        abort_if($request->party_type === 'company' && ! $request->user()->canViewSupplierDetails(), 403);
 
         $party = $request->party_type === 'customer'
             ? Customer::findOrFail($request->party_id)

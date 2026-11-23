@@ -777,7 +777,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
                                                     }}
                                                     className="rounded px-1 text-sm text-muted-foreground outline-none focus:ring-1 focus:ring-ring disabled:opacity-70"
                                                 >
-                                                    {row.incentives.length ? '+ add' : 'F4…'}
+                                                    {row.incentives.length ? '+ add' : <>Add rule <kbd className="opacity-60">F4</kbd></>}
                                                 </button>
                                             </div>
                                         </td>

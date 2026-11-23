@@ -34,7 +34,9 @@ These timestamps have no stock, ledger, or calculation effects.
 - Users, roles, and permissions drive access.
 - Companies are suppliers in the UI.
 - Customers are pharmacies and may have one primary Booker plus many assigned Bookers.
-- Products belong to suppliers and categories.
+- Products belong to suppliers and categories. `products.visible_to_bookers`
+  defaults to true and controls field Booker visibility, not stock or product status.
+  Production SQL: [add Booker visibility](../database/manual/2026_11_23_add_booker_visibility_to_products.sql).
 - Warehouses hold batches.
 - Batches hold stock quantity, expiry, effective cost, and sample/loan flags.
 - Stock movements are append-only references to the stock-changing source.

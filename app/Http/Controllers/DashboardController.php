@@ -19,6 +19,10 @@ class DashboardController extends Controller
 {
     public function __invoke(Request $request, ReportService $reports, DashboardService $dashboard)
     {
+        if (! $request->user()->canViewSupplierDetails()) {
+            return $this->bookerDashboard($request);
+        }
+
         // Admin / Super Admin get the richer Executive Dashboard.
         if ($request->user()->can('dashboard.executive')) {
             [$from, $to, $period] = $this->resolvePeriod($request);

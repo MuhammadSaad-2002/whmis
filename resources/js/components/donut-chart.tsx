@@ -1,5 +1,5 @@
+import { chartTheme } from '@/lib/chart-theme';
 import { amount } from '@/lib/format';
-import { useEffect, useState } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 
 export interface DonutSlice {
@@ -7,34 +7,9 @@ export interface DonutSlice {
     value: number;
 }
 
-// Ordinal blue ramp (dataviz skill, sequential steps, validated with --ordinal):
-// light→dark reads "more aged = deeper". Buckets are ordered 0–30 … 90+.
-const RAMP = {
-    light: ['#86b6ef', '#5598e7', '#2a78d6', '#184f95'],
-    dark: ['#9ec5f4', '#6da7ec', '#3987e5', '#256abf'],
-};
-const TEXT = { light: '#00000099', dark: '#ffffff99' };
-const SURFACE_GAP = { light: '#fcfcfb', dark: '#1a1a19' };
-
-function useIsDark(): boolean {
-    const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
-
-    useEffect(() => {
-        const observer = new MutationObserver(() =>
-            setDark(document.documentElement.classList.contains('dark')),
-        );
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
-
-    return dark;
-}
-
 export function DonutChart({ data }: { data: DonutSlice[] }) {
-    const isDark = useIsDark();
-    const ramp = isDark ? RAMP.dark : RAMP.light;
-    const text = isDark ? TEXT.dark : TEXT.light;
-    const gap = isDark ? SURFACE_GAP.dark : SURFACE_GAP.light;
+    // A progressively deeper color indicates older receivables.
+    const ramp = chartTheme.aging;
 
     const total = data.reduce((sum, slice) => sum + slice.value, 0);
     const empty = total <= 0;
@@ -51,24 +26,19 @@ export function DonutChart({ data }: { data: DonutSlice[] }) {
                             innerRadius="62%"
                             outerRadius="100%"
                             paddingAngle={empty ? 0 : 2}
-                            stroke={gap}
+                            stroke={chartTheme.surface}
                             strokeWidth={2}
                             isAnimationActive={false}
                         >
                             {(empty ? [0] : data).map((_, index) => (
-                                <Cell key={index} fill={empty ? '#8884' : ramp[index % ramp.length]} />
+                                <Cell key={index} fill={empty ? chartTheme.grid : ramp[index % ramp.length]} />
                             ))}
                         </Pie>
                         {!empty && (
                             <Tooltip
                                 formatter={(value, name) => [`Rs ${amount(Number(value ?? 0))}`, String(name ?? '')]}
-                                contentStyle={{
-                                    borderRadius: 8,
-                                    border: '1px solid ' + text,
-                                    background: 'var(--background, #fff)',
-                                    color: 'inherit',
-                                    fontSize: 12,
-                                }}
+                                contentStyle={chartTheme.tooltip}
+                                itemStyle={{ color: 'var(--popover-foreground)' }}
                             />
                         )}
                     </PieChart>

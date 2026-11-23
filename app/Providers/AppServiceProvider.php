@@ -20,6 +20,7 @@ use App\Models\StockAdjustment;
 use App\Models\StockLoan;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -37,6 +38,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Gate::define('view-supplier-details', fn (User $user) => $user->canViewSupplierDetails());
+
         Relation::enforceMorphMap([
             'hr_department' => \App\Models\HrDepartment::class,
             'hr_designation' => \App\Models\HrDesignation::class,

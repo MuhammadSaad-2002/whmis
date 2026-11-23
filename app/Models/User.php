@@ -16,6 +16,26 @@ class User extends Authenticatable implements Auditable
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use AuditableTrait, HasFactory, HasRoles, Notifiable;
 
+    /** UI entry points for modules that expose suppliers or purchasing details. */
+    public const SUPPLIER_MODULE_PERMISSIONS = [
+        'suppliers.view', 'suppliers.manage', 'products.manage', 'products.view_cost',
+        'dashboard.executive', 'dashboard.view_all', 'purchases.view', 'sales.view',
+        'samples.view', 'loans.view', 'returns.view', 'incentives.view', 'bookings.convert',
+        'inventory.view', 'payments.view', 'ledger.view', 'reports.view', 'audit.view',
+    ];
+
+    public function isFieldBooker(): bool
+    {
+        // A field Booker stays restricted even if extra operational grants have
+        // been assigned. Admin roles keep their existing operational access.
+        return $this->hasRole('Booker') && ! $this->hasAnyRole(['Admin', 'Super Admin']);
+    }
+
+    public function canViewSupplierDetails(): bool
+    {
+        return ! $this->isFieldBooker();
+    }
+
     /**
      * The attributes that are mass assignable.
      *

@@ -6,6 +6,17 @@ use Illuminate\Support\Collection;
 
 class ReportVisualizationService
 {
+    // Print-safe counterparts of the web chart colors in resources/css/app.css.
+    private const SALES_COLOR = '#234968';
+
+    private const PROFIT_COLOR = '#087568';
+
+    private const NEGATIVE_COLOR = '#b4232a';
+
+    private const GRID_COLOR = '#d3e0e8';
+
+    private const LABEL_COLOR = '#496175';
+
     /**
      * Report-specific ranked chart definitions shared by Inertia and PDF exports.
      * The first metric is the default metric used in PDFs.
@@ -183,12 +194,12 @@ class ReportVisualizationService
             $value = (float) $row['value'];
             $y = 12 + $index * $rowHeight;
             $barWidth = max(1, (int) round(abs($value) / $max * $barMax));
-            $color = $value < 0 ? '#dc2626' : '#2563eb';
+            $color = $value < 0 ? self::NEGATIVE_COLOR : self::SALES_COLOR;
             $label = $this->escape($this->truncate((string) $row['label'], 35));
             $formatted = $this->escape($this->formatValue($value, $format));
 
-            $parts[] = '<text x="0" y="'.($y + 13)."\" font-size=\"11\" fill=\"#374151\">{$label}</text>";
-            $parts[] = "<rect x=\"{$barStart}\" y=\"{$y}\" width=\"{$barMax}\" height=\"18\" rx=\"3\" fill=\"#e5e7eb\"/>";
+            $parts[] = '<text x="0" y="'.($y + 13).'" font-size="11" fill="'.self::LABEL_COLOR.'">'.$label.'</text>';
+            $parts[] = "<rect x=\"{$barStart}\" y=\"{$y}\" width=\"{$barMax}\" height=\"18\" rx=\"3\" fill=\"".self::GRID_COLOR.'"/>';
             $parts[] = "<rect x=\"{$barStart}\" y=\"{$y}\" width=\"{$barWidth}\" height=\"18\" rx=\"3\" fill=\"{$color}\"/>";
             $parts[] = '<text x="625" y="'.($y + 13)."\" font-size=\"11\" font-weight=\"bold\" fill=\"{$color}\">{$formatted}</text>";
         }
@@ -201,8 +212,8 @@ class ReportVisualizationService
     private function trendSvgDataUri(array $points): string
     {
         $series = [
-            ['key' => 'sales', 'label' => 'Net Sales', 'color' => '#2563eb'],
-            ['key' => 'profit', 'label' => 'Net Profit', 'color' => '#16a34a'],
+            ['key' => 'sales', 'label' => 'Net Sales', 'color' => self::SALES_COLOR, 'dash' => ''],
+            ['key' => 'profit', 'label' => 'Net Profit', 'color' => self::PROFIT_COLOR, 'dash' => ' stroke-dasharray="6 4"'],
         ];
         $width = 760;
         $height = 205;
@@ -227,8 +238,8 @@ class ReportVisualizationService
         for ($step = 0; $step <= 4; $step++) {
             $gridY = $top + ($step / 4) * $plotHeight;
             $gridValue = $max - ($step / 4) * $range;
-            $parts[] = "<line x1=\"{$left}\" y1=\"{$gridY}\" x2=\"".($left + $plotWidth)."\" y2=\"{$gridY}\" stroke=\"#e5e7eb\" stroke-width=\"1\"/>";
-            $parts[] = '<text x="0" y="'.($gridY + 4).'" font-size="9" fill="#6b7280">'.$this->escape($this->compactValue($gridValue)).'</text>';
+            $parts[] = "<line x1=\"{$left}\" y1=\"{$gridY}\" x2=\"".($left + $plotWidth)."\" y2=\"{$gridY}\" stroke=\"".self::GRID_COLOR.'" stroke-width="1"/>';
+            $parts[] = '<text x="0" y="'.($gridY + 4).'" font-size="9" fill="'.self::LABEL_COLOR.'">'.$this->escape($this->compactValue($gridValue)).'</text>';
         }
 
         foreach ($series as $item) {
@@ -236,7 +247,7 @@ class ReportVisualizationService
             foreach ($points as $index => $point) {
                 $coordinates[] = round($x($index), 1).','.round($y((float) ($point[$item['key']] ?? 0)), 1);
             }
-            $parts[] = '<polyline points="'.implode(' ', $coordinates).'" fill="none" stroke="'.$item['color'].'" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>';
+            $parts[] = '<polyline points="'.implode(' ', $coordinates).'" fill="none" stroke="'.$item['color'].'" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"'.$item['dash'].'/>';
             foreach ($coordinates as $coordinate) {
                 [$cx, $cy] = explode(',', $coordinate);
                 $parts[] = "<circle cx=\"{$cx}\" cy=\"{$cy}\" r=\"3\" fill=\"{$item['color']}\"/>";
@@ -245,14 +256,14 @@ class ReportVisualizationService
 
         foreach ($points as $index => $point) {
             $label = $this->escape($this->truncate((string) ($point['label'] ?? ''), 9));
-            $parts[] = '<text x="'.round($x($index), 1).'" y="158" text-anchor="middle" font-size="8" fill="#6b7280">'.$label.'</text>';
+            $parts[] = '<text x="'.round($x($index), 1).'" y="158" text-anchor="middle" font-size="8" fill="'.self::LABEL_COLOR.'">'.$label.'</text>';
         }
 
         $legendX = 500;
         foreach ($series as $index => $item) {
             $lx = $legendX + $index * 115;
             $parts[] = "<rect x=\"{$lx}\" y=\"180\" width=\"10\" height=\"10\" rx=\"2\" fill=\"{$item['color']}\"/>";
-            $parts[] = '<text x="'.($lx + 15).'" y="189" font-size="10" fill="#374151">'.$item['label'].'</text>';
+            $parts[] = '<text x="'.($lx + 15).'" y="189" font-size="10" fill="'.self::LABEL_COLOR.'">'.$item['label'].'</text>';
         }
         $parts[] = '</svg>';
 

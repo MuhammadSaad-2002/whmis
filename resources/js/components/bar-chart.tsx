@@ -1,28 +1,10 @@
+import { chartTheme } from '@/lib/chart-theme';
 import { amount, qty } from '@/lib/format';
-import { useEffect, useState } from 'react';
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 export interface BarDatum {
     label: string;
     value: number;
-}
-
-// Single-series magnitude ranking → categorical slot 1 (blue), entity-stable.
-const COLORS = {
-    light: { bar: '#2a78d6', text: '#00000099', grid: '#00000014' },
-    dark: { bar: '#3987e5', text: '#ffffff99', grid: '#ffffff1a' },
-};
-
-function useIsDark(): boolean {
-    const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
-
-    useEffect(() => {
-        const observer = new MutationObserver(() => setDark(document.documentElement.classList.contains('dark')));
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
-
-    return dark;
 }
 
 interface HBarChartProps {
@@ -39,8 +21,6 @@ function formatValue(value: number, format: HBarChartProps['valueFormat']): stri
 
 /** Horizontal bars, ranked highest-first, with a truncated category axis. */
 export function HBarChart({ data, valueLabel = 'Net Revenue', valueFormat = 'money' }: HBarChartProps) {
-    const palette = useIsDark() ? COLORS.dark : COLORS.light;
-
     if (data.length === 0) {
         return <div className="text-muted-foreground flex h-72 items-center justify-center text-sm">No data for this period.</div>;
     }
@@ -54,13 +34,13 @@ export function HBarChart({ data, valueLabel = 'Net Revenue', valueFormat = 'mon
                         type="category"
                         dataKey="label"
                         width={140}
-                        tick={{ fill: palette.text, fontSize: 12 }}
+                        tick={{ fill: chartTheme.text, fontSize: 12 }}
                         tickLine={false}
                         axisLine={false}
                         tickFormatter={(v: string) => (v.length > 20 ? v.slice(0, 19) + '…' : v)}
                     />
                     <Tooltip
-                        cursor={{ fill: palette.grid }}
+                        cursor={{ fill: 'var(--muted)' }}
                         formatter={(value) => {
                             const numericValue = Number(value ?? 0);
                             return [
@@ -70,17 +50,11 @@ export function HBarChart({ data, valueLabel = 'Net Revenue', valueFormat = 'mon
                                     : valueLabel,
                             ];
                         }}
-                        contentStyle={{
-                            borderRadius: 8,
-                            border: '1px solid ' + palette.grid,
-                            background: 'var(--background, #fff)',
-                            color: 'inherit',
-                            fontSize: 12,
-                        }}
+                        contentStyle={chartTheme.tooltip}
                     />
                     <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false} barSize={20}>
                         {data.map((datum, index) => (
-                            <Cell key={index} fill={datum.value < 0 ? '#dc2626' : palette.bar} />
+                            <Cell key={index} fill={datum.value < 0 ? chartTheme.negative : chartTheme.sales} />
                         ))}
                     </Bar>
                 </BarChart>

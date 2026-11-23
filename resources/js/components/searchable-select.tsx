@@ -24,6 +24,7 @@ interface Props {
     className?: string;
     id?: string;
     autoFocus?: boolean;
+    touch?: boolean;
 }
 
 /**
@@ -42,6 +43,7 @@ export function SearchableSelect({
     className,
     id,
     autoFocus,
+    touch,
 }: Props) {
     const [open, setOpen] = useState(false);
     const triggerRef = useRef<HTMLButtonElement>(null);
@@ -68,26 +70,27 @@ export function SearchableSelect({
                     <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+            <PopoverContent className="w-(--radix-popover-trigger-width) max-w-(--radix-popover-content-available-width) p-0" align="start">
                 <Command
                     filter={(itemValue, search) =>
                         itemValue.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
                     }
                 >
-                    <CommandInput placeholder={searchPlaceholder} />
-                    <CommandList>
+                    <CommandInput placeholder={searchPlaceholder} className={touch ? 'h-12 text-base' : undefined} />
+                    <CommandList className={touch ? 'max-h-[min(300px,40dvh)] overscroll-contain' : undefined}>
                         <CommandEmpty>{emptyText}</CommandEmpty>
                         {options.map((option) => (
                             <CommandItem
                                 key={option.value}
                                 value={option.label}
+                                className={touch ? 'min-h-11 cursor-pointer' : undefined}
                                 onSelect={() => {
                                     onValueChange(option.value);
                                     setOpen(false);
                                 }}
                             >
                                 <Check className={cn('mr-2 size-4', option.value === value ? 'opacity-100' : 'opacity-0')} />
-                                <span className="truncate">{option.label}</span>
+                                <span className={touch ? 'min-w-0 break-words' : 'truncate'}>{option.label}</span>
                             </CommandItem>
                         ))}
                     </CommandList>

@@ -72,6 +72,7 @@ Route::middleware(['auth', 'licensed'])->group(function () {
             $request->session()->getId(),
             $user->getAuthIdentifier(),
             $user->getAllPermissions()->pluck('name')->sort()->values()->all(),
+            $user->canViewSupplierDetails(),
         ];
 
         return Inertia::render('workspace/index', [
@@ -83,24 +84,27 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     Route::get('dashboard', DashboardController::class)
         ->middleware('can:dashboard.view')->name('dashboard');
     Route::get('dashboard/executive/pdf', [DashboardController::class, 'exportPdf'])
-        ->middleware('can:dashboard.executive')->name('dashboard.executive.pdf');
+        ->middleware(['can:dashboard.executive', 'can:view-supplier-details'])->name('dashboard.executive.pdf');
 
     // Master data
     Route::resource('suppliers', CompanyController::class)
         ->only(['index', 'store', 'update', 'destroy'])
         ->parameters(['suppliers' => 'company'])
-        ->middleware('can:suppliers.view');
+        ->middleware(['can:suppliers.view', 'can:view-supplier-details']);
     Route::resource('categories', ProductCategoryController::class)
         ->only(['index', 'store', 'update', 'destroy'])
         ->parameters(['categories' => 'category'])
         ->middleware('can:categories.view');
     Route::resource('products', ProductController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
+        ->only(['index'])
         ->middleware('can:products.view');
+    Route::resource('products', ProductController::class)
+        ->only(['store', 'update', 'destroy'])
+        ->middleware(['can:products.view', 'can:products.manage', 'can:view-supplier-details']);
     Route::post('products-import', [ProductController::class, 'import'])
-        ->middleware('can:products.manage')->name('products.import');
+        ->middleware(['can:products.manage', 'can:view-supplier-details'])->name('products.import');
     Route::get('products-import/template', [ProductController::class, 'template'])
-        ->middleware('can:products.manage')->name('products.template');
+        ->middleware(['can:products.manage', 'can:view-supplier-details'])->name('products.template');
     Route::resource('customers', CustomerController::class)
         ->only(['index', 'store', 'update', 'destroy'])
         ->middleware('can:customers.view');
@@ -110,7 +114,7 @@ Route::middleware(['auth', 'licensed'])->group(function () {
         ->middleware('can:customers.manage')->name('customers.template');
 
     // Purchases
-    Route::middleware('can:purchases.view')->group(function () {
+    Route::middleware(['can:purchases.view', 'can:view-supplier-details'])->group(function () {
         Route::get('purchases', [PurchaseInvoiceController::class, 'index'])->name('purchases.index');
         Route::get('purchases/create', [PurchaseInvoiceController::class, 'create'])
             ->middleware('can:purchases.create')->name('purchases.create');
@@ -131,7 +135,7 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     });
 
     // Sales
-    Route::middleware('can:sales.view')->group(function () {
+    Route::middleware(['can:sales.view', 'can:view-supplier-details'])->group(function () {
         Route::get('sales', [SalesInvoiceController::class, 'index'])->name('sales.index');
         Route::get('sales/create', [SalesInvoiceController::class, 'create'])
             ->middleware('can:sales.create')->name('sales.create');
@@ -169,12 +173,12 @@ Route::middleware(['auth', 'licensed'])->group(function () {
             ->middleware('can:bookings.approve')->name('bookings.reject');
         Route::post('bookings/{booking}/cancel', [BookingController::class, 'cancel'])->name('bookings.cancel');
         Route::post('bookings/{booking}/convert', [BookingController::class, 'convert'])
-            ->middleware('can:bookings.convert')->name('bookings.convert');
+            ->middleware(['can:bookings.convert', 'can:view-supplier-details'])->name('bookings.convert');
     });
 
     // Samples — free-of-charge stock in (receipts) and out (issues), segregated
     // from normal trade. No money, no ledger; separate from bonus.
-    Route::middleware('can:samples.view')->prefix('samples')->group(function () {
+    Route::middleware(['can:samples.view', 'can:view-supplier-details'])->prefix('samples')->group(function () {
         // Sample receipts (FOC stock in from a supplier)
         Route::get('receipts', [SampleReceiptController::class, 'index'])->name('samples.receipts.index');
         Route::get('receipts/create', [SampleReceiptController::class, 'create'])
@@ -212,7 +216,7 @@ Route::middleware(['auth', 'licensed'])->group(function () {
 
     // Stock loans — products received on loan (in) or loaned out (out). No money,
     // segregated stock. Literal in/out routes precede the {loan} model binding.
-    Route::middleware('can:loans.view')->prefix('loans')->group(function () {
+    Route::middleware(['can:loans.view', 'can:view-supplier-details'])->prefix('loans')->group(function () {
         Route::get('{direction}', [StockLoanController::class, 'index'])
             ->whereIn('direction', ['in', 'out'])->name('loans.index');
         Route::get('{direction}/create', [StockLoanController::class, 'create'])
@@ -237,7 +241,7 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     });
 
     // Returns
-    Route::middleware('can:returns.view')->prefix('returns')->group(function () {
+    Route::middleware(['can:returns.view', 'can:view-supplier-details'])->prefix('returns')->group(function () {
         Route::get('sales', [ReturnController::class, 'salesIndex'])->name('returns.sales.index');
         Route::get('sales/create', [ReturnController::class, 'salesCreate'])
             ->middleware('can:returns.manage')->name('returns.sales.create');
@@ -261,10 +265,10 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     Route::resource('incentives', IncentiveRuleController::class)
         ->only(['index', 'store', 'update', 'destroy'])
         ->parameters(['incentives' => 'incentive'])
-        ->middleware('can:incentives.view');
+        ->middleware(['can:incentives.view', 'can:view-supplier-details']);
 
     // Inventory
-    Route::middleware('can:inventory.view')->group(function () {
+    Route::middleware(['can:inventory.view', 'can:view-supplier-details'])->group(function () {
         Route::get('inventory', [InventoryController::class, 'index'])->name('inventory.index');
         Route::get('inventory/batches', [InventoryController::class, 'batches'])->name('inventory.batches');
         Route::get('inventory/movements', [InventoryController::class, 'movements'])->name('inventory.movements');
@@ -273,7 +277,7 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     });
 
     // Payments & ledger
-    Route::middleware('can:payments.view')->group(function () {
+    Route::middleware(['can:payments.view', 'can:view-supplier-details'])->group(function () {
         Route::get('payments', [PaymentController::class, 'index'])->name('payments.index');
         Route::post('payments', [PaymentController::class, 'store'])
             ->middleware('can:payments.manage')->name('payments.store');
@@ -281,7 +285,7 @@ Route::middleware(['auth', 'licensed'])->group(function () {
             ->middleware('can:payments.manage')->name('payments.cancel');
     });
 
-    Route::middleware('can:ledger.view')->group(function () {
+    Route::middleware(['can:ledger.view', 'can:view-supplier-details'])->group(function () {
         Route::get('ledger/position', [LedgerController::class, 'position'])->name('ledger.position');
         Route::get('ledger/position/pdf', [LedgerController::class, 'positionPdf'])->name('ledger.position.pdf');
         Route::get('ledger/customers/{customer}', [LedgerController::class, 'customer'])->name('ledger.customer');
@@ -291,7 +295,7 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     });
 
     // Reports
-    Route::middleware('can:reports.view')->group(function () {
+    Route::middleware(['can:reports.view', 'can:view-supplier-details'])->group(function () {
         Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
         Route::get('reports/{key}', [ReportController::class, 'show'])->name('reports.show');
     });
@@ -313,9 +317,9 @@ Route::middleware(['auth', 'licensed'])->group(function () {
             ->middleware('can:license.manage')->name('license.store');
     });
     Route::get('audit-log', [AuditController::class, 'index'])
-        ->middleware('can:audit.view')->name('audit.index');
+        ->middleware(['can:audit.view', 'can:view-supplier-details'])->name('audit.index');
     Route::get('booker-assignments', [BookerAssignmentController::class, 'index'])
-        ->middleware('can:audit.view')->name('booker-assignments.index');
+        ->middleware(['can:audit.view', 'can:view-supplier-details'])->name('booker-assignments.index');
 
     // Notifications (bell)
     Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
@@ -326,7 +330,8 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     Route::prefix('lookup')->group(function () {
         Route::get('products', [LookupController::class, 'products'])->name('lookup.products');
         Route::get('products/{product}/batches', [LookupController::class, 'batches'])->name('lookup.batches');
-        Route::get('products/{product}/all-batches', [LookupController::class, 'allBatches'])->name('lookup.all-batches');
+        Route::get('products/{product}/all-batches', [LookupController::class, 'allBatches'])
+            ->middleware('can:view-supplier-details')->name('lookup.all-batches');
         Route::get('open-invoices', [LookupController::class, 'openInvoices'])->name('lookup.open-invoices');
         Route::get('rules', [LookupController::class, 'rules'])->name('lookup.rules');
     });

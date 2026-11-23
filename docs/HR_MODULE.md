@@ -6,10 +6,11 @@ salary, leave allowance, commission percentage, or opening balance is guessed.
 
 ## Setup and daily workflow
 
-Use the main sidebar to navigate HR sections and Reports. HR pages do not repeat
+Use **People & Payroll** in the workspace top bar's **More** or **Pages** menu
+to reach HR sections, and **Reports** to open HR reports. HR pages do not repeat
 these links as an in-page button bar; page-specific actions remain in the header.
 
-1. Open Human Resources → Settings. Configure departments, designations, and
+1. Open People & Payroll → HR Settings. Configure departments, designations, and
    paid/unpaid leave types with annual working-day allowances.
 2. Create employees with joining dates, optional last employment dates, weekly
    days off, contact information, and optional existing WHMIS logins. Sunday is
@@ -36,8 +37,9 @@ logins cannot be deleted or replaced, preserving historical attribution.
 Link the existing Booker login to the employee and enable Sales Booker. The
 login must already have the Booker role. Existing customer assignments, booking
 ownership, and invoice `booker_id` remain unchanged. The profile lists assigned
-customers. My HR exposes only the linked employee's profile, attendance, leave,
-salary history, and posted/cancelled payslip PDFs; it allows own leave requests.
+customers. My HR shows the linked employee's attendance, leave, salary history,
+and posted/cancelled payslip PDFs, and allows own leave requests. Field Bookers
+do not see the employee-details card in My HR; it remains on the HR staff view.
 
 To assign customers, open **Employees → employee profile → Assign Customers**.
 Search by customer/city, tick customers (or Select all shown), and Save Assignments.

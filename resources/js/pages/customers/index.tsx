@@ -87,7 +87,10 @@ const textFields: [keyof typeof emptyForm, string][] = [
 ];
 
 export default function CustomersIndex({ customers, cities, bookers, filters }: Props) {
-    const { can } = usePermissions();
+    const { can, canViewSupplierDetails } = usePermissions();
+    const canViewLedger = can('ledger.view') && canViewSupplierDetails;
+    const canManageCustomers = can('customers.manage');
+    const showActions = canViewLedger || canManageCustomers;
     const [dialogOpen, setDialogOpen] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
     const [editing, setEditing] = useState<Customer | null>(null);
@@ -178,7 +181,7 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                         <h1 className="text-4xl font-bold">Customers</h1>
                         <p className="text-sm text-muted-foreground">Pharmacies you sell to</p>
                     </div>
-                    {can('customers.manage') && (
+                    {canManageCustomers && (
                         <div className="flex gap-2">
                             <Button variant="outline" onClick={() => setImportOpen(true)}>
                                 <Upload className="mr-1 size-4" /> Import
@@ -242,13 +245,13 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                                 <TableHead className="text-right">Balance</TableHead>
                                 <TableHead className="text-right">Credit Limit</TableHead>
                                 <TableHead>Status</TableHead>
-                                <TableHead className="w-32" />
+                                {showActions && <TableHead className="w-32"><span className="sr-only">Actions</span></TableHead>}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {customers.data.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                                    <TableCell colSpan={showActions ? 8 : 7} className="py-10 text-center text-muted-foreground">
                                         No customers found.
                                     </TableCell>
                                 </TableRow>
@@ -274,14 +277,16 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                                                 {customer.status}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell>
+                                        {showActions && <TableCell>
                                             <div className="flex justify-end gap-1">
-                                                <Button variant="ghost" size="icon" asChild title="Ledger">
-                                                    <Link href={route('ledger.customer', customer.id)}>
-                                                        <BookUser className="size-4" />
-                                                    </Link>
-                                                </Button>
-                                                {can('customers.manage') && (
+                                                {canViewLedger && (
+                                                    <Button variant="ghost" size="icon" asChild>
+                                                        <Link href={route('ledger.customer', customer.id)} title="Ledger" aria-label={`Ledger for ${customer.name}`}>
+                                                            <BookUser aria-hidden="true" className="size-4" />
+                                                        </Link>
+                                                    </Button>
+                                                )}
+                                                {canManageCustomers && (
                                                     <>
                                                         <Button variant="ghost" size="icon" onClick={() => openEdit(customer)}>
                                                             <Pencil className="size-4" />
@@ -299,7 +304,7 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                                                     </>
                                                 )}
                                             </div>
-                                        </TableCell>
+                                        </TableCell>}
                                     </TableRow>
                                 );
                             })}

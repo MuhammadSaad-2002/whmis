@@ -1,10 +1,12 @@
 import InputError from '@/components/input-error';
 import { BookingActivity, type BookingTimestamps } from '@/components/booking-timestamps';
 import { ProductSearchCell, type ProductHit } from '@/components/product-search-cell';
+import { ProductSearchDialog } from '@/components/product-search-dialog';
 import { RulePickerDialog, type RuleHit } from '@/components/rule-picker-dialog';
 import { SearchableSelect } from '@/components/searchable-select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -20,7 +22,7 @@ import { combineEffects } from '@/lib/incentive';
 import { computeLine, computeTotals, effectiveDiscountPercent } from '@/lib/invoice-math';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowRight, Check, Plus, Save, Send, Trash2, X, XCircle } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, ChevronsUpDown, MoreHorizontal, Plus, Save, Search, Send, Trash2, X, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -37,7 +39,7 @@ interface ItemRow {
     // Display-only (from the product picker or saved booking payload): supplier, live stock, retail price.
     // Helps the booker take the order; never sent back / recomputed on the server.
     retail_price: string;
-    company: string | null;
+    company?: string | null;
     stock: number;
 }
 
@@ -51,6 +53,7 @@ interface BookingDto extends BookingTimestamps {
     notes: string | null;
     total_amount: string;
     sales_invoice_id: number | null;
+    customer?: { id: number; name: string; city: string | null };
     booker?: { id: number; name: string };
     approver?: { id: number; name: string } | null;
     items: {
@@ -80,7 +83,7 @@ interface BookingDto extends BookingTimestamps {
 }
 
 interface Props {
-    bookingPrefill?: { customer_id: number; items: ItemRow[]; source: string | null; skipped: string[] } | null;
+    bookingPrefill?: { customer_id: number; items: ItemRow[]; source: string | null; skipped: string[]; hidden_count?: number } | null;
     customers: { id: number; name: string; city: string | null }[];
     warehouse: { id: number; name: string };
     // Present only for approvers/admin (who may credit a booking to a booker);
@@ -129,11 +132,12 @@ const statusVariant = (status: string) =>
         : status === 'rejected' || status === 'cancelled' ? 'destructive' : 'secondary';
 
 export default function BookingForm({ customers, warehouse, bookers, booking, bookingPrefill }: Props) {
-    const { can } = usePermissions();
+    const { can, canViewSupplierDetails } = usePermissions();
     const showAdminDetails = can('bookings.approve');
-    const isMobile = useIsMobile();
+    const showSupplier = showAdminDetails && canViewSupplierDetails;
+    const isMobile = useIsMobile(1024);
     const isDraft = !booking || booking.status === 'draft';
-    const readonly = !isDraft;
+    const readonly = !isDraft || !can('bookings.create');
 
     const [header, setHeader] = useState({
         customer_id: booking ? String(booking.customer_id) : bookingPrefill ? String(bookingPrefill.customer_id) : '',
@@ -162,6 +166,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
     );
 
     const [ruleOpen, setRuleOpen] = useState(false);
+    const [productRow, setProductRow] = useState<number | null>(null);
     const [activeRow, setActiveRow] = useState(0); // rule picker context
     const [searchSignal, setSearchSignal] = useState({ row: -1, n: 0 });
     const [saving, setSaving] = useState(false);
@@ -234,7 +239,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
         }
         setHeaderErrors(h);
         setRowErrors(remapped);
-        toast.error(ALERT_FIX);
+        if (!isMobile) toast.error(ALERT_FIX);
     };
 
     const computed = useMemo(
@@ -297,7 +302,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
             return;
         }
         setRows((r) =>
-            r.map((row, i) =>
+            (rowIndex === r.length ? [...r, emptyRow()] : r).map((row, i) =>
                 i === rowIndex
                     ? {
                           ...row,
@@ -384,7 +389,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
     const save = () => {
         if (readonly || saving) return;
         if (!validate()) {
-            toast.error(ALERT_FIX);
+            if (!isMobile) toast.error(ALERT_FIX);
             return;
         }
         setSaving(true);
@@ -396,7 +401,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
     const submit = () => {
         if (!booking || readonly || saving) return;
         if (!validate()) {
-            toast.error(ALERT_FIX);
+            if (!isMobile) toast.error(ALERT_FIX);
             return;
         }
         setSaving(true);
@@ -420,94 +425,147 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
     ];
 
     const activeRowData = rows[activeRow];
+    const prefilledCustomerName = customers.find((customer) => customer.id === bookingPrefill?.customer_id)?.name;
+    const tabTitle = booking?.booking_number ?? (bookingPrefill?.source
+        ? `Repeat ${bookingPrefill.source}`
+        : prefilledCustomerName ? `New Booking · ${prefilledCustomerName}` : 'New Booking');
+    const selectedCustomer = customers.find((customer) => String(customer.id) === header.customer_id) ?? booking?.customer;
+    const cancelBooking = () => {
+        if (booking && confirm('Cancel this booking?')) router.post(route('bookings.cancel', booking.id));
+    };
+    const canCancel = booking && !['converted', 'cancelled'].includes(booking.status);
+    const mobileActionClass = 'h-11 flex-1 min-w-0 px-2';
+    const hasMobileErrors = isMobile && (Object.keys(headerErrors).length > 0 || Object.keys(rowErrors).length > 0);
+    const actions = (mobile: boolean) => (
+        <>
+            {booking?.status === 'converted' && booking.sales_invoice_id && can('sales.view') && (
+                <Button variant="outline" size="sm" className={mobile ? mobileActionClass : undefined} asChild>
+                    <Link href={route('sales.edit', booking.sales_invoice_id)}><ArrowRight aria-hidden="true" /> View Invoice</Link>
+                </Button>
+            )}
+            {booking?.status === 'pending' && can('bookings.approve') && (
+                <>
+                    <Button size="sm" className={mobile ? mobileActionClass : undefined} onClick={() => router.post(route('bookings.approve', booking.id))}><Check aria-hidden="true" /> Approve</Button>
+                    <Button variant="outline" size="sm" className={mobile ? mobileActionClass : undefined}
+                        onClick={() => { if (confirm('Reject this booking?')) router.post(route('bookings.reject', booking.id)); }}>
+                        <X aria-hidden="true" className="text-destructive" /> Reject
+                    </Button>
+                </>
+            )}
+            {booking?.status === 'approved' && can('bookings.convert') && (
+                <Button size="sm" className={mobile ? mobileActionClass : undefined} onClick={() => router.post(route('bookings.convert', booking.id))}>
+                    <ArrowRight aria-hidden="true" /> Convert to Sale
+                </Button>
+            )}
+            {!mobile && canCancel && <Button variant="outline" size="sm" onClick={cancelBooking}><XCircle aria-hidden="true" className="text-destructive" /> Cancel</Button>}
+            {!readonly && (
+                <>
+                    <Button variant={mobile && !booking ? 'default' : 'outline'} size="sm" className={mobile ? mobileActionClass : undefined} onClick={save} disabled={saving}>
+                        <Save aria-hidden="true" /> Save Draft {!mobile && <kbd className="ml-1 text-xs opacity-60">F8</kbd>}
+                    </Button>
+                    {booking && <Button size="sm" className={mobile ? mobileActionClass : undefined} onClick={submit} disabled={saving}>
+                        <Send aria-hidden="true" /> Submit {!mobile && <kbd className="ml-1 text-xs opacity-60">F9</kbd>}
+                    </Button>}
+                </>
+            )}
+        </>
+    );
+    const additionalFields = (
+        <>
+            {bookers && <div>
+                <Label htmlFor="booking-booker">Booker</Label>
+                <SearchableSelect id="booking-booker" value={header.booker_id}
+                    onValueChange={(v) => setHeader((h) => ({ ...h, booker_id: v }))}
+                    disabled={readonly} touch={isMobile} placeholder="Select booker" searchPlaceholder="Search booker…" emptyText="No bookers found."
+                    options={[{ value: '', label: '— None —' }, ...bookers.map((b) => ({ value: String(b.id), label: b.name }))]} />
+            </div>}
+            {showAdminDetails && <>
+                <div>
+                    <Label htmlFor="booking-date">Booking Date *</Label>
+                    <Input id="booking-date" type="date" value={header.booking_date} disabled={readonly}
+                        onChange={(e) => setHeader((h) => ({ ...h, booking_date: e.target.value }))}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !readonly && !isMobile) {
+                                e.preventDefault();
+                                grid.focusCell(0, 0);
+                            }
+                        }} />
+                </div>
+                <div>
+                    <Label htmlFor="booking-warehouse">Warehouse</Label>
+                    <Input id="booking-warehouse" value={warehouse.name} disabled />
+                </div>
+            </>}
+            {!readonly && <div className="sm:col-span-2 xl:col-span-1">
+                <Label htmlFor="booking-remarks">Remarks</Label>
+                <Input id="booking-remarks" value={header.notes} placeholder="Optional note for this booking" onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))} />
+            </div>}
+            {readonly && header.notes && <div className="sm:col-span-2 xl:col-span-1">
+                <p className="text-xs text-muted-foreground">Remarks</p>
+                <p className="break-words text-sm">{header.notes}</p>
+            </div>}
+            {booking?.approver && <div>
+                <Label htmlFor="booking-approver">{booking.status === 'rejected' ? 'Rejected by' : 'Approved by'}</Label>
+                <Input id="booking-approver" value={booking.approver.name} disabled />
+            </div>}
+        </>
+    );
+    const hasAdditionalFields = !readonly || !!header.notes || !!bookers || showAdminDetails || !!booking?.approver;
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title={booking ? booking.booking_number : 'New Booking'} />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
-                    <div className="flex items-center gap-3">
-                        <h1 className="text-2xl font-bold sm:text-3xl md:text-4xl">
-                            {booking ? `Booking ${booking.booking_number}` : 'New Booking'}
+            <Head title={tabTitle} />
+            <div className="flex min-h-dvh min-w-0 flex-col gap-3 p-3 md:gap-4 md:p-4 lg:min-h-full">
+                <header className="flex min-w-0 items-start justify-between gap-2 lg:flex-wrap lg:items-center lg:border-b lg:pb-4">
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 md:gap-x-3">
+                        <h1 className="min-w-0 break-words text-xl font-bold tracking-tight sm:text-3xl md:text-4xl">
+                            {booking ? <><span className="sr-only lg:not-sr-only">Booking </span>{booking.booking_number}</> : 'New Booking'}
                         </h1>
-                        {booking && <Badge variant={statusVariant(booking.status)}>{booking.status}</Badge>}
-                        {booking?.booker && <span className="text-sm text-muted-foreground">by {booking.booker.name}</span>}
+                        {booking && <Badge variant={statusVariant(booking.status)} className="capitalize">{booking.status === 'pending' ? 'Pending approval' : booking.status}</Badge>}
+                        {booking?.booker && <span className="hidden text-sm text-muted-foreground lg:inline">by {booking.booker.name}</span>}
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                        {booking?.status === 'converted' && booking.sales_invoice_id && (
-                            <Button variant="outline" size="sm" asChild>
-                                <Link href={route('sales.edit', booking.sales_invoice_id)}>
-                                    <ArrowRight className="mr-1 size-4" /> View Invoice
-                                </Link>
-                            </Button>
-                        )}
-                        {booking?.status === 'pending' && can('bookings.approve') && (
-                            <>
-                                <Button size="sm" onClick={() => router.post(route('bookings.approve', booking.id))}>
-                                    <Check className="mr-1 size-4" /> Approve
-                                </Button>
-                                <Button
-                                    variant="outline" size="sm"
-                                    onClick={() => {
-                                        if (confirm('Reject this booking?')) router.post(route('bookings.reject', booking.id));
-                                    }}
-                                >
-                                    <X className="mr-1 size-4 text-destructive" /> Reject
-                                </Button>
-                            </>
-                        )}
-                        {booking?.status === 'approved' && can('bookings.convert') && (
-                            <Button size="sm" onClick={() => router.post(route('bookings.convert', booking.id))}>
-                                <ArrowRight className="mr-1 size-4" /> Convert to Sale
-                            </Button>
-                        )}
-                        {booking && !['converted', 'cancelled'].includes(booking.status) && (
-                            <Button
-                                variant="outline" size="sm"
-                                onClick={() => {
-                                    if (confirm('Cancel this booking?')) router.post(route('bookings.cancel', booking.id));
-                                }}
-                            >
-                                <XCircle className="mr-1 size-4 text-destructive" /> Cancel
-                            </Button>
-                        )}
-                        {isDraft && (
-                            <>
-                                <Button variant="outline" size="sm" onClick={save} disabled={saving}>
-                                    <Save className="mr-1 size-4" /> Save Draft <kbd className="ml-1 text-xs opacity-60">F8</kbd>
-                                </Button>
-                                {booking && (
-                                    <Button size="sm" onClick={submit} disabled={saving}>
-                                        <Send className="mr-1 size-4" /> Submit <kbd className="ml-1 text-xs opacity-60">F9</kbd>
-                                    </Button>
-                                )}
-                            </>
-                        )}
-                    </div>
-                </div>
+                    <div className="hidden flex-wrap gap-2 lg:flex">{actions(false)}</div>
+                    {canCancel && <DropdownMenu>
+                        <DropdownMenuTrigger asChild><Button type="button" variant="outline" size="icon" aria-label="Booking options" className="size-11 shrink-0 lg:hidden"><MoreHorizontal aria-hidden="true" /></Button></DropdownMenuTrigger>
+                        <DropdownMenuContent align="end"><DropdownMenuItem className="min-h-11 text-destructive" onSelect={cancelBooking}><XCircle aria-hidden="true" /> Cancel booking</DropdownMenuItem></DropdownMenuContent>
+                    </DropdownMenu>}
+                </header>
 
                 {customers.length === 0 && !readonly && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
                     {can('bookings.approve') ? 'No active customers are available. Add or activate a customer in Customers first.' : 'No active customers are assigned to your login. Ask your administrator to open Employees → your profile → Assign Customers. Then reopen New Booking.'}
                 </div>}
-                {booking && <BookingActivity booking={booking} />}
+                {booking && !isMobile && <BookingActivity booking={booking} />}
                 {bookingPrefill?.source && <div className="rounded-lg border bg-muted/40 p-3 text-sm">
                     Repeating quantities from {bookingPrefill.source}. Current catalogue prices apply; review bonus quantities, discounts and incentive rules before saving.
                     {bookingPrefill.skipped.length > 0 && <p className="mt-1 text-destructive">Unavailable products omitted: {bookingPrefill.skipped.join(', ')}.</p>}
+                    {!!bookingPrefill.hidden_count && <p className="mt-1 text-destructive">
+                        {bookingPrefill.hidden_count === 1
+                            ? 'One product is no longer available to Bookers and was omitted.'
+                            : `${bookingPrefill.hidden_count} products are no longer available to Bookers and were omitted.`}
+                    </p>}
                 </div>}
                 <div
-                    data-enter-nav
-                    className="grid grid-cols-1 gap-3 rounded-xl border p-2.5 [&>div]:min-w-0 [&>div>label]:mb-1 [&>div>label]:block sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-5 xl:gap-x-2 xl:gap-y-1.5 xl:[&>div>button]:h-8 xl:[&>div>input]:h-8 xl:[&>div>label]:whitespace-nowrap xl:[&>div>label]:text-[11px]"
+                    data-enter-nav={isMobile ? undefined : ''}
+                    className="grid grid-cols-1 gap-2.5 rounded-xl border bg-card p-3 [&>div]:min-w-0 [&>div>label]:mb-1 [&>div>label]:block lg:grid-cols-4 lg:gap-3 lg:p-2.5 xl:grid-cols-5 xl:gap-x-2 xl:gap-y-1.5 xl:[&>div>button]:h-8 xl:[&>div>input]:h-8 xl:[&>div>label]:whitespace-nowrap xl:[&>div>label]:text-[11px]"
                 >
                     <div>
-                        <Label>Customer *</Label>
+                        {readonly && isMobile ? <>
+                            <p className="text-xs font-medium text-muted-foreground">Customer</p>
+                            <p className="mt-0.5 break-words text-sm font-semibold">{selectedCustomer?.name ?? 'Customer not recorded'}</p>
+                            {selectedCustomer?.city && <p className="break-words text-xs text-muted-foreground">{selectedCustomer.city}</p>}
+                        </> : <>
+                        <Label htmlFor="booking-customer">Customer *</Label>
                         <SearchableSelect
+                            id="booking-customer"
                             value={header.customer_id}
                             onValueChange={(v) => {
                                 setHeader((h) => ({ ...h, customer_id: v }));
                                 setHeaderErrors((e) => { const n = { ...e }; delete n.customer_id; return n; });
                             }}
                             disabled={readonly}
-                            autoFocus={!readonly}
+                            touch={isMobile}
+                            autoFocus={!readonly && !isMobile}
+                            className="h-11 lg:h-10"
                             placeholder="Select customer"
                             searchPlaceholder="Search customer…"
                             emptyText="No customers found."
@@ -517,103 +575,72 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                             }))}
                         />
                         <InputError message={headerErrors.customer_id} className="mt-1 text-xs" />
+                        </>}
                     </div>
-                    {bookers && (
-                        <div>
-                            <Label>Booker</Label>
-                            <SearchableSelect
-                                value={header.booker_id}
-                                onValueChange={(v) => setHeader((h) => ({ ...h, booker_id: v }))}
-                                disabled={readonly}
-                                placeholder="Select booker"
-                                searchPlaceholder="Search booker…"
-                                emptyText="No bookers found."
-                                options={[
-                                    { value: '', label: '— None —' },
-                                    ...bookers.map((b) => ({ value: String(b.id), label: b.name })),
-                                ]}
-                            />
+                    {isMobile ? hasAdditionalFields && <details className="group rounded-lg bg-muted/50">
+                        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-2.5 text-xs font-medium [&::-webkit-details-marker]:hidden">
+                            <span>{showAdminDetails ? 'Booking details' : readonly ? 'Booking details' : 'Booking remarks'}{header.notes && !readonly && ' · Note added'}</span>
+                            <ChevronDown aria-hidden="true" className="size-4 shrink-0 group-open:rotate-180" />
+                        </summary>
+                        <div className="grid min-w-0 gap-2.5 px-2.5 pb-2.5 [&_input]:h-11 [&_label]:mb-1 [&_label]:block">
+                            {additionalFields}
+                            {booking?.booker && !bookers && showAdminDetails && <p className="text-xs text-muted-foreground">Booked by {booking.booker.name}</p>}
                         </div>
-                    )}
-                    {showAdminDetails && <div>
-                        <Label>Booking Date *</Label>
-                        <Input
-                            type="date" value={header.booking_date} disabled={readonly}
-                            onChange={(e) => setHeader((h) => ({ ...h, booking_date: e.target.value }))}
-                            onKeyDown={(e) => {
-                                // Last editable header field: Enter drops into the grid.
-                                if (e.key === 'Enter' && !readonly) {
-                                    e.preventDefault();
-                                    grid.focusCell(0, 0);
-                                }
-                            }}
-                        />
-                    </div>}
-                    {showAdminDetails && <div>
-                        <Label>Warehouse</Label>
-                        <Input value={warehouse.name} disabled />
-                    </div>}
-                    <div className="sm:col-span-2 xl:col-span-1">
-                        <Label>Remarks</Label>
-                        <Input
-                            value={header.notes} disabled={readonly}
-                            placeholder="Optional note for this booking"
-                            onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))}
-                        />
-                    </div>
-                    {booking?.approver && (
-                        <div>
-                            <Label>{booking.status === 'rejected' ? 'Rejected by' : 'Approved by'}</Label>
-                            <Input value={booking.approver.name} disabled />
-                        </div>
-                    )}
+                    </details> : additionalFields}
                 </div>
 
                 <div className={isMobile ? '' : 'rounded-xl border'}>
                     {isMobile && (
                         <div className="space-y-3">
+                            <h2 className="px-0.5 text-base font-semibold">Products</h2>
+                            {readonly && !rows.some((row) => row.product_id) && <p className="text-sm text-muted-foreground">No products recorded.</p>}
                             {rows.map((row, rowIndex) => {
+                                if (readonly && !row.product_id) return null;
                                 const line = computed[rowIndex];
                                 const hasDiscountIncentive = row.incentives.some((inc) => isDiscountType(inc.rule_type));
                                 return (
-                                    <div key={rowIndex} className="min-w-0 space-y-3 rounded-xl border bg-card p-3 shadow-sm [&_input]:min-w-0 [&_input]:text-base [&_label]:mb-1 [&_label]:block">
-                                        <div className="flex items-center justify-between">
-                                            <span className="rounded-md bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground">Item {rowIndex + 1}</span>
-                                            {!readonly && (
-                                                <button type="button" aria-label={`Remove item ${rowIndex + 1}`} onClick={() => removeRow(rowIndex)} className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
-                                                    <Trash2 className="size-4" />
-                                                </button>
-                                            )}
-                                        </div>
-
+                                    <article key={rowIndex} className="min-w-0 space-y-2.5 rounded-xl border bg-card p-3 shadow-xs [&_input]:min-w-0 [&_input]:text-base [&_label]:mb-1 [&_label]:block">
                                         <div>
-                                            <div className={`overflow-hidden rounded-md border [&_input]:h-10 [&_input]:font-medium ${rowErrors[rowIndex]?.product_id ? 'ring-1 ring-destructive' : ''}`}>
-                                                <ProductSearchCell
-                                                    showSupplier={showAdminDetails}
-                                                    value={row.product_name}
-                                                    warehouseId={warehouse.id}
-                                                    disabled={readonly}
-                                                    onSelect={(product) => applyProduct(rowIndex, product)}
-                                                    onGridKeyDown={() => {}}
-                                                    inputRef={() => {}}
-                                                />
+                                            <div className="flex min-w-0 items-start gap-1.5">
+                                                {readonly ? (
+                                                    <h3 className="min-w-0 flex-1 break-words text-sm font-semibold">{row.product_name || 'No product recorded'}</h3>
+                                                ) : (
+                                                    <Button type="button" variant="outline"
+                                                        aria-label={row.product_name ? `Change product ${rowIndex + 1}: ${row.product_name}` : `Select product ${rowIndex + 1}`}
+                                                        aria-invalid={!!rowErrors[rowIndex]?.product_id}
+                                                        onClick={() => setProductRow(rowIndex)}
+                                                        className="h-auto min-h-11 min-w-0 flex-1 justify-between gap-2 px-2.5 text-left whitespace-normal aria-invalid:border-destructive">
+                                                        <span className="min-w-0 break-words">{row.product_name || 'Select a product'}</span>
+                                                        {row.product_name ? <ChevronsUpDown aria-hidden="true" /> : <Search aria-hidden="true" />}
+                                                    </Button>
+                                                )}
+                                                {!readonly && (row.product_id || rows.length > 1) && <Button type="button" variant="ghost" size="icon" aria-label={`Remove item ${rowIndex + 1}`}
+                                                    onClick={() => removeRow(rowIndex)} className="size-11 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+                                                    <Trash2 aria-hidden="true" />
+                                                </Button>}
                                             </div>
                                             {rowErrors[rowIndex]?.product_id && (
                                                 <p className="mt-1 text-xs text-destructive">{rowErrors[rowIndex].product_id}</p>
                                             )}
                                             {row.product_id && (
                                                 <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                                                    {showAdminDetails && <span className="break-words">{row.company ?? '—'}</span>}
+                                                    {showSupplier && <span className="break-words">{row.company ?? '—'}</span>}
                                                     <span className={`rounded bg-muted px-1.5 py-0.5 ${row.stock <= 0 ? 'text-destructive' : ''}`}>Stock {qty(row.stock)}</span>
                                                     {row.retail_price && <span>Retail {amount(row.retail_price)}</span>}
                                                 </div>
                                             )}
                                         </div>
 
-                                        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)] gap-2 [&_input]:h-10">
+                                        {row.product_id && <>
+                                        {readonly ? <dl className="grid grid-cols-3 gap-2 rounded-lg bg-muted/50 px-2.5 py-2 text-sm tabular-nums">
+                                            <div><dt className="text-xs text-muted-foreground">Qty</dt><dd className="font-medium">{qty(row.quantity)}</dd></div>
+                                            <div><dt className="text-xs text-muted-foreground">Bonus</dt><dd className="font-medium">{qty(row.requested_bonus)}</dd></div>
+                                            <div className="text-right"><dt className="text-xs text-muted-foreground">Unit price</dt><dd className="break-words font-medium">{amount(row.trade_price)}</dd></div>
+                                        </dl> : <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)] gap-2 [&_input]:h-11 [&_input]:px-2">
                                             <div>
-                                                <Label className="text-xs text-muted-foreground">Qty</Label>
+                                                <Label htmlFor={`qty-${rowIndex}`} className="text-xs text-muted-foreground">Qty</Label>
                                                 <Input
+                                                    id={`qty-${rowIndex}`}
                                                     type="number" min={1} inputMode="numeric" value={row.quantity} disabled={readonly}
                                                     aria-invalid={!!rowErrors[rowIndex]?.quantity}
                                                     onChange={(e) => { setCell(rowIndex, 'quantity', e.target.value); if (rowErrors[rowIndex]?.quantity) setRowError(rowIndex, 'quantity', null); }}
@@ -626,16 +653,18 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                 />
                                             </div>
                                             <div>
-                                                <Label className="text-xs text-muted-foreground">Bonus</Label>
+                                                <Label htmlFor={`bonus-${rowIndex}`} className="text-xs text-muted-foreground">Bonus</Label>
                                                 <Input
+                                                    id={`bonus-${rowIndex}`}
                                                     type="number" inputMode="numeric" value={row.requested_bonus} disabled={readonly}
                                                     onChange={(e) => setCell(rowIndex, 'requested_bonus', e.target.value)}
                                                     className="text-right"
                                                 />
                                             </div>
                                             <div>
-                                                <Label className="text-xs text-muted-foreground">Price</Label>
+                                                <Label htmlFor={`price-${rowIndex}`} className="text-xs text-muted-foreground">Unit price</Label>
                                                 <Input
+                                                    id={`price-${rowIndex}`}
                                                     type="number" inputMode="decimal" value={row.trade_price} disabled={readonly}
                                                     aria-invalid={!!rowErrors[rowIndex]?.trade_price}
                                                     onChange={(e) => { setCell(rowIndex, 'trade_price', e.target.value); if (rowErrors[rowIndex]?.trade_price) setRowError(rowIndex, 'trade_price', null); }}
@@ -647,26 +676,36 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                     className={`text-right ${rowErrors[rowIndex]?.trade_price ? 'border-destructive' : ''}`}
                                                 />
                                             </div>
-                                        </div>
+                                        </div>}
+                                        <InputError message={rowErrors[rowIndex]?.quantity || rowErrors[rowIndex]?.trade_price} className="text-xs" />
 
-                                        <details className="rounded-lg bg-muted/30 px-3 py-2" open={rowErrors[rowIndex]?.discount_percent || rowErrors[rowIndex]?.gst_percent ? true : undefined}>
-                                            <summary className="cursor-pointer py-1 text-xs font-medium text-muted-foreground">
-                                                Discount / GST / Remarks
-                                                {(Number(row.discount_percent) > 0 || Number(row.gst_percent) > 0 || hasDiscountIncentive || row.remarks) && (
+                                        {readonly && (line.discount_amount > 0 || Number(row.gst_percent) > 0) && (
+                                            <p className="text-xs text-muted-foreground">{qty(effectiveDiscountPercent(line.gross, line.discount_amount))}% off · {qty(row.gst_percent)}% GST</p>
+                                        )}
+                                        {(!readonly || row.remarks) &&
+                                        <details className="group rounded-lg bg-muted/50 px-2.5" open={rowErrors[rowIndex]?.discount_percent || rowErrors[rowIndex]?.gst_percent || rowErrors[rowIndex]?.remarks ? true : undefined}>
+                                            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-1.5 py-1 text-xs font-medium text-muted-foreground [&::-webkit-details-marker]:hidden">
+                                                <span>{readonly ? 'Line notes' : 'Discount, tax & notes'}
+                                                {!readonly && (Number(row.discount_percent) > 0 || Number(row.gst_percent) > 0 || hasDiscountIncentive || row.remarks) && (
                                                     <span className="ml-1"> · {qty(effectiveDiscountPercent(line.gross, line.discount_amount))}% off · {qty(row.gst_percent)}% GST{row.remarks ? ' · Note added' : ''}</span>
                                                 )}
+                                                </span>
+                                                <ChevronDown aria-hidden="true" className="size-4 shrink-0 group-open:rotate-180" />
                                             </summary>
+                                        {readonly ? row.remarks && <p className="break-words pb-2.5 text-xs">{row.remarks}</p> : <div className="pb-2.5">
                                         <div className="mt-2 grid grid-cols-2 gap-2">
                                             <div>
-                                                <Label className="text-xs text-muted-foreground">Disc %</Label>
+                                                <Label htmlFor={`discount-${rowIndex}`} className="text-xs text-muted-foreground">Disc %</Label>
                                                 {hasDiscountIncentive ? (
                                                     <Input
+                                                        id={`discount-${rowIndex}`}
                                                         readOnly
                                                         value={dec2(effectiveDiscountPercent(line.gross, line.discount_amount))}
                                                         className="bg-emerald-50 text-right text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
                                                     />
                                                 ) : (
                                                     <Input
+                                                        id={`discount-${rowIndex}`}
                                                         type="number" inputMode="decimal" value={row.discount_percent} disabled={readonly}
                                                         aria-invalid={!!rowErrors[rowIndex]?.discount_percent}
                                                         onChange={(e) => { setCell(rowIndex, 'discount_percent', e.target.value); if (rowErrors[rowIndex]?.discount_percent) setRowError(rowIndex, 'discount_percent', null); }}
@@ -680,8 +719,10 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                 )}
                                             </div>
                                             <div>
-                                                <Label className="text-xs text-muted-foreground">GST %</Label>
+                                                <Label htmlFor={`gst-${rowIndex}`} className="text-xs text-muted-foreground">GST %</Label>
                                                 <Input
+                                                    id={`gst-${rowIndex}`}
+                                                    aria-invalid={!!rowErrors[rowIndex]?.gst_percent}
                                                     type="number" inputMode="decimal" value={row.gst_percent} disabled={readonly}
                                                     onChange={(e) => { setCell(rowIndex, 'gst_percent', e.target.value); if (rowErrors[rowIndex]?.gst_percent) setRowError(rowIndex, 'gst_percent', null); }}
                                                     onBlur={(e) => {
@@ -694,14 +735,16 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                             </div>
                                         </div>
                                             <div className="mt-2">
-                                                <Label className="text-xs text-muted-foreground">Remarks</Label>
-                                                <Input value={row.remarks} disabled={readonly} placeholder="Add a note (optional)"
+                                                <Label htmlFor={`remarks-${rowIndex}`} className="text-xs text-muted-foreground">Remarks</Label>
+                                                <Input id={`remarks-${rowIndex}`} value={row.remarks} placeholder="Add a note (optional)"
                                                     onChange={(e) => setCell(rowIndex, 'remarks', e.target.value)} />
                                             </div>
-                                        </details>
+                                            <InputError message={rowErrors[rowIndex]?.discount_percent || rowErrors[rowIndex]?.gst_percent || rowErrors[rowIndex]?.remarks} className="mt-1 text-xs" />
+                                        </div>}
+                                        </details>}
 
-                                        <div className="flex flex-wrap items-end justify-between gap-2 border-t pt-3">
-                                            <div className="flex flex-wrap items-center gap-1">
+                                        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2">
+                                            <div className="flex min-w-0 flex-wrap items-center gap-1">
                                                 {row.incentives.map((inc) => (
                                                     <Badge key={inc.id} variant="outline" className="max-w-full gap-1 pr-1">
                                                         <span className="truncate">{inc.name}</span>
@@ -714,11 +757,11 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                 ))}
                                                 {!readonly && (
                                                     <Button
-                                                        type="button" variant="outline" size="sm" disabled={!row.product_id}
-                                                        className="h-10"
+                                                        type="button" variant="outline" size="sm"
+                                                        className="h-11"
                                                         onClick={() => { setActiveRow(rowIndex); setRuleOpen(true); }}
                                                     >
-                                                        <Plus className="mr-1 size-3" /> Incentive
+                                                        <Plus aria-hidden="true" /> Incentive
                                                     </Button>
                                                 )}
                                             </div>
@@ -727,7 +770,8 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                 <div className="text-base font-semibold tabular-nums">{money(line.net_amount)}</div>
                                             </div>
                                         </div>
-                                    </div>
+                                        </>}
+                                    </article>
                                 );
                             })}
                         </div>
@@ -739,7 +783,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                             <tr className="[&>th]:border-b [&>th]:px-2 [&>th]:py-2 [&>th]:text-left">
                                 <th className="w-8">#</th>
                                 <th className="min-w-56">Product <kbd className="opacity-50">F2</kbd></th>
-                                {showAdminDetails && <th className="w-32">Supplier</th>}
+                                {showSupplier && <th className="w-32">Supplier</th>}
                                 <th className="w-16 text-right">Stock</th>
                                 <th className="w-20 text-right">Qty</th>
                                 <th className="w-20 text-right">Bonus</th>
@@ -762,7 +806,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                         title={rowErrors[rowIndex]?.product_id}
                                     >
                                         <ProductSearchCell
-                                            showSupplier={showAdminDetails}
+                                            showSupplier={showSupplier}
                                             value={row.product_name}
                                             warehouseId={warehouse.id}
                                             disabled={readonly}
@@ -772,7 +816,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                             inputRef={grid.registerCell(rowIndex, 0)}
                                         />
                                     </td>
-                                    {showAdminDetails && <td className="truncate px-2 text-muted-foreground" title={row.company ?? undefined}>
+                                    {showSupplier && <td className="truncate px-2 text-muted-foreground" title={row.company ?? undefined}>
                                         {row.product_id ? (row.company ?? '—') : ''}
                                     </td>}
                                     <td className={`px-2 text-right tabular-nums ${row.stock <= 0 && row.product_id ? 'text-destructive' : 'text-muted-foreground'}`}>
@@ -839,7 +883,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                 }}
                                                 className="rounded px-1 text-sm text-muted-foreground outline-none focus:ring-1 focus:ring-ring disabled:opacity-70"
                                             >
-                                                {row.incentives.length ? '+ add' : 'F4…'}
+                                                {row.incentives.length ? '+ add' : <>Add rule <kbd className="opacity-60">F4</kbd></>}
                                             </button>
                                         </div>
                                     </td>
@@ -932,25 +976,53 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                     </table>
                     </div>
                     )}
-                    {!readonly && (
-                        <div className="border-t p-2">
-                            <Button variant="ghost" size="sm" onClick={() => setRows((r) => [...r, emptyRow()])}>
-                                <Plus className="mr-1 size-4" /> Add Row
+                    {!readonly && (!isMobile || rows.every((row) => row.product_id)) && (
+                        <div className="pt-2.5 lg:border-t lg:p-2">
+                            <Button variant={isMobile ? 'outline' : 'ghost'} size="sm" className="h-11 w-full lg:h-9 lg:w-auto" onClick={() => {
+                                if (isMobile) setProductRow(rows.length);
+                                else setRows((r) => [...r, emptyRow()]);
+                            }}>
+                                <Plus aria-hidden="true" /> {isMobile ? 'Add product' : 'Add Row'}
                             </Button>
                         </div>
                     )}
                 </div>
 
-                <div className="sticky bottom-0 z-10 mt-auto bg-background pt-2">
+                {booking && isMobile && <BookingActivity booking={booking} />}
+                {isMobile ? <footer aria-label="Booking totals and actions" className="sticky bottom-0 z-20 -mx-3 -mb-3 mt-auto border-t bg-card/95 px-3 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgb(16_36_58/0.08)] backdrop-blur md:-mx-4 md:-mb-4 md:px-4">
+                    <details className="group">
+                        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-sm [&::-webkit-details-marker]:hidden">
+                            <span className="inline-flex items-center gap-1.5 font-medium text-muted-foreground">
+                                Total <ChevronDown aria-hidden="true" className="size-4 group-open:rotate-180" />
+                            </span>
+                            <span className="break-words text-right text-lg font-bold tabular-nums">{money(totals.total_amount)}</span>
+                        </summary>
+                        <dl className="mb-2 grid grid-cols-3 gap-2 rounded-lg bg-muted px-2.5 py-2 text-xs tabular-nums">
+                            <div><dt className="text-muted-foreground">Subtotal</dt><dd>{amount(totals.subtotal)}</dd></div>
+                            <div><dt className="text-muted-foreground">Discounts</dt><dd>−{amount(totals.item_discount_total)}</dd></div>
+                            <div><dt className="text-muted-foreground">GST</dt><dd>+{amount(totals.item_gst_total)}</dd></div>
+                        </dl>
+                    </details>
+                    {hasMobileErrors && <p role="alert" className="mb-1.5 text-xs font-medium text-destructive">{ALERT_FIX}</p>}
+                    <div className="flex flex-wrap gap-2 empty:hidden">{actions(true)}</div>
+                </footer> : <div className="sticky bottom-0 z-10 mt-auto bg-background pt-2">
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border bg-muted px-3 py-2 text-sm font-bold tabular-nums sm:gap-x-8 sm:px-5 sm:py-3 sm:text-base">
                         <span>Subtotal <span className="ml-1">{amount(totals.subtotal)}</span></span>
                         <span>Discounts <span className="ml-1">−{amount(totals.item_discount_total)}</span></span>
                         <span>GST <span className="ml-1">+{amount(totals.item_gst_total)}</span></span>
                         <span className="ml-auto text-lg text-primary sm:text-2xl">Total <span className="ml-1">{money(totals.total_amount)}</span></span>
                     </div>
-                </div>
+                </div>}
             </div>
 
+            {productRow !== null && !readonly && isMobile && (
+                <ProductSearchDialog
+                    open
+                    onOpenChange={(open) => { if (!open) setProductRow(null); }}
+                    warehouseId={warehouse.id}
+                    onSelect={(product) => applyProduct(productRow, product)}
+                />
+            )}
             <RulePickerDialog
                 open={ruleOpen}
                 onOpenChange={setRuleOpen}

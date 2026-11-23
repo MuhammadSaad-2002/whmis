@@ -17,7 +17,7 @@ interface LoginProps {
     status?: string;
 }
 
-const inputClass = 'h-12 w-full rounded-xl border border-slate-300 bg-background pl-10 text-base text-foreground placeholder:text-muted-foreground focus-visible:border-teal-700 focus-visible:ring-2 focus-visible:ring-teal-600/30 focus-visible:outline-none aria-invalid:border-destructive sm:text-sm dark:border-white/15 dark:bg-white/5 dark:focus-visible:border-[#35d6b2]';
+const inputClass = 'h-12 w-full rounded-xl border border-input bg-background pl-10 text-base text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none aria-invalid:border-destructive sm:text-sm';
 const fieldIconClass = 'pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground';
 
 export default function Login({ status }: LoginProps) {
@@ -108,7 +108,7 @@ export default function Login({ status }: LoginProps) {
                     <InputError id="login-password-error" role="alert" message={errors.password} />
                 </div>
 
-                <Button type="submit" disabled={processing} className="h-12 w-full rounded-xl bg-[#10243a] font-semibold text-white hover:bg-[#1b3951] dark:bg-[#35d6b2] dark:text-[#10243a] dark:hover:bg-[#69e5c9]">
+                <Button type="submit" disabled={processing} className="h-12 w-full rounded-xl font-semibold">
                     Log in
                     {processing ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ArrowRight aria-hidden="true" />}
                 </Button>

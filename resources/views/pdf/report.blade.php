@@ -5,9 +5,9 @@
     <title>{{ $title }}</title>
     @include('pdf.partials.style')
     <style>
-        .report-chart { margin: 12px 0 16px; padding: 10px; border: 1px solid #d8dee8; border-radius: 6px; page-break-inside: avoid; }
-        .report-chart h2 { margin: 0 0 2px; color: #1f2937; }
-        .report-chart .chart-meta { margin-bottom: 7px; font-size: 8.5px; color: #6b7280; }
+        .report-chart { margin: 12px 0 16px; padding: 10px; border: 1px solid #d3e0e8; border-radius: 6px; page-break-inside: avoid; }
+        .report-chart h2 { margin: 0 0 2px; }
+        .report-chart .chart-meta { margin-bottom: 7px; font-size: 8.5px; color: #496175; }
         .report-chart img { display: block; width: 100%; height: auto; }
         table.items.compact th { padding: 3px 3px; font-size: 7px; }
         table.items.compact td { padding: 3px 3px; font-size: 7.5px; }
@@ -68,7 +68,7 @@
             @foreach($rows as $index => $row)
                 @if(!empty($groupBy) && ($index === 0 || ($rows[$index - 1][$groupBy] ?? null) !== ($row[$groupBy] ?? null)))
                     <tr>
-                        <td colspan="{{ count($columns) }}" style="font-weight: bold; background: #eef2f7; text-transform: uppercase;">
+                        <td colspan="{{ count($columns) }}" style="font-weight: bold; background: #dff4ee; text-transform: uppercase;">
                             {{ $row[$groupBy] ?? 'Other' }}
                         </td>
                     </tr>
@@ -94,7 +94,7 @@
                 <tr>
                     @foreach($columns as $index => $column)
                         @php $value = $totals[$column['key']] ?? ($index === 0 ? 'TOTAL' : ''); @endphp
-                        <td class="{{ ($column['align'] ?? '') === 'right' ? 'num' : '' }} {{ is_numeric($value) && (float) $value < 0 ? 'negative-value' : '' }}" style="font-weight: bold; border-top: 1.5px solid #1a1a1a;">
+                        <td class="{{ ($column['align'] ?? '') === 'right' ? 'num' : '' }} {{ is_numeric($value) && (float) $value < 0 ? 'negative-value' : '' }}" style="font-weight: bold; border-top: 1.5px solid #10243a;">
                             {{ is_numeric($value) && ($column['format'] ?? '') === 'money' ? number_format((float) $value, 2) : $value }}
                         </td>
                     @endforeach

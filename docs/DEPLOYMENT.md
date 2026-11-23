@@ -65,9 +65,19 @@ it applies baseline seeds only when no roles exist. `storage:link` tolerates an
 already-existing link. `whmis:doctor` is read-only and also available at System
 Readiness for authorized administrators.
 
-For manual phpMyAdmin upgrades, use the exact SQL files and order in
-[DISTRIBUTION_OPERATIONS.md](DISTRIBUTION_OPERATIONS.md). Do not import schema SQL
-already applied by a migration. The schema SQL registers its migration.
+For manual phpMyAdmin upgrades, back up the database and select the production
+database before importing. Use only the files for changes not yet applied:
+
+- Booker product visibility: [2026_11_23_add_booker_visibility_to_products.sql](../database/manual/2026_11_23_add_booker_visibility_to_products.sql).
+  Import before deploying the new code if not using cPanel's migration step.
+  Existing products remain visible by default, and no role or permission SQL
+  is required for this update.
+- Dispatch and collections: follow the file order in
+  [DISTRIBUTION_OPERATIONS.md](DISTRIBUTION_OPERATIONS.md) if that upgrade has not
+  already been applied.
+
+Skip schema SQL already applied by a migration. These schema files register
+their matching migrations.
 
 ### 7. Scheduler cron (optional)
 cPanel → **Cron Jobs**, every minute (adjust the PHP path + app path):

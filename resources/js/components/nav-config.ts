@@ -27,10 +27,9 @@ import {
 } from 'lucide-react';
 
 export type PermittedNavItem = NavItem & { permission: string };
-type PermittedNavGroup = { label: string; icon?: NavItem['icon']; items: PermittedNavItem[] };
+type PermittedNavGroup = { label: string; restrictedLabel?: string; icon?: NavItem['icon']; items: PermittedNavItem[] };
 
-// Single source of truth for the sidebar navigation, shared by the normal
-// AppSidebar and the workspace (tabbed) shell so permissions and ordering match.
+// Canonical page paths, labels, and permission keys.
 export const navGroups: PermittedNavGroup[] = [
     {
         label: 'Overview',
@@ -114,7 +113,6 @@ export const navGroups: PermittedNavGroup[] = [
     },
 ];
 
-// Both menus use the same links and permission keys.
 const navItemsByUrl = new Map(navGroups.flatMap(({ items }) => items.map((item) => [item.url, item] as const)));
 
 function itemsFor(...urls: string[]): PermittedNavItem[] {
@@ -124,18 +122,19 @@ function itemsFor(...urls: string[]): PermittedNavItem[] {
     });
 }
 
-export const superAdminNavGroups: PermittedNavGroup[] = [
+export const workspaceNavGroups: PermittedNavGroup[] = [
     {
         label: 'Daily Work',
-        items: itemsFor('/dashboard', '/sales', '/bookings', '/purchases', '/inventory', '/payments', '/dispatch', '/reports'),
+        items: itemsFor('/dashboard', '/sales', '/bookings', '/purchases', '/inventory', '/payments', '/dispatch', '/reports', '/booker/workday'),
     },
     {
         label: 'Customers & Sales',
         icon: ContactRound,
-        items: itemsFor('/customers', '/returns/sales', '/incentives', '/booker/workday'),
+        items: itemsFor('/customers', '/returns/sales', '/incentives'),
     },
     {
         label: 'Stock & Suppliers',
+        restrictedLabel: 'Stock & Products',
         icon: Boxes,
         items: itemsFor('/suppliers', '/products', '/categories', '/loans/in', '/loans/out', '/samples/receipts', '/samples/issues'),
     },

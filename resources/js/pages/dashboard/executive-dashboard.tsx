@@ -128,22 +128,20 @@ function Delta({ value, invert }: { value: number | null; invert?: boolean }) {
 }
 
 const KPI_TONES = {
-    emerald: 'from-emerald-500/15 to-emerald-500/0 text-emerald-600 dark:text-emerald-400',
-    blue: 'from-blue-500/15 to-blue-500/0 text-blue-600 dark:text-blue-400',
-    violet: 'from-violet-500/15 to-violet-500/0 text-violet-600 dark:text-violet-400',
-    amber: 'from-amber-500/15 to-amber-500/0 text-amber-600 dark:text-amber-400',
+    mint: { wash: 'from-accent to-card', icon: 'text-accent-foreground' },
+    navy: { wash: 'from-secondary to-card', icon: 'text-secondary-foreground' },
 } as const;
 
-function KpiCard({ label, value, delta, hint, icon: Icon, tone = 'blue' }: {
+function KpiCard({ label, value, delta, hint, icon: Icon, tone = 'navy' }: {
     label: string; value: string; delta?: React.ReactNode; hint?: string; icon: LucideIcon; tone?: keyof typeof KPI_TONES;
 }) {
     return (
         <Card className="relative overflow-hidden border-border/60 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
-            <div className={`absolute inset-0 bg-gradient-to-br ${KPI_TONES[tone]}`} />
+            <div className={`absolute inset-0 bg-linear-to-br ${KPI_TONES[tone].wash}`} />
             <CardContent className="relative p-5">
                 <div className="mb-4 flex items-center justify-between gap-3">
                     <span className="text-sm font-medium text-muted-foreground">{label}</span>
-                    <span className={`rounded-xl bg-background/80 p-2 shadow-sm ${KPI_TONES[tone].split(' ').slice(-2).join(' ')}`}><Icon className="size-4" /></span>
+                    <span className={`rounded-xl bg-card p-2 shadow-sm ${KPI_TONES[tone].icon}`}><Icon className="size-4" /></span>
                 </div>
                 <div className="text-2xl font-bold tracking-tight tabular-nums">{value}</div>
                 {delta && <div className="mt-1.5">{delta}</div>}
@@ -183,8 +181,7 @@ export default function ExecutiveDashboard(props: ExecutiveProps) {
             <Head title="Executive Dashboard" />
             <div className="flex h-full flex-col gap-5 bg-gradient-to-b from-muted/35 via-background to-background p-4 md:p-6">
                 {/* Period bar */}
-                <div className="relative overflow-hidden rounded-2xl border border-primary/10 bg-gradient-to-br from-slate-950 via-slate-900 to-primary/80 p-5 text-white shadow-xl shadow-primary/10 md:p-7">
-                    <div className="absolute -right-20 -top-24 size-72 rounded-full bg-white/10 blur-3xl" />
+                <div className="brand-panel scheme-dark relative overflow-hidden rounded-2xl border border-sidebar-border p-5 shadow-xl shadow-brand-navy/10 md:p-7">
                     <div className="relative flex flex-wrap items-end justify-between gap-4">
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Executive Overview</h1>
@@ -226,10 +223,10 @@ export default function ExecutiveDashboard(props: ExecutiveProps) {
 
                 {/* KPI band A — period, with deltas */}
                 <div className="grid gap-3 md:grid-cols-4">
-                    <KpiCard label="Net Sales" value={money(kpis.sales)} delta={<Delta value={kpis.sales_delta} />} icon={TrendingUp} tone="emerald" />
-                    <KpiCard label="Net Profit" value={money(kpis.profit)} delta={<Delta value={kpis.profit_delta} />} icon={Banknote} tone="blue" />
-                    <KpiCard label="Net Margin" value={pct(kpis.margin_pct)} hint={`Previous period ${pct(kpis.prev_margin_pct)}`} icon={Landmark} tone="violet" />
-                    <KpiCard label="Net Purchases" value={money(kpis.purchases)} delta={<Delta value={kpis.purchases_delta} invert />} icon={ShoppingCart} tone="amber" />
+                    <KpiCard label="Net Sales" value={money(kpis.sales)} delta={<Delta value={kpis.sales_delta} />} icon={TrendingUp} />
+                    <KpiCard label="Net Profit" value={money(kpis.profit)} delta={<Delta value={kpis.profit_delta} />} icon={Banknote} tone="mint" />
+                    <KpiCard label="Net Margin" value={pct(kpis.margin_pct)} hint={`Previous period ${pct(kpis.prev_margin_pct)}`} icon={Landmark} tone="mint" />
+                    <KpiCard label="Net Purchases" value={money(kpis.purchases)} delta={<Delta value={kpis.purchases_delta} invert />} icon={ShoppingCart} />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <KpiCard label="Payroll Expense" value={money(props.hr.expense)} hint="Selected accounting period" icon={Banknote} />
@@ -240,10 +237,10 @@ export default function ExecutiveDashboard(props: ExecutiveProps) {
 
                 {/* KPI band B — snapshot position */}
                 <div className="grid gap-3 md:grid-cols-4">
-                    <KpiCard label="Customer Receivables" value={money(financials.receivable)} hint="Live ledger balance" icon={ReceiptText} tone="blue" />
-                    <KpiCard label="Supplier Payables" value={money(financials.payable)} hint="Live ledger balance" icon={Landmark} tone="amber" />
-                    <KpiCard label="Net Position" value={money(financials.net_position)} hint="Includes employee advances and salary payable" icon={Banknote} tone="violet" />
-                    <KpiCard label="Inventory at Cost" value={money(financials.inventory_value)} hint="Current sellable stock" icon={Boxes} tone="emerald" />
+                    <KpiCard label="Customer Receivables" value={money(financials.receivable)} hint="Live ledger balance" icon={ReceiptText} />
+                    <KpiCard label="Supplier Payables" value={money(financials.payable)} hint="Live ledger balance" icon={Landmark} />
+                    <KpiCard label="Net Position" value={money(financials.net_position)} hint="Includes employee advances and salary payable" icon={Banknote} tone="mint" />
+                    <KpiCard label="Inventory at Cost" value={money(financials.inventory_value)} hint="Current sellable stock" icon={Boxes} tone="mint" />
                 </div>
 
                 {/* Attention tiles */}
