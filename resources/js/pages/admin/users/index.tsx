@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { usePage, useForm, router, Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 import { ALERT_FIX } from '@/lib/form-validation';
-import { type BreadcrumbItem } from '@/types';
+import { type BreadcrumbItem, type SharedData } from '@/types';
 import { KeyRound, Pencil, Plus, Power, Search, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -35,7 +35,8 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Users', href: '/users' }];
 const emptyForm = { name: '', email: '', password: '', password_confirmation: '', is_active: true, roles: [] as string[] };
 
 export default function UsersIndex({ users, roles, filters }: Props) {
-    const currentUserId = (usePage().props as { auth?: { user?: { id: number } } }).auth?.user?.id;
+    const { auth } = usePage<SharedData>().props;
+    const currentUserId = auth.user.id;
     const [dialogOpen, setDialogOpen] = useState(false);
     const [pwOpen, setPwOpen] = useState(false);
     const [editing, setEditing] = useState<UserRow | null>(null);
@@ -164,15 +165,19 @@ export default function UsersIndex({ users, roles, filters }: Props) {
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex justify-end gap-1">
-                                            <Button variant="ghost" size="icon" title="Edit" onClick={() => openEdit(user)}>
-                                                <Pencil className="size-4" />
-                                            </Button>
-                                            <Button
-                                                variant="ghost" size="icon" title="Reset password"
-                                                onClick={() => { setPwUser(user); pwForm.reset(); pwForm.clearErrors(); setPwOpen(true); }}
-                                            >
-                                                <KeyRound className="size-4" />
-                                            </Button>
+                                            {(user.id !== currentUserId || auth.canManageOwnAccount) && (
+                                                <>
+                                                    <Button variant="ghost" size="icon" title="Edit" onClick={() => openEdit(user)}>
+                                                        <Pencil className="size-4" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost" size="icon" title="Reset password"
+                                                        onClick={() => { setPwUser(user); pwForm.reset(); pwForm.clearErrors(); setPwOpen(true); }}
+                                                    >
+                                                        <KeyRound className="size-4" />
+                                                    </Button>
+                                                </>
+                                            )}
                                             {user.id !== currentUserId && (
                                                 <>
                                                     <Button

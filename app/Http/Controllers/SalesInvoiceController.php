@@ -7,15 +7,16 @@ use App\Models\Customer;
 use App\Models\IncentiveRule;
 use App\Models\Product;
 use App\Models\SalesInvoice;
-use App\Models\SalesReturn;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\IncentiveEngine;
 use App\Services\InventoryService;
+use App\Services\InvoiceBalanceService;
 use App\Services\InvoicePostingService;
 use App\Services\MarginCalculator;
 use App\Services\NumberSeriesService;
 use App\Services\SaleNetPositionService;
+use App\Services\SalesInvoiceList;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -63,48 +64,92 @@ class SalesInvoiceController extends Controller
         $invoice->update(['stock_reserved' => false]);
     }
 
-    public function index(Request $request)
+    public function index(Request $request, SalesInvoiceList $list)
     {
-        $query = SalesInvoice::query()
-            ->with('customer:id,name,city')
-            ->when($request->search, fn ($q, $search) => $q->where('invoice_number', 'like', "%{$search}%"))
-            ->when($request->customer_id, fn ($q, $id) => $q->where('customer_id', $id))
-            ->when($request->status, fn ($q, $status) => $q->where('status', $status))
-            ->when($request->sale_type, fn ($q, $type) => $q->where('sale_type', $type))
-            ->when($request->from, fn ($q, $from) => $q->whereDate('invoice_date', '>=', $from))
-            ->when($request->to, fn ($q, $to) => $q->whereDate('invoice_date', '<=', $to));
-
-        // Net-of-returns summary over the full filtered set. Sales returns are
-        // invoice-linked with a status, so we net posted returns against exactly
-        // the invoices in this filter (regardless of the return's own date).
-        $gross = round((float) (clone $query)->sum('total_amount'), 2);
-        $grossProfit = round((float) (clone $query)->where('status', 'posted')->sum('total_profit'), 2);
-        $invoiceIds = (clone $query)->pluck('id');
-        $postedReturns = SalesReturn::where('status', SalesReturn::STATUS_POSTED)
-            ->whereIn('sales_invoice_id', $invoiceIds);
-        $returns = round((float) (clone $postedReturns)->sum('total_amount'), 2);
-        $returnProfit = round((float) (clone $postedReturns)->sum('total_amount')
-            - (float) (clone $postedReturns)->sum('total_cost'), 2);
-
-        $invoices = $query->latest('invoice_date')->latest('id')
-            ->paginate(15)
-            ->withQueryString();
-
-        // Surface the derived return lifecycle so the list can badge posted
-        // invoices as partially / fully returned.
-        $invoices->getCollection()->each->append('return_status');
+        $filters = $this->listFilters($request);
+        $base = $list->query($filters);
+        $filter = $list->filterStatus(clone $base, $filters['status'] ?? null);
+        $header = SalesInvoice::query()->toBase()->selectRaw(
+            "COUNT(*) AS total, SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) AS drafts"
+        )->first();
 
         return Inertia::render('sales/index', [
-            'invoices' => $invoices,
-            'customers' => Customer::active()->orderBy('name')->get(['id', 'name']),
-            'filters' => $request->only('search', 'customer_id', 'status', 'sale_type', 'from', 'to'),
-            'summary' => [
-                'gross' => $gross,
-                'returns' => $returns,
-                'net' => round($gross - $returns, 2),
-                'gross_profit' => $grossProfit,
-                'net_profit' => round($grossProfit - $returnProfit, 2),
-            ],
+            'invoices' => fn () => $list->sort(clone $filter, $filters)->paginate((int) ($filters['per_page'] ?? 15))
+                ->withQueryString()->through(fn (SalesInvoice $sale) => $sale->isPosted() && $sale->posted_return_count ? $sale->append('return_status') : $sale),
+            'customers' => fn () => Customer::active()->orderBy('name')->get(['id', 'name']),
+            'filters' => $filters,
+            'summary' => fn () => $list->summary($filter),
+            'counts' => fn () => $list->counts($base),
+            'headerCounts' => ['total' => (int) $header->total, 'drafts' => (int) $header->drafts],
+            'today' => Carbon::today('Asia/Karachi')->toDateString(),
+        ]);
+    }
+
+    public function exportList(Request $request, SalesInvoiceList $list)
+    {
+        $filters = $this->listFilters($request);
+        $selected = $request->validate(['ids' => ['sometimes', 'array', 'min:1', 'max:50'], 'ids.*' => ['required', 'integer', 'distinct']]);
+        $query = $list->filterStatus($list->query($filters), $filters['status'] ?? null);
+        if (isset($selected['ids'])) {
+            $query->whereKey(array_map('intval', $selected['ids']));
+        }
+        $query->addSelect('list_customer.name as customer_name', 'list_customer.city as customer_city');
+        $query = $list->sort($query, $filters);
+
+        return response()->streamDownload(function () use ($query) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF");
+            fputcsv($out, ['Invoice', 'Customer', 'City', 'Date', 'Type', 'Total', 'Returns', 'Net', 'Profit', 'Margin %', 'Status'], escape: '');
+            $text = static function ($value): string {
+                $value = (string) $value;
+
+                return preg_match('/^\s*[=+@-]|^[\t\r\n]/u', $value) ? "'".$value : $value;
+            };
+            foreach ($query->cursor() as $sale) {
+                $number = fn ($value) => $value === null ? '' : number_format((float) $value, 2, '.', '');
+                fputcsv($out, [
+                    $text($sale->invoice_number), $text($sale->customer_name), $text($sale->customer_city),
+                    $sale->invoice_date->toDateString(), $sale->sale_type, $number($sale->total_amount),
+                    $number($sale->returned_amount), $number($sale->net_amount), $number($sale->net_profit),
+                    $number($sale->margin), $sale->status,
+                ], escape: '');
+            }
+            fclose($out);
+        }, 'sales-invoices.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    public function preview(SalesInvoice $sale, InvoiceBalanceService $balances)
+    {
+        $sale->load([
+            'items.product:id,name', 'items.batch:id,batch_number', 'creator:id,name',
+            'postedReturns:id,sales_invoice_id,return_number,return_date,total_amount',
+        ]);
+        $balance = $sale->isPosted() ? $balances->sales()->whereKey($sale->id)->first() : null;
+
+        return response()->json([
+            'items' => $sale->items->map(fn ($item) => [
+                'id' => $item->id, 'product' => $item->product?->name, 'batch' => $item->batch?->batch_number,
+                'qty' => $item->quantity, 'bonus' => $item->bonus_quantity, 'rate' => $item->trade_price, 'amount' => $item->net_amount,
+            ]),
+            'created_at' => $sale->created_at, 'creator' => $sale->creator?->name, 'posted_at' => $sale->posted_at,
+            'returns' => $sale->postedReturns->map(fn ($return) => [
+                'number' => $return->return_number, 'date' => $return->return_date->toDateString(), 'amount' => $return->total_amount,
+            ]),
+            'paid' => $balance ? (float) $balance->paid_amount : null,
+            'outstanding' => $balance ? max(0, (float) $balance->outstanding) : null,
+        ])->header('Cache-Control', 'private, no-store');
+    }
+
+    private function listFilters(Request $request): array
+    {
+        return $request->validate([
+            'search' => ['nullable', 'string', 'max:120'], 'customer_id' => ['nullable', 'integer'],
+            'status' => ['nullable', Rule::in(SalesInvoiceList::STATUSES)],
+            'sale_type' => ['nullable', Rule::in(['cash', 'credit', 'sale_base', 'booking', 'direct'])],
+            'from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d'],
+            'sort' => ['nullable', Rule::in(SalesInvoiceList::SORTS)],
+            'direction' => ['nullable', Rule::in(['asc', 'desc'])],
+            'per_page' => ['nullable', Rule::in(SalesInvoiceList::PAGE_SIZES)],
         ]);
     }
 
@@ -202,6 +247,44 @@ class SalesInvoiceController extends Controller
     public function post(SalesInvoice $sale)
     {
         try {
+            $this->postInvoice($sale);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', "Invoice {$sale->invoice_number} posted. Stock dispatched.");
+    }
+
+    public function postSelected(Request $request)
+    {
+        $ids = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:50'],
+            'ids.*' => ['required', 'integer', 'distinct', 'exists:sales_invoices,id'],
+        ])['ids'];
+        $sales = SalesInvoice::whereKey(array_map('intval', $ids))->orderBy('invoice_date')->orderBy('id')->get();
+        $posted = 0;
+        $errors = [];
+        foreach ($sales as $sale) {
+            if (! $sale->isDraft()) {
+                $errors[] = "{$sale->invoice_number} is no longer a draft.";
+                continue;
+            }
+            try {
+                $this->postInvoice($sale);
+                $posted++;
+            } catch (RuntimeException $e) {
+                $errors[] = "{$sale->invoice_number}: {$e->getMessage()}";
+            }
+        }
+
+        return $errors
+            ? back()->with('error', "{$posted} posted; ".count($errors)." not posted. {$errors[0]}")
+            : back()->with('success', "{$posted} sales invoice(s) posted.");
+    }
+
+    private function postInvoice(SalesInvoice $sale): void
+    {
+        try {
             $this->posting->postSale($sale);
         } catch (\App\Exceptions\CreditLimitExceededException $e) {
             app(\App\Services\AlertService::class)->send('sales.post', new \App\Notifications\SystemAlert(
@@ -212,14 +295,10 @@ class SalesInvoiceController extends Controller
                 "customer:{$sale->customer_id}",
             ));
 
-            return back()->with('error', $e->getMessage());
-        } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
+            throw $e;
         }
 
         \App\Support\AuditLogger::action($sale, 'posted', ['invoice_number' => $sale->invoice_number]);
-
-        return back()->with('success', "Invoice {$sale->invoice_number} posted. Stock dispatched.");
     }
 
     public function cancel(SalesInvoice $sale)

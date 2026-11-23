@@ -33,8 +33,9 @@ export function useListKeyboardNav({
 
     // Keep the highlighted row visible.
     useEffect(() => {
+        if (!autoFocus && document.activeElement !== searchRef.current) return;
         rowRefs.current.get(highlighted)?.scrollIntoView({ block: 'nearest' });
-    }, [highlighted]);
+    }, [autoFocus, highlighted]);
 
     const onSearchKeyDown = useCallback(
         (e: React.KeyboardEvent) => {

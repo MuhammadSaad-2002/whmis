@@ -208,6 +208,25 @@ class FinancialPositionTest extends TestCase
         $this->assertEqualsWithDelta(3000.0, $out['amount'], 0.01);
     }
 
+    public function test_payment_window_does_not_change_current_aging_cutoffs(): void
+    {
+        $asOf = Carbon::parse('2026-11-23', 'Asia/Karachi');
+        $ledger = app(LedgerService::class);
+        $ledger->post($this->customer, 'sale', '2026-08-24', 100, 0); // 91 days old.
+        $ledger->post($this->company, 'purchase', '2026-09-23', 0, 200); // 61 days old.
+        app(PaymentService::class)->record($this->customer, [
+            'method' => 'cash', 'amount' => 10, 'payment_date' => '2026-11-01',
+        ]);
+
+        $oldPeriod = $ledger->financialPosition(Carbon::parse('2026-08-01'), Carbon::parse('2026-08-31'), $asOf);
+        $currentPeriod = $ledger->financialPosition(Carbon::parse('2026-11-01'), $asOf, $asOf);
+        $this->assertEquals(90, $oldPeriod['receivables'][0]['aging']['over_90']);
+        $this->assertEquals(200, $oldPeriod['payables'][0]['aging']['61_90']);
+        $this->assertSame($oldPeriod['receivables'][0]['aging'], $currentPeriod['receivables'][0]['aging']);
+        $this->assertEquals(0, $oldPeriod['totals']['received']);
+        $this->assertEquals(10, $currentPeriod['totals']['received']);
+    }
+
     public function test_page_renders_with_permission(): void
     {
         $this->seedMoney();
@@ -231,12 +250,24 @@ class FinancialPositionTest extends TestCase
         $this->get(route('ledger.position'))->assertForbidden();
     }
 
-    public function test_pdf_streams(): void
+    public function test_pdf_has_a_chart_page_and_a_detail_page(): void
     {
         $this->seedMoney();
 
         $response = $this->get(route('ledger.position.pdf'));
         $response->assertOk();
         $this->assertSame('application/pdf', $response->headers->get('content-type'));
+        $this->assertSame(2, preg_match_all('/\/Type\s*\/Page\b/', $response->getContent()));
+    }
+
+    public function test_pdf_allows_long_tables_to_continue_after_the_summary(): void
+    {
+        for ($i = 1; $i <= 45; $i++) {
+            $customer = Customer::create(['name' => "PDF Customer {$i}"]);
+            app(LedgerService::class)->post($customer, 'sale', now()->toDateString(), 100, 0);
+        }
+
+        $response = $this->get(route('ledger.position.pdf'))->assertOk();
+        $this->assertGreaterThan(2, preg_match_all('/\/Type\s*\/Page\b/', $response->getContent()));
     }
 }

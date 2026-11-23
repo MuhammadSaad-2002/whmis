@@ -1,8 +1,8 @@
 import Heading from '@/components/heading';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { type NavItem } from '@/types';
-import { Link } from '@inertiajs/react';
+import { type NavItem, type SharedData } from '@/types';
+import { Link, usePage } from '@inertiajs/react';
 
 const settingsNavItems: NavItem[] = [
     {
@@ -24,12 +24,13 @@ const settingsNavItems: NavItem[] = [
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
     const currentPath = window.location.pathname;
+    const { auth } = usePage<SharedData>().props;
 
     return (
         <div className="px-4 py-6">
-            <Heading title="Settings" description="Manage your profile and account settings" />
+            <Heading title="Settings" description={auth.canManageOwnAccount ? 'Manage your profile and account settings' : 'Manage your workspace appearance'} />
 
-            <nav aria-label="Settings" className="mb-6 flex flex-wrap gap-1.5 border-b pb-3">
+            {auth.canManageOwnAccount && <nav aria-label="Settings" className="mb-6 flex flex-wrap gap-1.5 border-b pb-3">
                 {settingsNavItems.map((item) => (
                     <Button
                         key={item.url}
@@ -43,7 +44,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                         </Link>
                     </Button>
                 ))}
-            </nav>
+            </nav>}
 
             <section className="max-w-xl space-y-12">{children}</section>
         </div>

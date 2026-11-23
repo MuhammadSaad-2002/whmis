@@ -3,8 +3,11 @@
 <head>
     <meta charset="utf-8">
     <title>{{ $title }}</title>
-    @include('pdf.partials.style')
+    @include('pdf.partials.style', [
+        'pageMargins' => '18pt '.\App\Services\ReportPdfRenderer::SIDE_MARGIN.'pt '.\App\Services\ReportPdfRenderer::BOTTOM_MARGIN.'pt',
+    ])
     <style>
+        body { padding: 0; }
         .report-chart { margin: 12px 0 16px; padding: 10px; border: 1px solid #d3e0e8; border-radius: 6px; page-break-inside: avoid; }
         .report-chart h2 { margin: 0 0 2px; }
         .report-chart .chart-meta { margin-bottom: 7px; font-size: 8.5px; color: #496175; }
@@ -13,6 +16,21 @@
         table.items.compact td { padding: 3px 3px; font-size: 7.5px; }
         .negative-guide { margin: 8px 0; padding: 6px 8px; border-left: 3px solid #dc2626; background: #fff7f7; color: #7f1d1d; font-size: 8.5px; line-height: 1.45; }
         .negative-value { color: #b91c1c; font-weight: bold; }
+        .section-title { margin-top: 14px; page-break-after: avoid; }
+        .report-summary { page-break-inside: avoid; }
+        .report-summary table.items th:first-child { width: 70%; }
+        .report-summary table.items tbody tr:last-child td { font-weight: bold; background: #e1f4f0; }
+        .report-notes { margin: 8px 0; }
+        .report-scope {
+            display: inline-block;
+            margin: 5px 0 2px;
+            padding: 4px 8px;
+            background: #e1f4f0;
+            border-left: 3px solid #087568;
+            color: #075b50;
+            font-size: 12px;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -21,20 +39,35 @@
             <td>
                 @include('pdf.partials.header')
                 <div class="meta">{{ $title }} · {{ count($rows) }} rows</div>
+                @if(!empty($headerLabel))
+                    <div class="report-scope">{{ $headerLabel }}</div>
+                @endif
+                @if(!empty($context))
+                    <div class="meta">{{ $context }}</div>
+                @endif
             </td>
             <td style="text-align: right;" class="meta">
                 @if(!empty($filters['from']) || !empty($filters['to']))
                     Period: {{ $filters['from'] ?? '…' }} — {{ $filters['to'] ?? '…' }}<br>
                 @endif
-                Generated {{ now()->format('d M Y H:i') }}
+                Generated {{ $generatedAt ?? now('Asia/Karachi')->format('d M Y H:i') }} PKT
             </td>
         </tr>
     </table>
 
+    @if(!empty($notes))
+        <div class="meta report-notes">
+            @foreach($notes as $note)<p>{{ $note }}</p>@endforeach
+        </div>
+    @endif
+
     @php
         $hasNegativeValues = collect($rows)->contains(
             fn ($row) => collect($row)->contains(fn ($value) => is_numeric($value) && (float) $value < 0)
-        ) || collect($totals)->contains(fn ($value) => is_numeric($value) && (float) $value < 0);
+        ) || collect($totals)->contains(fn ($value) => is_numeric($value) && (float) $value < 0)
+            || collect($sections ?? [])->contains(fn ($section) => collect($section['rows'])->contains(
+                fn ($row) => collect($row)->contains(fn ($value) => is_numeric($value) && (float) $value < 0)
+            ));
     @endphp
     @if($hasNegativeValues)
         <div class="negative-guide">
@@ -56,53 +89,21 @@
         @endforeach
     @endif
 
-    <table class="items @if(count($columns) > 8) compact @endif">
-        <thead>
-            <tr>
-                @foreach($columns as $column)
-                    <th @if(($column['align'] ?? '') === 'right') class="num" @endif>{{ $column['label'] }}</th>
-                @endforeach
-            </tr>
-        </thead>
-        <tbody>
-            @foreach($rows as $index => $row)
-                @if(!empty($groupBy) && ($index === 0 || ($rows[$index - 1][$groupBy] ?? null) !== ($row[$groupBy] ?? null)))
-                    <tr>
-                        <td colspan="{{ count($columns) }}" style="font-weight: bold; background: #dff4ee; text-transform: uppercase;">
-                            {{ $row[$groupBy] ?? 'Other' }}
-                        </td>
-                    </tr>
-                @endif
-                <tr>
-                    @foreach($columns as $column)
-                        @php $value = $row[$column['key']] ?? ''; @endphp
-                        <td class="{{ ($column['align'] ?? '') === 'right' ? 'num' : '' }} {{ is_numeric($value) && (float) $value < 0 ? 'negative-value' : '' }}">
-                            @if(in_array($column['format'] ?? '', ['money']))
-                                {{ is_numeric($value) ? number_format((float) $value, 2) : $value }}
-                            @elseif(($column['format'] ?? '') === 'pct')
-                                {{ $value }}%
-                            @elseif(($column['format'] ?? '') === 'date')
-                                {{ $value ? \Illuminate\Support\Carbon::parse($value)->format('d M Y') : '' }}
-                            @else
-                                {{ $value }}
-                            @endif
-                        </td>
-                    @endforeach
-                </tr>
-            @endforeach
-            @if($totals !== [])
-                <tr>
-                    @foreach($columns as $index => $column)
-                        @php $value = $totals[$column['key']] ?? ($index === 0 ? 'TOTAL' : ''); @endphp
-                        <td class="{{ ($column['align'] ?? '') === 'right' ? 'num' : '' }} {{ is_numeric($value) && (float) $value < 0 ? 'negative-value' : '' }}" style="font-weight: bold; border-top: 1.5px solid #10243a;">
-                            {{ is_numeric($value) && ($column['format'] ?? '') === 'money' ? number_format((float) $value, 2) : $value }}
-                        </td>
-                    @endforeach
-                </tr>
-            @endif
-        </tbody>
-    </table>
+    @if(!empty($sectionTitle))
+        <h2 class="section-title">{{ $sectionTitle }}</h2>
+    @endif
+    @include('pdf.partials.report-table')
+    @foreach($sections ?? [] as $section)
+        <div @if($section['keep_together'] ?? false) class="report-summary" @endif>
+            <h2 class="section-title">{{ $section['title'] }}</h2>
+            @include('pdf.partials.report-table', [
+                'columns' => $section['columns'],
+                'rows' => $section['rows'],
+                'totals' => $section['totals'],
+                'groupBy' => $section['group_by'] ?? null,
+            ])
+        </div>
+    @endforeach
 
-    @include('pdf.partials.footer')
 </body>
 </html>

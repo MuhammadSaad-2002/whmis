@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('whmis:check-alerts')->dailyAt('08:00');
+Schedule::command('whmis:generate-delivery-plan')->everyThirtyMinutes()->withoutOverlapping();

@@ -8,6 +8,7 @@ use App\Models\IncentiveRule;
 use App\Models\Product;
 use App\Models\Warehouse;
 use App\Services\IncentiveEngine;
+use App\Services\LedgerService;
 use App\Services\PaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -179,19 +180,28 @@ class LookupController extends Controller
      * Posted, not-fully-allocated invoices for a party — used when
      * allocating a receipt/payment.
      */
-    public function openInvoices(Request $request, PaymentService $payments)
+    public function openInvoices(Request $request, PaymentService $payments, LedgerService $ledger)
     {
         $request->validate([
             'party_type' => ['required', 'in:customer,company'],
             'party_id' => ['required', 'integer'],
         ]);
 
-        abort_if($request->party_type === 'company' && ! $request->user()->canViewSupplierDetails(), 403);
+        abort_unless(
+            $request->user()->canViewSupplierDetails()
+            && ($request->user()->can('payments.view') || $request->user()->can('ledger.view')),
+            403
+        );
 
         $party = $request->party_type === 'customer'
             ? Customer::findOrFail($request->party_id)
             : Company::findOrFail($request->party_id);
 
-        return response()->json($payments->openInvoices($party));
+        $invoices = $payments->openInvoices($party);
+
+        return response()->json($request->boolean('with_balance') ? [
+            'invoices' => $invoices,
+            'balance' => $ledger->outstanding($party),
+        ] : $invoices)->header('Cache-Control', 'private, no-store');
     }
 }

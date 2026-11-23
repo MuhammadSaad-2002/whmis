@@ -2,8 +2,8 @@ import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSep
 import { UserInfo } from '@/components/user-info';
 import { useMobileNavigation } from '@/hooks/use-mobile-navigation';
 import { endWorkspaceSession } from '@/hooks/use-tabs';
-import { type User } from '@/types';
-import { Link } from '@inertiajs/react';
+import { type SharedData, type User } from '@/types';
+import { Link, usePage } from '@inertiajs/react';
 import { LogOut, Settings } from 'lucide-react';
 
 interface UserMenuContentProps {
@@ -14,6 +14,9 @@ interface UserMenuContentProps {
 
 export function UserMenuContent({ user, onNavigate, onLogout }: UserMenuContentProps) {
     const cleanup = useMobileNavigation();
+    const { auth } = usePage<SharedData>().props;
+    const settingsUrl = route(auth.canManageOwnAccount ? 'profile.edit' : 'appearance');
+    const settingsLabel = auth.canManageOwnAccount ? 'Settings' : 'Appearance';
 
     return (
         <>
@@ -24,12 +27,12 @@ export function UserMenuContent({ user, onNavigate, onLogout }: UserMenuContentP
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-                {onNavigate ? <DropdownMenuItem onSelect={() => onNavigate(route('profile.edit'))}>
-                    <Settings className="mr-2" /> Settings
+                {onNavigate ? <DropdownMenuItem onSelect={() => onNavigate(settingsUrl)}>
+                    <Settings className="mr-2" /> {settingsLabel}
                 </DropdownMenuItem> : <DropdownMenuItem asChild>
-                    <Link className="block w-full" href={route('profile.edit')} as="button" prefetch onClick={cleanup}>
+                    <Link className="block w-full" href={settingsUrl} as="button" prefetch onClick={cleanup}>
                         <Settings className="mr-2" />
-                        Settings
+                        {settingsLabel}
                     </Link>
                 </DropdownMenuItem>}
             </DropdownMenuGroup>

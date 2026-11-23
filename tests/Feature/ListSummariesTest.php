@@ -151,6 +151,68 @@ class ListSummariesTest extends TestCase
                 ->where('summary.count', $this->eq(1)));
     }
 
+    public function test_sales_list_tabs_and_exports_share_the_filtered_net_amounts(): void
+    {
+        app(ReturnService::class)->createSalesReturn($this->sale, [
+            ['sales_invoice_item_id' => $this->sale->items->first()->id, 'quantity' => 5],
+        ], now()->toDateString());
+        $draft = SalesInvoice::create([
+            'invoice_number' => 'SI-BOOKING', 'warehouse_id' => 1, 'customer_id' => $this->customer->id,
+            'invoice_date' => now()->toDateString(), 'sale_type' => 'booking', 'total_amount' => 120,
+        ]);
+
+        $filter = ['search' => 'City Pharmacy', 'status' => 'returned', 'sort' => 'net', 'per_page' => 10];
+        $this->get(route('sales.index', $filter))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->has('invoices.data', 1)->where('invoices.per_page', 10)
+                ->where('invoices.data.0.id', $this->sale->id)
+                ->where('invoices.data.0.net_amount', $this->eq(1350))
+                ->where('invoices.data.0.return_status', 'partially_returned')
+                ->where('counts.all', 2)->where('counts.returned', 1)->where('counts.draft', 1)
+                ->where('summary.net', $this->eq(1350)));
+        $csv = $this->get(route('sales.export', $filter))->assertOk()->streamedContent();
+        $this->assertStringContainsString('1800.00,450.00,1350.00', $csv);
+        $this->assertStringNotContainsString($draft->invoice_number, $csv);
+        $csv = $this->get(route('sales.export', ['ids' => [$draft->id]]))->assertOk()->streamedContent();
+        $this->assertStringContainsString($draft->invoice_number, $csv);
+        $this->assertStringNotContainsString($this->sale->invoice_number, $csv);
+    }
+
+    public function test_sales_preview_shows_real_items_and_completed_allocations(): void
+    {
+        app(PaymentService::class)->record($this->customer, [
+            'method' => 'cash', 'amount' => 300, 'payment_date' => now()->toDateString(),
+        ], [['invoice_type' => 'sales_invoice', 'invoice_id' => $this->sale->id, 'amount' => 300]]);
+        $this->getJson(route('sales.preview', $this->sale))->assertOk()
+            ->assertJsonPath('items.0.product', $this->product->name)
+            ->assertJsonPath('paid', 300)
+            ->assertJsonPath('outstanding', 1500);
+        $this->get(route('returns.sales.create', ['invoice_id' => $this->sale->id]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('initialInvoiceId', $this->sale->id));
+    }
+
+    public function test_bulk_post_uses_the_existing_posting_rules_and_permissions(): void
+    {
+        $draft = fn ($number) => SalesInvoice::create([
+            'invoice_number' => $number, 'warehouse_id' => 1, 'customer_id' => $this->customer->id,
+            'invoice_date' => now()->toDateString(), 'sale_type' => 'credit',
+        ]);
+        $valid = $draft('SI-VALID');
+        $empty = $draft('SI-EMPTY');
+        $valid->items()->create(['product_id' => $this->product->id, 'quantity' => 1, 'trade_price' => 100]);
+        $payload = ['ids' => [$valid->id, $empty->id]];
+        $admin = auth()->user();
+        $accountant = User::factory()->create();
+        $accountant->assignRole('Accountant');
+        $this->actingAs($accountant)->post(route('sales.post-selected'), $payload)->assertForbidden();
+        $this->assertTrue($valid->refresh()->isDraft());
+
+        $this->actingAs($admin)->from(route('sales.index'))->post(route('sales.post-selected'), $payload)
+            ->assertRedirect(route('sales.index'))->assertSessionHas('error', fn ($message) => str_contains($message, '1 posted; 1 not posted'));
+        $this->assertTrue($valid->refresh()->isPosted());
+        $this->assertTrue($empty->refresh()->isDraft());
+    }
+
     public function test_cancelled_sales_return_is_excluded_from_summaries(): void
     {
         $returns = app(ReturnService::class);

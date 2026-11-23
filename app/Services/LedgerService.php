@@ -126,7 +126,10 @@ class LedgerService
             if ($charge['amount'] <= 0) {
                 continue;
             }
-            $days = (int) $charge['date']->diffInDays($asOf);
+            // Ledger entry dates have no time of day. Compare them in the
+            // snapshot's calendar zone so the 30/60/90 cutoffs stay exact.
+            $days = (int) Carbon::parse($charge['date']->toDateString(), $asOf->getTimezone())
+                ->diffInDays($asOf->copy()->startOfDay());
             $key = match (true) {
                 $days <= 30 => 'current',
                 $days <= 60 => '31_60',
@@ -146,11 +149,12 @@ class LedgerService
      * Consolidated two-sided money picture: receivables (customers owe us),
      * payables (we owe suppliers), a chronological payments log, and totals.
      *
-     * Balances are current/all-time (Σ debit − credit). Aging is as of $to.
+     * Balances are current/all-time (Σ debit − credit). Aging uses the current date.
      * Per-party "paid" and the payments log cover [$from, $to].
      */
-    public function financialPosition(?Carbon $from = null, ?Carbon $to = null): array
+    public function financialPosition(?Carbon $from = null, ?Carbon $to = null, ?Carbon $asOf = null): array
     {
+        $asOf ??= Carbon::today('Asia/Karachi');
         $to = ($to ?? now())->copy()->endOfDay();
         $from = ($from ?? now()->startOfMonth())->copy()->startOfDay();
 
@@ -175,7 +179,7 @@ class LedgerService
             ->withSum('ledgerEntries as credit_sum', 'credit')
             ->orderBy('name')
             ->get()
-            ->map(function (Customer $customer) use ($to, $paidFor) {
+            ->map(function (Customer $customer) use ($asOf, $paidFor) {
                 $balance = round((float) $customer->debit_sum - (float) $customer->credit_sum, 2);
 
                 return [
@@ -185,7 +189,7 @@ class LedgerService
                     'phone' => $customer->phone,
                     'credit_limit' => (float) $customer->credit_limit,
                     'balance' => $balance,
-                    'aging' => $balance > 0 ? $this->aging($customer, $to) : null,
+                    'aging' => $balance > 0 ? $this->aging($customer, $asOf) : null,
                     'paid' => $paidFor($customer),
                 ];
             })
@@ -200,7 +204,7 @@ class LedgerService
             ->withSum('ledgerEntries as credit_sum', 'credit')
             ->orderBy('name')
             ->get()
-            ->map(function (Company $company) use ($to, $paidFor) {
+            ->map(function (Company $company) use ($asOf, $paidFor) {
                 $balance = round((float) $company->credit_sum - (float) $company->debit_sum, 2);
 
                 return [
@@ -208,7 +212,7 @@ class LedgerService
                     'name' => $company->name,
                     'city' => $company->city,
                     'balance' => $balance,
-                    'aging' => $balance > 0 ? $this->aging($company, $to) : null,
+                    'aging' => $balance > 0 ? $this->aging($company, $asOf) : null,
                     'paid' => $paidFor($company),
                 ];
             })
@@ -221,6 +225,7 @@ class LedgerService
         $log = $payments->map(fn (Payment $p) => [
             'id' => $p->id,
             'number' => $p->payment_number,
+            'reference_no' => $p->reference_no,
             'date' => Carbon::parse($p->payment_date)->toDateString(),
             'direction' => $p->direction, // 'in' = customer receipt, 'out' = supplier payment
             'party_type' => $p->party_type,

@@ -55,6 +55,32 @@ movements, COGS, ledger entries, or receipts. Physical returns use Returns; actu
 collections use Payments. Cancelled invoices retain history but cannot receive
 new dispatch actions. The detail can print its basic item/batch picking list.
 
+### Salesman and weekly schedules
+
+In **Users**, add the **Salesman** role to an active login. Keep **Booker** on the
+same login when that person also takes bookings. Salesman access opens **My
+Deliveries** and exposes only dispatches assigned to that login; it does not grant
+invoice, purchasing, collections, or customer-directory permissions.
+
+In **Dispatch & Delivery → Booking & Delivery Schedules**, set each customer's
+booking days, delivery days, and default Salesman. Booking days create today's
+planned visits for active primary and additional Bookers. Find them in **My
+Workday → Visits only**. They do not create booking orders. For delivery, only
+new invoices posted after delivery scheduling was enabled are eligible. The
+schedule uses the first allowed weekday on or after posting or the day the
+planner runs, whichever is later, in Pakistan time. Drafts and historic invoices
+are not picked up, and existing assignments, visits, and outcomes are never
+overwritten. Existing invoices can be planned manually via **Assign / reschedule**.
+
+The application scheduler runs the planner every 30 minutes. If needed, run
+**Generate plan now** or `php artisan whmis:generate-delivery-plan`. Enable the
+existing Laravel cron (`php artisan schedule:run` every minute) for automation.
+
+In **Dispatch & Delivery → Daily delivery sheet**, choose a date and staff
+member. The PDF groups posted invoices by customer stop, shows contact details
+and statuses, and leaves space for remarks and signature. Ordinary runs fit one
+A4 page. Exceptionally long routes continue onto extra pages rather than omitting rows.
+
 ## Collections and recovery
 
 Open **Finance → Collections & Recovery** (`/collections`). The positive balance
@@ -84,11 +110,15 @@ automatic customer reminders, or a payment-promise settlement engine.
 | --- | --- |
 | `dispatch.view` | Super Admin, Admin, Accountant, Warehouse Staff |
 | `dispatch.manage` | Super Admin, Admin, Warehouse Staff |
+| `dispatch.assigned` | Salesman (personal dispatches only without broader grants) |
+| `dispatch.plan` | Super Admin, Admin |
 | `collections.view`, `collections.manage` | Super Admin, Admin, Accountant |
 | `system.health` | Super Admin, Admin |
 
 Booker Workday requires existing `bookings.create` and remains customer-scoped.
-Bookers receive no organization-wide collections or dispatch permission.
+Bookers receive no organization-wide collections or dispatch permission. A
+combined Booker/Salesman can prepare, dispatch, and record delivery outcomes for
+their own assigned dispatches, but cannot reassign, reschedule, or correct them.
 Assignment choices include active users who can view the relevant workflow;
 Super Admin accounts stay hidden from non-Super-Admin assignment lists.
 
@@ -100,6 +130,9 @@ import these in phpMyAdmin in order, before deploying the corresponding code:
 1. `database/manual/2026_11_16_create_distribution_operations_tables.sql` — once;
    skip if its Laravel migration is already applied.
 2. `database/manual/2026_11_16_seed_distribution_permissions.sql` — rerunnable.
+3. `database/manual/2026_11_23_create_delivery_schedules.sql` — of the two new
+   imports, apply this first; skip if its Laravel migration already ran.
+4. `database/manual/2026_11_23_seed_salesman_permissions.sql` — rerunnable.
 
 Alternatively run `php artisan migrate --force` and
 `php artisan db:seed --class=DistributionPermissionSeeder --force`.

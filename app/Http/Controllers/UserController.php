@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
@@ -67,7 +68,7 @@ class UserController extends Controller
 
     public function update(Request $request, User $user)
     {
-        abort_if($this->actorCannotTouchSuperAdmin($request, $user), 403);
+        $this->authorizeAccountTarget($request, $user);
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -98,7 +99,7 @@ class UserController extends Controller
 
     public function password(Request $request, User $user)
     {
-        abort_if($this->actorCannotTouchSuperAdmin($request, $user), 403);
+        $this->authorizeAccountTarget($request, $user);
 
         $request->validate([
             'password' => ['required', 'confirmed', Password::defaults()],
@@ -111,7 +112,7 @@ class UserController extends Controller
 
     public function toggle(Request $request, User $user)
     {
-        abort_if($this->actorCannotTouchSuperAdmin($request, $user), 403);
+        $this->authorizeAccountTarget($request, $user);
 
         if ($user->id === auth()->id()) {
             return back()->with('error', 'You cannot deactivate your own account.');
@@ -128,7 +129,7 @@ class UserController extends Controller
 
     public function destroy(Request $request, User $user)
     {
-        abort_if($this->actorCannotTouchSuperAdmin($request, $user), 403);
+        $this->authorizeAccountTarget($request, $user);
 
         if ($user->id === auth()->id()) {
             return back()->with('error', 'You cannot delete your own account.');
@@ -152,12 +153,17 @@ class UserController extends Controller
     }
 
     /**
-     * A non-Super-Admin may not view or act on a Super Admin account. The user
-     * list already hides them, but the routes are id-addressable — block direct hits.
+     * User Management must enforce the same self-service boundary as Settings,
+     * even if a field Booker received an additional users.manage grant.
      */
-    private function actorCannotTouchSuperAdmin(Request $request, User $target): bool
+    private function authorizeAccountTarget(Request $request, User $target): void
     {
-        return $target->hasRole('Super Admin') && ! $request->user()->hasRole('Super Admin');
+        $actor = $request->user();
+        abort_if($target->hasRole('Super Admin') && ! $actor->hasRole('Super Admin'), 403);
+
+        if ($actor->is($target)) {
+            Gate::authorize('manage-own-account');
+        }
     }
 
     /**

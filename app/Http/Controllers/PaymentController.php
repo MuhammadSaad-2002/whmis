@@ -52,7 +52,7 @@ class PaymentController extends Controller
             'party_type' => ['required', 'in:customer,company'],
             'party_id' => ['required', 'integer'],
             'method' => ['required', 'in:cash,bank,cheque,online,adjustment'],
-            'amount' => ['required', 'numeric', 'gt:0'],
+            'amount' => ['required', 'numeric', 'gt:0', 'decimal:0,2', 'max:9999999999999.99'],
             'payment_date' => ['required', 'date'],
             'bank_name' => ['nullable', 'string', 'max:100'],
             'cheque_number' => ['nullable', 'string', 'max:100'],
@@ -62,20 +62,14 @@ class PaymentController extends Controller
             'allocations' => ['nullable', 'array'],
             'allocations.*.invoice_type' => ['required_with:allocations', 'in:sales_invoice,purchase_invoice'],
             'allocations.*.invoice_id' => ['required_with:allocations', 'integer'],
-            'allocations.*.amount' => ['required_with:allocations', 'numeric', 'min:0'],
+            'allocations.*.amount' => ['required_with:allocations', 'numeric', 'min:0', 'decimal:0,2', 'max:9999999999999.99'],
         ]);
 
         $party = $data['party_type'] === 'customer'
             ? Customer::findOrFail($data['party_id'])
             : Company::findOrFail($data['party_id']);
 
-        $allocations = $data['allocations'] ?? [];
-        $allocatedTotal = array_sum(array_column($allocations, 'amount'));
-        if ($allocatedTotal > (float) $data['amount'] + 0.01) {
-            return back()->with('error', 'Allocated amount exceeds the payment amount.');
-        }
-
-        $payment = $this->payments->record($party, $data, $allocations);
+        $payment = $this->payments->recordManual($party, $data, $data['allocations'] ?? []);
 
         return back()->with('success', "{$payment->payment_number} recorded.");
     }

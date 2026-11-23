@@ -43,6 +43,7 @@ class ReportService
             'sales-register' => ['title' => 'Sales Register', 'category' => 'Sales', 'description' => 'Every posted sales invoice in a period', 'filters' => ['date_range', 'customer']],
             'product-sales' => ['title' => 'Product Sales & Profitability', 'category' => 'Sales', 'description' => 'Sales invoices dated in the period, net of every valid return against those invoices, with return COGS shown separately', 'filters' => ['date_range', 'supplier']],
             'all-time-product-cogs' => ['title' => 'All-Time Product Sales & COGS', 'category' => 'Sales', 'description' => 'Lifetime quantities sold and cost of goods sold per product, net of posted returns', 'filters' => ['supplier']],
+            SupplierPurchaseValueReport::KEY => ['title' => 'Supplier Purchase Value & Net Sales', 'category' => 'Sales', 'description' => 'All-time purchase value of sold and bonus units, followed by the sales invoices for each supplier.', 'filters' => ['supplier']],
             'product-sales-daily' => ['title' => 'Daily Product Sales', 'category' => 'Sales', 'description' => 'Per product, per day: qty, bonus given, revenue, cost and profit (net of returns). Cost includes the bonus units shipped free, so profit is true.', 'filters' => ['date_range', 'supplier', 'product']],
             'customer-sales' => ['title' => 'Customer Sales & Profitability', 'category' => 'Sales', 'description' => 'Revenue, profit, and outstanding per pharmacy', 'filters' => ['date_range']],
             'booker-sales' => ['title' => 'Booker Sales', 'category' => 'Sales', 'description' => 'Sales attributed to each booker via assigned customers', 'filters' => ['date_range']],
@@ -73,6 +74,9 @@ class ReportService
 
     public function build(string $key, array $filters): array
     {
+        if ($key === SupplierPurchaseValueReport::KEY) {
+            return app(SupplierPurchaseValueReport::class)->build(isset($filters['company_id']) ? (int) $filters['company_id'] : null);
+        }
         if (isset(HrReportService::catalog()[$key])) return app(HrReportService::class)->build($key, $filters);
         [$from, $to] = $this->range($filters);
 

@@ -9,10 +9,10 @@ use App\Models\PaymentAllocation;
 use App\Models\PurchaseInvoice;
 use App\Models\PurchaseReturn;
 use App\Models\SalesInvoice;
-use App\Models\SalesReturn;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class PaymentService
 {
@@ -26,7 +26,7 @@ class PaymentService
     {
         if ($party instanceof Customer) {
             return app(InvoiceBalanceService::class)->openSales()->where('customer_id', $party->id)
-                ->orderBy('invoice_date')->get()->map(fn ($invoice) => [
+                ->orderBy('sales_invoices.invoice_date')->orderBy('sales_invoices.id')->get()->map(fn ($invoice) => [
                     'id' => $invoice->id, 'invoice_type' => $invoice->getMorphClass(),
                     'invoice_number' => $invoice->invoice_number,
                     'invoice_date' => $invoice->invoice_date->toDateString(),
@@ -34,14 +34,12 @@ class PaymentService
                     'outstanding' => (float) $invoice->outstanding,
                 ])->all();
         }
-        $isCustomer = $party instanceof Customer;
-        $invoiceModel = $isCustomer ? new SalesInvoice : new PurchaseInvoice;
-        $invoiceKey = $isCustomer ? 'sales_invoice_id' : 'purchase_invoice_id';
-        $morph = $invoiceModel->getMorphClass();
-        $invoices = $invoiceModel->newQuery()
-            ->where($isCustomer ? 'customer_id' : 'company_id', $party->id)
+        $morph = (new PurchaseInvoice)->getMorphClass();
+        $invoices = PurchaseInvoice::query()
+            ->where('company_id', $party->id)
             ->where('status', 'posted')
             ->orderBy('invoice_date')
+            ->orderBy('id')
             ->get(['id', 'invoice_number', 'invoice_date', 'total_amount']);
 
         $allocated = PaymentAllocation::where('invoice_type', $morph)
@@ -51,14 +49,11 @@ class PaymentService
             ->groupBy('invoice_id')
             ->pluck('total', 'invoice_id');
 
-        // Purchase returns post immediately; sales returns may later be cancelled.
-        $returns = $isCustomer
-            ? SalesReturn::where('status', SalesReturn::STATUS_POSTED)
-            : PurchaseReturn::query();
-        $returned = $returns->whereIn($invoiceKey, $invoices->pluck('id'))
-            ->selectRaw($invoiceKey.', SUM(total_amount) as total')
-            ->groupBy($invoiceKey)
-            ->pluck('total', $invoiceKey);
+        // Purchase returns post immediately.
+        $returned = PurchaseReturn::whereIn('purchase_invoice_id', $invoices->pluck('id'))
+            ->selectRaw('purchase_invoice_id, SUM(total_amount) as total')
+            ->groupBy('purchase_invoice_id')
+            ->pluck('total', 'purchase_invoice_id');
 
         return $invoices->map(fn ($invoice) => [
             'id' => $invoice->id,
@@ -70,6 +65,44 @@ class PaymentService
                 - (float) ($allocated[$invoice->id] ?? 0)
                 - (float) ($returned[$invoice->id] ?? 0), 2),
         ])->filter(fn ($row) => $row['outstanding'] > 0)->values()->all();
+    }
+
+    /** Recheck form allocations against live dues before recording any money. */
+    public function recordManual(Customer|Company $party, array $data, array $allocations): Payment
+    {
+        return DB::transaction(function () use ($party, $data, $allocations) {
+            $allocations = array_filter($allocations, fn ($row) => (float) $row['amount'] > 0);
+            if ($allocations !== []) {
+                $isCustomer = $party instanceof Customer;
+                $model = $isCustomer ? new SalesInvoice : new PurchaseInvoice;
+                $ids = array_column($allocations, 'invoice_id');
+                // Serialize concurrent manual allocations to the same invoices.
+                $model->newQuery()->where($isCustomer ? 'customer_id' : 'company_id', $party->id)
+                    ->whereKey(array_map('intval', $ids))->orderBy('id')->lockForUpdate()->get(['id']);
+                $open = collect($this->openInvoices($party))->keyBy('id');
+
+                $total = 0;
+                $byInvoice = [];
+                foreach ($allocations as $allocation) {
+                    $id = $allocation['invoice_id'];
+                    $cents = (int) round((float) $allocation['amount'] * 100);
+                    $total += $cents;
+                    $byInvoice[$id] = ($byInvoice[$id] ?? 0) + $cents;
+                    if ($allocation['invoice_type'] !== $model->getMorphClass()
+                        || ! $open->has($id)
+                        || $byInvoice[$id] > (int) round($open[$id]['outstanding'] * 100)) {
+                        throw ValidationException::withMessages([
+                            'allocations' => 'An invoice is no longer open for this party or the allocation exceeds its balance. Refresh the invoice amounts and try again.',
+                        ]);
+                    }
+                }
+                if ($total > (int) round((float) $data['amount'] * 100)) {
+                    throw ValidationException::withMessages(['allocations' => 'Allocated amount exceeds the payment amount.']);
+                }
+            }
+
+            return $this->record($party, $data, $allocations);
+        });
     }
 
     /**

@@ -31,6 +31,8 @@ likely to matter when changing each module.
   close or reload.
 - All roles use the top bar. Wide screens show permitted **Daily Work** links
   with remaining pages under **More**. Narrow screens use **Pages**.
+- Field Bookers can change the workspace appearance, but their profile and
+  signed-in password settings and account deletion are not self-service.
 - Navigation source: `resources/js/components/nav-config.ts`.
 
 ## Master data
@@ -51,12 +53,18 @@ likely to matter when changing each module.
 - Dispatch (`/dispatch`): posted invoice picking/packing, staff assignment, dated
   partial delivery attempts, corrections, return-settled closure and basic picking
   list printing. Tracking does not move stock or create payments.
+  Salesmen work their assigned deliveries, and Admins can set customer booking
+  and delivery weekdays and print a daily stop sheet per assignee.
 - Collections (`/collections`): live positive invoice balances, return/payment
   breakdown, overdue/latest-follow-up filters, responsible staff and promises.
   Follow-ups do not settle invoices. See [DISTRIBUTION_OPERATIONS.md](DISTRIBUTION_OPERATIONS.md).
 
 - Purchases: list/create/edit/post/cancel/duplicate/print under `/purchases`.
 - Sales: list/create/edit/post/cancel/print/summary/net-position under `/sales`.
+  The list includes status counts, date presets, sortable net-of-return figures,
+  an invoice preview, CSV export, and printing or posting selected rows. Posting
+  still requires `sales.post` and uses the same stock and credit checks as the
+  invoice editor.
 - Bookings: draft, submit, approve, reject, cancel, and convert to linked draft sales invoice.
 - On phones and tablets the booking form puts customer selection above compact
   product cards. Product selection opens a searchable dialog; each card keeps
@@ -110,6 +118,14 @@ likely to matter when changing each module.
 
 - Payments: `/payments`; supports receipts/payments, allocations, and cancellation.
 - Ledger position: `/ledger/position` and PDF export.
+  The PDF opens with a chart summary; receivables, payables, and payment activity
+  tables start on page two and continue if necessary.
+  Expand a customer or supplier for unpaid documents. The date window filters paid
+  amounts and the payments log, not the current ledger balances or aging. The
+  settlement planner is a preview and does not record transactions.
+  The shared payment form fills allocations oldest invoice date first, then invoice
+  ID; staff can override them or leave funds on account. Editing the total restores
+  automatic allocation.
 - Customer statements: `/ledger/customers/{customer}` and PDF.
 - Supplier statements: `/ledger/suppliers/{company}` and PDF.
 - Ledger is morphic across customers and suppliers.
@@ -129,6 +145,20 @@ report and buckets returns on their actual return date.
 `all-time-product-cogs` has no date range. It presents lifetime billed quantity,
 bonus units, returned quantity, net quantity sold, gross COGS, return COGS, and
 net COGS per product, with grand totals and an optional supplier filter.
+
+**Supplier Purchase Value & Net Sales** lists all-time posted sales by supplier
+through today's Pakistan business date. Products appear first, showing billed,
+bonus, and returned units and **Purchase Value** (posted COGS net of return cost).
+The second table shows one row per invoice/supplier with the customer's name,
+sale date, purchase value, the full invoice total for reference, and the supplier’s
+net sale value. Supplier revenue includes its proportional share of header
+discount and tax, less posted return credits. Product and invoice purchase
+totals reconcile; full invoice totals are not added across suppliers. Excel
+and PDF include both sections. For a single supplier, neither table repeats
+the supplier column, and the PDF highlights the supplier in its header.
+The closing summary shows total purchase value, total net sale value, and
+gross profit before operating expenses.
+Archived products remain in sales history.
 
 `all-time-purchases-stock` (Reports → Inventory → All-Time Purchases, Sales & Stock)
 shows one row per product and a grand total. Its only filter is the product's

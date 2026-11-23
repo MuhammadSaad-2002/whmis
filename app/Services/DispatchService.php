@@ -10,6 +10,8 @@ use Illuminate\Validation\ValidationException;
 /** Fulfilment tracking only. Invoice posting owns stock and accounting effects. */
 class DispatchService
 {
+    public const FIELD_ACTIONS = ['picking', 'packed', 'dispatched', 'delivered', 'failed'];
+
     public function progress(SalesInvoice $invoice): array
     {
         $returned = SalesReturnItem::whereHas('salesReturn', fn ($q) => $q->where('sales_invoice_id', $invoice->id)->where('status', 'posted'))
@@ -34,15 +36,25 @@ class DispatchService
     {
         DB::transaction(function () use ($invoice, $data, $actor) {
             $invoice = SalesInvoice::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $limited = ! $actor->can('dispatch.manage');
+            $dispatch = Dispatch::where('sales_invoice_id', $invoice->id)->first();
+            if ($limited) {
+                abort_unless($actor->can('dispatch.assigned') && $actor->is_active, 403);
+                abort_unless($dispatch && (int) $dispatch->assigned_to === $actor->id, 404);
+                abort_unless(in_array($data['action'], self::FIELD_ACTIONS, true)
+                    && ! array_key_exists('assigned_to', $data) && ! array_key_exists('planned_date', $data), 403);
+            }
             if ($invoice->status !== 'posted') $this->fail('Only posted invoices can be dispatched.');
             $existing = DispatchEvent::where('request_key', $data['request_key'])->first();
             if ($existing) {
                 if (! Dispatch::whereKey($existing->dispatch_id)->where('sales_invoice_id', $invoice->id)->exists()) $this->fail('This action reference belongs to another invoice.');
                 return;
             }
-            $dispatch = Dispatch::firstOrCreate(['sales_invoice_id' => $invoice->id]);
+            $dispatch ??= Dispatch::create(['sales_invoice_id' => $invoice->id]);
             $assignedTo = array_key_exists('assigned_to', $data) ? $data['assigned_to'] : $dispatch->assigned_to;
-            app(OperationsAccess::class)->validateAssignee($assignedTo, 'dispatch.view', $actor);
+            if (array_key_exists('assigned_to', $data)) {
+                app(OperationsAccess::class)->validateAssignee($assignedTo, ['dispatch.view', 'dispatch.assigned'], $actor);
+            }
             $state = $dispatch->status ?? 'pending';
             $action = $data['action'];
             $transitions = [
@@ -89,8 +101,9 @@ class DispatchService
                 $status = array_sum(array_column($progress, 'remaining')) <= 0 ? 'delivered'
                     : (array_sum(array_column($progress, 'delivered')) > 0 ? 'partial' : 'dispatched');
             }
-            $dispatch->update(['status' => $status, 'assigned_to' => $assignedTo]);
-            AuditLogger::action($invoice, 'dispatch_'.$action, ['dispatch_event_id' => $event->id, 'status' => $status, 'assigned_to' => $assignedTo]);
+            $date = $action === 'assign' && array_key_exists('planned_date', $data) ? $data['planned_date'] : $dispatch->planned_date;
+            $dispatch->update(['status' => $status, 'assigned_to' => $assignedTo, 'planned_date' => $date]);
+            AuditLogger::action($invoice, 'dispatch_'.$action, ['dispatch_event_id' => $event->id, 'status' => $status, 'assigned_to' => $assignedTo, 'planned_date' => $date]);
         });
     }
 

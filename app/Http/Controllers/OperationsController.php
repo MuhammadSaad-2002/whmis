@@ -12,28 +12,58 @@ class OperationsController extends Controller
 {
     public function dispatches(Request $request)
     {
-        $filters = $request->validate(['search' => 'nullable|string|max:100', 'status' => 'nullable|in:untracked,pending,picking,packed,dispatched,partial,delivered,failed,closed']);
+        $actor = $request->user();
+        $scoped = ! $actor->can('dispatch.view');
+        abort_if($scoped && ! $actor->is_active, 403);
+        $filters = $request->validate([
+            'search' => 'nullable|string|max:100', 'status' => 'nullable|in:untracked,pending,picking,packed,dispatched,partial,delivered,failed,closed',
+            'date' => 'nullable|date_format:Y-m-d', 'assignee_id' => 'nullable|integer',
+        ]);
         $invoices = SalesInvoice::query()->where('sales_invoices.status', 'posted')
             ->leftJoin('dispatches', 'dispatches.sales_invoice_id', '=', 'sales_invoices.id')
+            ->leftJoin('users as delivery_staff', 'delivery_staff.id', '=', 'dispatches.assigned_to')
             ->with('customer:id,name,city')->select('sales_invoices.id', 'invoice_number', 'invoice_date', 'customer_id')
+            ->addSelect('dispatches.planned_date', 'delivery_staff.name as assignee')
             ->selectRaw("COALESCE(dispatches.status, 'untracked') as dispatch_status")
+            ->when($scoped, fn ($q) => $q->where('dispatches.assigned_to', $actor->id))
+            ->when(! $scoped && ! empty($filters['assignee_id']), fn ($q) => $q->where('dispatches.assigned_to', $filters['assignee_id']))
+            ->when($filters['date'] ?? null, fn ($q, $date) => $q->where('dispatches.planned_date', $date))
             ->when($filters['search'] ?? null, fn ($q, $s) => $q->where(fn ($q) => $q->where('invoice_number', 'like', "%{$s}%")
                 ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))))
             ->when($filters['status'] ?? null, fn ($q, $s) => $s === 'untracked'
                 ? $q->whereNull('dispatches.status')
                 : $q->where('dispatches.status', $s))
+            ->when($scoped, fn ($q) => $q->orderByRaw("CASE WHEN dispatches.status IN ('delivered', 'closed') THEN 1 ELSE 0 END")
+                ->orderByRaw('CASE WHEN dispatches.planned_date IS NULL THEN 1 ELSE 0 END')->orderBy('dispatches.planned_date'))
             ->orderByDesc('sales_invoices.id')->paginate(20)->withQueryString();
-        return Inertia::render('operations/dispatch-index', ['invoices' => $invoices, 'filters' => $filters]);
+        if ($scoped) unset($filters['assignee_id']);
+        return Inertia::render('operations/dispatch-index', [
+            'invoices' => $invoices, 'filters' => $filters, 'scoped' => $scoped,
+            'staff' => $scoped ? [] : app(OperationsAccess::class)->staff(['dispatch.view', 'dispatch.assigned'], $actor)->orderBy('name')->get(['id', 'name']),
+            'canPlan' => $actor->can('dispatch.plan'),
+            'today' => now('Asia/Karachi')->toDateString(),
+        ]);
     }
 
     public function dispatch(Request $request, SalesInvoice $sale, DispatchService $service)
     {
-        abort_if($sale->status === 'draft', 404);
+        $actor = $request->user();
+        $dispatch = Dispatch::where('sales_invoice_id', $sale->id)
+            ->with(['assignee:id,name', 'events.creator:id,name', 'events.assignee:id,name', 'events.items'])->first();
+        $scoped = ! $actor->can('dispatch.view');
+        abort_if($sale->status === 'draft' || ($scoped && (! $dispatch || (int) $dispatch->assigned_to !== $actor->id)), 404);
+        abort_if($scoped && ! $actor->is_active, 403);
+        $canManage = $actor->can('dispatch.manage');
+        $fieldActions = $actor->can('dispatch.assigned') && $actor->is_active && $dispatch && (int) $dispatch->assigned_to === $actor->id;
         return Inertia::render('operations/dispatch', [
-            'invoice' => $sale->only(['id', 'invoice_number', 'status']) + ['customer' => $sale->customer?->name],
-            'dispatch' => Dispatch::where('sales_invoice_id', $sale->id)->with(['assignee:id,name', 'events.creator:id,name', 'events.assignee:id,name', 'events.items'])->first(),
+            'invoice' => $sale->only(['id', 'invoice_number', 'status']) + [
+                'customer' => $sale->customer?->name, 'address' => $sale->customer?->address, 'city' => $sale->customer?->city, 'phone' => $sale->customer?->phone,
+            ],
+            'dispatch' => $dispatch,
             'items' => $service->progress($sale),
-            'staff' => app(OperationsAccess::class)->staff('dispatch.view', $request->user())->orderBy('name')->get(['id', 'name']),
+            'staff' => $canManage ? app(OperationsAccess::class)->staff(['dispatch.view', 'dispatch.assigned'], $actor)->orderBy('name')->get(['id', 'name']) : [],
+            'canManage' => $canManage, 'fieldActions' => $fieldActions ? DispatchService::FIELD_ACTIONS : [],
+            'today' => now('Asia/Karachi')->toDateString(),
         ]);
     }
 
@@ -42,6 +72,7 @@ class OperationsController extends Controller
         $data = $request->validate([
             'action' => ['required', Rule::in(['assign', 'picking', 'packed', 'dispatched', 'delivered', 'failed', 'correct_delivery', 'close_returned'])],
             'request_key' => 'required|uuid', 'assigned_to' => 'nullable|integer',
+            'planned_date' => 'nullable|date_format:Y-m-d',
             'receiver_name' => 'nullable|string|max:150', 'notes' => 'nullable|string|max:1000',
             'items' => 'nullable|array', 'items.*.sales_invoice_item_id' => 'required|integer|distinct',
             'items.*.quantity' => 'required|numeric|decimal:0,2|min:0|max:999999999999',

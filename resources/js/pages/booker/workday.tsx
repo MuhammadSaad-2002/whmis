@@ -28,7 +28,7 @@ interface Customer {
     last_booking: { id: number; booking_number: string; booking_date: string; status: string } | null;
 }
 
-type Filters = { date: string; search: string };
+type Filters = { date: string; search: string; planned?: 1 | null };
 type Customers = PaginatedData<Customer> & { prev_page_url: string | null; next_page_url: string | null };
 
 function shiftDate(date: string, days: number) {
@@ -62,6 +62,11 @@ function WorkdayFilters({ filters, today }: { filters: Filters; today: string })
                 </div>
                 <Button type="submit" variant="secondary" className="h-11 shrink-0 px-3.5">Search</Button>
             </form>
+            <label className="flex min-h-10 cursor-pointer items-center gap-2 text-sm">
+                <input type="checkbox" className="accent-primary" checked={!!filters.planned}
+                    onChange={(event) => visit({ planned: event.target.checked ? 1 : undefined })} />
+                Visits only
+            </label>
         </div>
     );
 }
@@ -100,16 +105,16 @@ export default function Workday({ customers, filters }: { customers: Customers; 
                     {filters.search && (
                         <div className="flex items-center justify-between gap-2 rounded-lg bg-secondary/55 px-2.5 text-sm">
                             <p className="min-w-0 break-words">Results for <span className="font-medium">“{filters.search}”</span></p>
-                            <Button variant="ghost" className="h-11 shrink-0" onClick={() => router.get(PATH, { date: filters.date }, { preserveState: true, preserveScroll: true })}>Clear search</Button>
+                            <Button variant="ghost" className="h-11 shrink-0" onClick={() => router.get(PATH, { ...filters, search: undefined }, { preserveState: true, preserveScroll: true })}>Clear search</Button>
                         </div>
                     )}
 
                     {!customers.data.length ? (
                         <div className="rounded-xl border border-dashed bg-card p-6 text-center">
                             <Store aria-hidden="true" className="mx-auto mb-2 size-6 text-muted-foreground" />
-                            <p className="font-semibold">{filters.search ? 'No customers match this search' : 'No assigned customers yet'}</p>
+                            <p className="font-semibold">{filters.search ? 'No customers match this search' : filters.planned ? 'No visits for this date' : 'No assigned customers yet'}</p>
                             <p className="mt-1 text-sm text-muted-foreground">
-                                {filters.search ? 'Try a different customer name or city.' : 'Ask your administrator to assign customers to your Booker profile.'}
+                                {filters.search ? 'Try a different customer name or city.' : filters.planned ? 'Change the date or turn off Visits only to see all assigned customers.' : 'Ask your administrator to assign customers to your Booker profile.'}
                             </p>
                         </div>
                     ) : (

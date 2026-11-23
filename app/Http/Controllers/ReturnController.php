@@ -46,10 +46,13 @@ class ReturnController extends Controller
         ]);
     }
 
-    public function salesCreate()
+    public function salesCreate(Request $request)
     {
+        $invoiceId = $request->validate(['invoice_id' => ['nullable', 'integer']])['invoice_id'] ?? null;
+
         return Inertia::render('returns/sales-form', [
             'warehouse' => Warehouse::default()->only(['id', 'name']),
+            'initialInvoiceId' => $invoiceId ? SalesInvoice::where('status', SalesInvoice::STATUS_POSTED)->whereKey($invoiceId)->value('id') : null,
         ]);
     }
 

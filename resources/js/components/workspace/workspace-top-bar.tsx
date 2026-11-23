@@ -30,7 +30,7 @@ export function WorkspaceTopBar({ activePath, home, onNavigate, onBack, onLogout
     const groups = workspaceNavGroups.map((group) => ({
         ...group,
         label: !canViewSupplierDetails && group.restrictedLabel ? group.restrictedLabel : group.label,
-        items: group.items.filter((item) => can(item.permission)),
+        items: group.items.filter((item) => can(item.permission) || (item.alternatePermission && can(item.alternatePermission))),
     }));
     const primaryLinks = groups[0].items.slice(0, MAX_PRIMARY_LINKS);
     const primaryUrls = new Set(primaryLinks.map((item) => item.url));

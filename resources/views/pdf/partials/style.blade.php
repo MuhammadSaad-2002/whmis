@@ -1,8 +1,12 @@
 <style>
-    /* Reserve bottom space so the fixed footer (rendered on every page) never
-       overlaps flowing content. */
-    @page { margin: 0 0 2.2cm 0; }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    @if(isset($pageMargins))
+        @page { margin: {{ $pageMargins }}; }
+        /* In Dompdf the HTML root is also the page frame. Don't reset its margins. */
+        body, body * { margin: 0; padding: 0; box-sizing: border-box; }
+    @else
+        @page { margin: 0 0 2.2cm 0; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+    @endif
     body { font-family: DejaVu Sans, sans-serif; font-size: 10px; color: #10243a; padding: 24px 24px 0 24px; }
     h1 { font-size: 16px; margin-bottom: 2px; }
     h2 { font-size: 12px; margin-bottom: 8px; color: #234968; }

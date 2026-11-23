@@ -26,7 +26,8 @@ class SystemHealthService
         $check('Workflow schema', function () {
             $required = ['employees' => ['is_booker', 'user_id'], 'booker_customer' => ['booker_id', 'customer_id'],
                 'booker_assignment_logs' => ['changed_by'], 'bookings' => ['submitted_at', 'last_edited_at'],
-                'dispatches' => ['status', 'assigned_to'], 'dispatch_events' => ['request_key'],
+                'dispatches' => ['status', 'assigned_to', 'planned_date'], 'dispatch_events' => ['request_key'],
+                'customer_delivery_schedules' => ['booking_days', 'delivery_days', 'salesman_id', 'delivery_enabled_at'],
                 'dispatch_event_items' => ['quantity'], 'collection_follow_ups' => ['next_follow_up'], 'booker_visits' => ['visit_date']];
             $missing = [];
             foreach ($required as $table => $columns) {
@@ -39,7 +40,10 @@ class SystemHealthService
             $missing = array_diff($names, Permission::where('guard_name', 'web')->pluck('name')->all());
             $root = Role::where('name', 'Super Admin')->where('guard_name', 'web')->first();
             $ungranted = array_diff($names, $root?->permissions->pluck('name')->all() ?? []);
-            return [! $missing && ! $ungranted, $missing || $ungranted ? 'Run the additive operations permission seed and reset the permission cache.' : 'Permissions and Super Admin grants are present.'];
+            $salesmanReady = Role::where('name', 'Salesman')->where('guard_name', 'web')
+                ->whereHas('permissions', fn ($q) => $q->where('name', 'dispatch.assigned'))->exists();
+            $ok = ! $missing && ! $ungranted && $salesmanReady;
+            return [$ok, $ok ? 'Operations and Salesman permissions are present.' : 'Run the additive operations permission seed and reset the permission cache.'];
         });
         $check('Compiled frontend', function () {
             $path = public_path('build/manifest.json');

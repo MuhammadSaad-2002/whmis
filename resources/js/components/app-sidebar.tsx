@@ -20,7 +20,7 @@ export function AppSidebar({ onNavigate, activeUrl }: AppSidebarProps = {}) {
         if (isMobile) setOpenMobile(false);
     };
     const visibleGroups = navGroups
-        .map((group) => ({ ...group, items: group.items.filter((item) => can(item.permission)) }))
+        .map((group) => ({ ...group, items: group.items.filter((item) => can(item.permission) || (item.alternatePermission && can(item.alternatePermission))) }))
         .filter((group) => group.items.length > 0);
 
     return (

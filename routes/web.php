@@ -38,9 +38,15 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     Route::put('hr/employees/{employee}/customers', [\App\Http\Controllers\HrController::class, 'assignCustomers'])->middleware(['can:employees.view', 'can:bookers.assign'])->name('hr.employee.customers');
     Route::get('booker/workday', [\App\Http\Controllers\BookerWorkdayController::class, 'index'])->middleware('can:bookings.create')->name('booker.workday');
     Route::put('booker/customers/{customer}/visit', [\App\Http\Controllers\BookerWorkdayController::class, 'visit'])->middleware('can:bookings.create')->name('booker.visit');
-    Route::get('dispatch', [\App\Http\Controllers\OperationsController::class, 'dispatches'])->middleware(AuthorizeOperations::class.':dispatch.view')->name('dispatch.index');
-    Route::get('dispatch/{sale}', [\App\Http\Controllers\OperationsController::class, 'dispatch'])->middleware(AuthorizeOperations::class.':dispatch.view')->name('dispatch.show');
-    Route::post('dispatch/{sale}/events', [\App\Http\Controllers\OperationsController::class, 'dispatchAction'])->middleware(AuthorizeOperations::class.':dispatch.manage')->name('dispatch.record');
+    Route::middleware(AuthorizeOperations::class.':dispatch.plan')->group(function () {
+        Route::get('dispatch/schedules', [\App\Http\Controllers\DeliveryPlanningController::class, 'index'])->name('dispatch.schedules');
+        Route::put('dispatch/schedules/{customer}', [\App\Http\Controllers\DeliveryPlanningController::class, 'update'])->name('dispatch.schedules.update');
+        Route::post('dispatch/generate-plan', [\App\Http\Controllers\DeliveryPlanningController::class, 'generate'])->name('dispatch.schedules.generate');
+        Route::get('dispatch/daily-sheet', [\App\Http\Controllers\DeliveryPlanningController::class, 'sheet'])->name('dispatch.sheet');
+    });
+    Route::get('dispatch', [\App\Http\Controllers\OperationsController::class, 'dispatches'])->middleware(AuthorizeOperations::class.':dispatch.view,dispatch.assigned')->name('dispatch.index');
+    Route::get('dispatch/{sale}', [\App\Http\Controllers\OperationsController::class, 'dispatch'])->middleware(AuthorizeOperations::class.':dispatch.view,dispatch.assigned')->name('dispatch.show');
+    Route::post('dispatch/{sale}/events', [\App\Http\Controllers\OperationsController::class, 'dispatchAction'])->middleware(AuthorizeOperations::class.':dispatch.manage,dispatch.assigned')->name('dispatch.record');
     Route::get('collections', [\App\Http\Controllers\OperationsController::class, 'collections'])->middleware(AuthorizeOperations::class.':collections.view')->name('collections.index');
     Route::get('collections/{sale}', [\App\Http\Controllers\OperationsController::class, 'collection'])->middleware(AuthorizeOperations::class.':collections.view')->name('collections.show');
     Route::post('collections/{sale}/follow-ups', [\App\Http\Controllers\OperationsController::class, 'followUp'])->middleware(AuthorizeOperations::class.':collections.manage')->name('collections.follow-up');
@@ -137,6 +143,9 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     // Sales
     Route::middleware(['can:sales.view', 'can:view-supplier-details'])->group(function () {
         Route::get('sales', [SalesInvoiceController::class, 'index'])->name('sales.index');
+        Route::get('sales/export', [SalesInvoiceController::class, 'exportList'])->name('sales.export');
+        Route::post('sales/post-selected', [SalesInvoiceController::class, 'postSelected'])
+            ->middleware('can:sales.post')->name('sales.post-selected');
         Route::get('sales/create', [SalesInvoiceController::class, 'create'])
             ->middleware('can:sales.create')->name('sales.create');
         Route::post('sales', [SalesInvoiceController::class, 'store'])
@@ -152,6 +161,7 @@ Route::middleware(['auth', 'licensed'])->group(function () {
             ->middleware('can:sales.cancel')->name('sales.cancel');
         Route::get('sales/{sale}/print', [SalesInvoiceController::class, 'print'])->name('sales.print');
         Route::get('sales/{sale}/summary', [SalesInvoiceController::class, 'summary'])->name('sales.summary');
+        Route::get('sales/{sale}/preview', [SalesInvoiceController::class, 'preview'])->name('sales.preview');
         Route::get('sales/{sale}/net-position/print', [SalesInvoiceController::class, 'netPositionPdf'])->name('sales.net-position');
     });
 

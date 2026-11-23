@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Company;
 use App\Models\Customer;
+use App\Services\FinancialPositionPdfCharts;
 use App\Services\LedgerService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class LedgerController extends Controller
@@ -73,23 +75,49 @@ class LedgerController extends Controller
     /** Consolidated receivables + payables + payments log with totals. */
     public function position(Request $request)
     {
-        [$from, $to] = $this->range($request);
+        [$from, $to, $asOf] = $this->positionRange($request);
 
         return Inertia::render('ledger/position', [
-            'data' => $this->ledger->financialPosition($from, $to),
-            'filters' => $request->only('from', 'to'),
+            'data' => fn () => $this->ledger->financialPosition($from, $to, $asOf),
+            'filters' => ['from' => $from->toDateString(), 'to' => $to->toDateString()],
+            'asOf' => $asOf->toDateString(),
+            'paymentParties' => fn () => $request->user()->can('payments.view') && $request->user()->can('payments.manage')
+                ? [
+                    'customer' => Customer::active()->orderBy('name')->get(['id', 'name']),
+                    'company' => Company::active()->orderBy('name')->get(['id', 'name']),
+                ]
+                : null,
         ]);
     }
 
-    public function positionPdf(Request $request)
+    public function positionPdf(Request $request, FinancialPositionPdfCharts $charts)
     {
-        [$from, $to] = $this->range($request);
+        [$from, $to, $asOf] = $this->positionRange($request);
+        $data = $this->ledger->financialPosition($from, $to, $asOf);
 
         return Pdf::loadView('pdf.financial-position', [
-            'data' => $this->ledger->financialPosition($from, $to),
-            'from' => $from ?? Carbon::now()->startOfMonth(),
-            'to' => $to ?? Carbon::now(),
+            'data' => $data,
+            'charts' => $charts->build($data),
+            'asOf' => $asOf,
+            'from' => $from,
+            'to' => $to,
         ])->setPaper('a4', 'landscape')->stream('financial-position.pdf');
+    }
+
+    private function positionRange(Request $request): array
+    {
+        $filters = $request->validate([
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d'],
+        ]);
+        $asOf = Carbon::today('Asia/Karachi');
+        $to = isset($filters['to']) ? Carbon::parse($filters['to'], $asOf->timezone) : $asOf->copy();
+        $from = isset($filters['from']) ? Carbon::parse($filters['from'], $asOf->timezone) : $to->copy()->subYearNoOverflow()->addDay();
+        if ($from->gt($to)) {
+            throw ValidationException::withMessages(['to' => 'The end date must be on or after the start date.']);
+        }
+
+        return [$from, $to, $asOf];
     }
 
     private function range(Request $request): array

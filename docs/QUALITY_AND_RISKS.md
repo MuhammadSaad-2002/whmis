@@ -46,11 +46,16 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
   caps/corrections/retries/returns, collection balance parity and promises, role
   boundaries, setup messaging, and additive provisioning. Manual operations SQL
   is verified against a disposable MariaDB schema, not the working database.
+  It also covers combined Booker/Salesman access, assignment isolation, weekly
+  generation without duplicate tasks, and daily PDF pagination.
 
 - Money math: `MarginCalculator` and `resources/js/lib/invoice-math.ts` must stay aligned.
 - Stock mutation: `InventoryService` should remain the single mutation path.
 - Posting/cancellation: invoice, return, sample, loan, and payment cancellation must reverse effects without losing history.
 - Ledger: customer/supplier debit-credit meaning must stay consistent across sales, purchases, returns, and payments.
+- Manual payment allocations must be checked against live invoice balances at
+  submit time. `OpenInvoiceBalanceTest` covers stable ordering, excluded invoices,
+  invalid allocations, and a persisted multi-invoice receipt.
 - Payment invoice lookup uses `PaymentService::openInvoices`: original invoice
   amount minus completed payment allocations minus linked return amounts. Only
   posted sales returns count; cancelled returns/payments must restore capacity.
@@ -66,10 +71,15 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
   loans must not be presented as ordinary returned loans. The Stock on Loan
   period filters loan dates, while return dates and balances reflect current
   lifetime activity for the matching loans.
+- `SupplierPurchaseValueReportTest` covers posted bonus cost, return reversal,
+  supplier splits on mixed invoices, archived products, and export reconciliation.
 - Report visualizations are views of the returned rows and totals; they must not
   recalculate or replace server-authoritative financial values. Ranked chart
   definitions are supplied by `ReportVisualizationService` to both Inertia and
   PDF exports, while PDF SVGs are generated server-side for Dompdf compatibility.
+- Generic report PDFs reserve a real page margin and draw the footer on the
+  PDF canvas after pagination. Don't reset the HTML root margins in report
+  CSS; `ReportPdfLayoutTest` checks separation in portrait and landscape.
 - The executive dashboard's period-only request must not query aging, loans or
   inventory. `ExecutiveDashboardTest` covers this request and checks that
   batched customer aging still matches the individual ledger calculation.

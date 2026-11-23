@@ -16,6 +16,11 @@ contact/promise history with assignee, actor, dates and notes. None of these tab
 is a stock or financial subledger. Their audit actions attach to the existing
 customer/invoice morph aliases, so no additional morph map entries are required.
 Schema and permission SQL: `database/manual/2026_11_16_*.sql`.
+The optional `customer_delivery_schedules` row holds ISO booking and delivery
+weekdays, default Salesman, and the activation timestamp for delivery automation.
+`dispatches.planned_date` is a scheduled date, not a dispatch or delivery event.
+Production imports: `2026_11_23_create_delivery_schedules.sql` and
+`2026_11_23_seed_salesman_permissions.sql`.
 
 ### Booking lifecycle timestamps
 

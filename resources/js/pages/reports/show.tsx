@@ -39,14 +39,21 @@ interface Option {
     name: string;
 }
 
-interface Props {
-    report: { key: string; title: string; description: string; filters: string[] };
+interface ReportTableData {
     columns: Column[];
     rows: Record<string, string | number | null>[];
     totals: Record<string, number>;
+    groupBy?: string | null;
+}
+
+interface Props extends ReportTableData {
+    report: { key: string; title: string; description: string; filters: string[] };
     chart: TrendPoint[] | null;
     visualization: RankedChartConfig | null;
-    groupBy: string | null;
+    sections?: (ReportTableData & { title: string })[];
+    sectionTitle?: string | null;
+    context?: string | null;
+    notes?: string[];
     filterValues: Record<string, string | undefined>;
     options: { customers: Option[]; suppliers: Option[]; products: Option[] };
 }
@@ -266,6 +273,8 @@ function firstNumber(data: Record<string, string | number | null>, keys: string[
 }
 
 function negativeExplanation(columnKey: string, label: string, data: Record<string, string | number | null>): string {
+    if (columnKey === 'purchase_value') return 'Posted return cost exceeds the posted cost of the sold and bonus units in this row.';
+    if (columnKey === 'net_sale_value') return 'Posted return credits exceed this supplier’s share of the invoice sale value.';
     const grossRevenue = firstNumber(data, ['revenue', 'gross_revenue', 'sales', 'total_amount']);
     const returns = firstNumber(data, ['returns', 'credit_notes']);
     const netRevenue = firstNumber(data, ['net_revenue', 'net_sales', 'net_amount']);
@@ -334,7 +343,130 @@ function NegativeValueInfo({ explanation }: { explanation: string }) {
     );
 }
 
-export default function ReportShow({ report, columns, rows, totals, chart, visualization, groupBy, filterValues, options }: Props) {
+function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData & { title?: string | null }) {
+    return (
+        <section className="min-w-0 space-y-2" aria-label={title ?? undefined}>
+            {title && <h2 className="text-lg font-semibold">{title}</h2>}
+            <div className="max-h-[70vh] overflow-hidden rounded-xl border shadow-sm [&>div]:max-h-[70vh]">
+                <Table className="min-w-max">
+                    <TableHeader className="bg-background sticky top-0 z-20 shadow-sm">
+                        <TableRow>
+                            {columns.map((column, index) => (
+                                <TableHead
+                                    key={column.key}
+                                    className={cn(
+                                        'h-10 px-3 whitespace-nowrap',
+                                        column.align === 'right' && 'text-right',
+                                        index === 0 && 'bg-background sticky left-0 z-30',
+                                    )}
+                                >
+                                    {column.label}
+                                </TableHead>
+                            ))}
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {rows.length === 0 && (
+                            <TableRow>
+                                <TableCell colSpan={columns.length} className="text-muted-foreground py-10 text-center">
+                                    No data for the selected filters.
+                                </TableCell>
+                            </TableRow>
+                        )}
+                        {rows.map((row, index) => {
+                            const group = groupBy ? row[groupBy] : null;
+                            const previousGroup = groupBy && index > 0 ? rows[index - 1][groupBy] : null;
+
+                            return (
+                                <Fragment key={index}>
+                                    {groupBy && (index === 0 || group !== previousGroup) && (
+                                        <TableRow className="bg-muted/60">
+                                            <TableCell
+                                                colSpan={columns.length}
+                                                className="text-muted-foreground py-2 text-xs font-semibold tracking-wider uppercase"
+                                            >
+                                                {String(group ?? 'Other')}
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                    <TableRow className="group">
+                                        {columns.map((column, columnIndex) => {
+                                            const value = row[column.key] ?? null;
+                                            const profit = column.key.includes('profit') && Number(value) !== 0;
+                                            const negative = value !== null && value !== '' && Number(value) < 0;
+                                            const explanation = negative ? negativeExplanation(column.key, column.label, row) : null;
+                                            return (
+                                                <TableCell
+                                                    key={column.key}
+                                                    className={cn(
+                                                        'px-3 py-2.5 whitespace-nowrap',
+                                                        column.align === 'right' && 'text-right tabular-nums',
+                                                        columnIndex === 0 && 'bg-background group-hover:bg-muted/50 sticky left-0',
+                                                        profit && Number(value) < 0 && 'text-red-600 dark:text-red-500',
+                                                        profit && Number(value) > 0 && 'text-emerald-600 dark:text-emerald-500',
+                                                        negative && 'text-red-600 dark:text-red-500',
+                                                    )}
+                                                >
+                                                    {explanation ? (
+                                                        <span className="inline-flex items-center justify-end gap-1.5">
+                                                            <span>{formatCell(value, column.format)}</span>
+                                                            <NegativeValueInfo explanation={explanation} />
+                                                        </span>
+                                                    ) : (
+                                                        formatCell(value, column.format)
+                                                    )}
+                                                </TableCell>
+                                            );
+                                        })}
+                                    </TableRow>
+                                </Fragment>
+                            );
+                        })}
+                        {rows.length > 0 && Object.keys(totals).length > 0 && (
+                            <TableRow className="bg-muted hover:bg-muted sticky bottom-0 z-20 font-semibold shadow-[0_-1px_0_var(--border)]">
+                                {columns.map((column, index) => {
+                                    const value = totals[column.key];
+                                    const negative = column.key in totals && Number(value) < 0;
+                                    const explanation = negative ? negativeExplanation(column.key, column.label, totals) : null;
+
+                                    return (
+                                        <TableCell
+                                            key={column.key}
+                                            className={cn(
+                                                'px-3 py-2.5 whitespace-nowrap',
+                                                column.align === 'right' && 'text-right tabular-nums',
+                                                index === 0 && 'bg-muted sticky left-0 z-30',
+                                                negative && 'text-red-600 dark:text-red-500',
+                                            )}
+                                        >
+                                            {column.key in totals ? (
+                                                explanation ? (
+                                                    <span className="inline-flex items-center justify-end gap-1.5">
+                                                        <span>{formatCell(value, column.format)}</span>
+                                                        <NegativeValueInfo explanation={explanation} />
+                                                    </span>
+                                                ) : (
+                                                    formatCell(value, column.format)
+                                                )
+                                            ) : index === 0 ? (
+                                                'TOTAL'
+                                            ) : (
+                                                ''
+                                            )}
+                                        </TableCell>
+                                    );
+                                })}
+                            </TableRow>
+                        )}
+                    </TableBody>
+                </Table>
+            </div>
+            <p className="text-muted-foreground text-xs">{rows.length} rows</p>
+        </section>
+    );
+}
+
+export default function ReportShow({ report, columns, rows, totals, chart, visualization, groupBy, sections = [], sectionTitle, context, notes = [], filterValues, options }: Props) {
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Reports', href: '/reports' },
         { title: report.title, href: '#' },
@@ -483,6 +615,7 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
                     <div>
                         <h1 className="text-4xl font-bold">{report.title}</h1>
                         <p className="text-muted-foreground text-sm">{report.description}</p>
+                        {context && <p className="mt-1 text-sm font-semibold">{context}</p>}
                     </div>
                     <div className="flex flex-wrap gap-2">
                         {report.filters.length > 0 && (
@@ -670,7 +803,7 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
                     </div>
                 )}
 
-                {totalColumns.length > 0 && (
+                {sections.length === 0 && totalColumns.length > 0 && (
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         {totalColumns.map((column) => {
                             const value = Number(totals[column.key] ?? 0);
@@ -812,121 +945,11 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
                     </div>
                 )}
 
-                <div className="max-h-[70vh] overflow-hidden rounded-xl border shadow-sm [&>div]:max-h-[70vh]">
-                    <Table className="min-w-max">
-                        <TableHeader className="bg-background sticky top-0 z-20 shadow-sm">
-                            <TableRow>
-                                {columns.map((column, index) => (
-                                    <TableHead
-                                        key={column.key}
-                                        className={cn(
-                                            'h-10 px-3 whitespace-nowrap',
-                                            column.align === 'right' && 'text-right',
-                                            index === 0 && 'bg-background sticky left-0 z-30',
-                                        )}
-                                    >
-                                        {column.label}
-                                    </TableHead>
-                                ))}
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {rows.length === 0 && (
-                                <TableRow>
-                                    <TableCell colSpan={columns.length} className="text-muted-foreground py-10 text-center">
-                                        No data for the selected filters.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                            {rows.map((row, index) => {
-                                const group = groupBy ? row[groupBy] : null;
-                                const previousGroup = groupBy && index > 0 ? rows[index - 1][groupBy] : null;
-
-                                return (
-                                    <Fragment key={index}>
-                                        {groupBy && (index === 0 || group !== previousGroup) && (
-                                            <TableRow className="bg-muted/60">
-                                                <TableCell
-                                                    colSpan={columns.length}
-                                                    className="text-muted-foreground py-2 text-xs font-semibold tracking-wider uppercase"
-                                                >
-                                                    {String(group ?? 'Other')}
-                                                </TableCell>
-                                            </TableRow>
-                                        )}
-                                        <TableRow className="group">
-                                            {columns.map((column, columnIndex) => {
-                                                const value = row[column.key] ?? null;
-                                                const profit = column.key.includes('profit') && Number(value) !== 0;
-                                                const negative = value !== null && value !== '' && Number(value) < 0;
-                                                const explanation = negative ? negativeExplanation(column.key, column.label, row) : null;
-                                                return (
-                                                    <TableCell
-                                                        key={column.key}
-                                                        className={cn(
-                                                            'px-3 py-2.5 whitespace-nowrap',
-                                                            column.align === 'right' && 'text-right tabular-nums',
-                                                            columnIndex === 0 && 'bg-background group-hover:bg-muted/50 sticky left-0',
-                                                            profit && Number(value) < 0 && 'text-red-600 dark:text-red-500',
-                                                            profit && Number(value) > 0 && 'text-emerald-600 dark:text-emerald-500',
-                                                            negative && 'text-red-600 dark:text-red-500',
-                                                        )}
-                                                    >
-                                                        {explanation ? (
-                                                            <span className="inline-flex items-center justify-end gap-1.5">
-                                                                <span>{formatCell(value, column.format)}</span>
-                                                                <NegativeValueInfo explanation={explanation} />
-                                                            </span>
-                                                        ) : (
-                                                            formatCell(value, column.format)
-                                                        )}
-                                                    </TableCell>
-                                                );
-                                            })}
-                                        </TableRow>
-                                    </Fragment>
-                                );
-                            })}
-                            {rows.length > 0 && Object.keys(totals).length > 0 && (
-                                <TableRow className="bg-muted hover:bg-muted sticky bottom-0 z-20 font-semibold shadow-[0_-1px_0_var(--border)]">
-                                    {columns.map((column, index) => {
-                                        const value = totals[column.key];
-                                        const negative = column.key in totals && Number(value) < 0;
-                                        const explanation = negative ? negativeExplanation(column.key, column.label, totals) : null;
-
-                                        return (
-                                            <TableCell
-                                                key={column.key}
-                                                className={cn(
-                                                    'px-3 py-2.5 whitespace-nowrap',
-                                                    column.align === 'right' && 'text-right tabular-nums',
-                                                    index === 0 && 'bg-muted sticky left-0 z-30',
-                                                    negative && 'text-red-600 dark:text-red-500',
-                                                )}
-                                            >
-                                                {column.key in totals ? (
-                                                    explanation ? (
-                                                        <span className="inline-flex items-center justify-end gap-1.5">
-                                                            <span>{formatCell(value, column.format)}</span>
-                                                            <NegativeValueInfo explanation={explanation} />
-                                                        </span>
-                                                    ) : (
-                                                        formatCell(value, column.format)
-                                                    )
-                                                ) : index === 0 ? (
-                                                    'TOTAL'
-                                                ) : (
-                                                    ''
-                                                )}
-                                            </TableCell>
-                                        );
-                                    })}
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
-                <p className="text-muted-foreground text-xs">{rows.length} rows</p>
+                {notes.length > 0 && <div className="space-y-1 rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+                    {notes.map((note) => <p key={note}>{note}</p>)}
+                </div>}
+                <ReportTable columns={columns} rows={rows} totals={totals} groupBy={groupBy} title={sectionTitle} />
+                {sections.map((section) => <ReportTable key={section.title} {...section} />)}
             </div>
         </AppLayout>
     );

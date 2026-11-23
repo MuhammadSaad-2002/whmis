@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use OwenIt\Auditing\Auditable;
@@ -32,6 +33,11 @@ class Customer extends Model implements AuditableContract
     public function ledgerEntries(): MorphMany
     {
         return $this->morphMany(LedgerEntry::class, 'party');
+    }
+
+    public function deliverySchedule(): HasOne
+    {
+        return $this->hasOne(CustomerDeliverySchedule::class);
     }
 
     /** The single booker credited with this customer's sales (reporting). */

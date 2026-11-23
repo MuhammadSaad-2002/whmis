@@ -39,6 +39,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::define('view-supplier-details', fn (User $user) => $user->canViewSupplierDetails());
+        Gate::define('manage-own-account', fn (User $user) => ! $user->isFieldBooker());
 
         Relation::enforceMorphMap([
             'hr_department' => \App\Models\HrDepartment::class,

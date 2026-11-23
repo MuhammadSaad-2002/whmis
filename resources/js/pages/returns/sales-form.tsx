@@ -12,7 +12,7 @@ import { ALERT_FIX } from '@/lib/form-validation';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
 import { FileSearch, Undo2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 interface InvoiceHit {
@@ -45,8 +45,8 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'New Return', href: '#' },
 ];
 
-export default function SalesReturnForm({ warehouse }: { warehouse: { id: number; name: string } }) {
-    const [pickerOpen, setPickerOpen] = useState(true);
+export default function SalesReturnForm({ warehouse, initialInvoiceId }: { warehouse: { id: number; name: string }; initialInvoiceId?: number | null }) {
+    const [pickerOpen, setPickerOpen] = useState(!initialInvoiceId);
     const [query, setQuery] = useState('');
     const [hits, setHits] = useState<InvoiceHit[]>([]);
     const [invoice, setInvoice] = useState<LoadedInvoice | null>(null);
@@ -76,18 +76,20 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
         };
     }, [query, pickerOpen]);
 
-    const loadInvoice = async (hit: InvoiceHit) => {
+    const loadInvoice = useCallback(async (id: number, signal?: AbortSignal) => {
         setPickerOpen(false);
         let data;
         try {
-            const response = await fetch(`/returns/lookup/invoices/${hit.id}/returnable`, { headers: { Accept: 'application/json' } });
+            const response = await fetch(`/returns/lookup/invoices/${id}/returnable`, { signal, headers: { Accept: 'application/json' } });
             if (!response.ok) throw new Error(String(response.status));
             data = await response.json();
         } catch {
+            if (signal?.aborted) return;
             toast.error("Couldn't load this invoice's returnable items. Please try again.");
             setPickerOpen(true);
             return;
         }
+        if (signal?.aborted) return;
         setInvoice(data.invoice);
         setLines(
             (data.lines as ReturnableDto[])
@@ -102,7 +104,14 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
                 })),
         );
         setRows([emptyReturnRow()]);
-    };
+    }, []);
+
+    useEffect(() => {
+        if (!initialInvoiceId) return;
+        const controller = new AbortController();
+        void loadInvoice(initialInvoiceId, controller.signal);
+        return () => controller.abort();
+    }, [initialInvoiceId, loadInvoice]);
 
     const lineById = useMemo(() => new Map(lines.map((l) => [String(l.line_id), l])), [lines]);
     const totalRefund = useMemo(
@@ -214,7 +223,7 @@ export default function SalesReturnForm({ warehouse }: { warehouse: { id: number
                         <CommandItem
                             key={hit.id}
                             value={`${hit.invoice_number} ${hit.customer} ${hit.id}`}
-                            onSelect={() => void loadInvoice(hit)}
+                            onSelect={() => void loadInvoice(hit.id)}
                             className="flex items-center justify-between gap-3"
                         >
                             <div>

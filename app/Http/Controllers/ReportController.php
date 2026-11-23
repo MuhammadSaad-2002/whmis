@@ -6,9 +6,10 @@ use App\Exports\ReportExport;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
+use App\Services\ReportPdfRenderer;
 use App\Services\ReportService;
 use App\Services\ReportVisualizationService;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Services\SupplierPurchaseValueReport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Inertia\Inertia;
@@ -40,17 +41,25 @@ class ReportController extends Controller
         $meta = $catalog[$key];
         abort_unless(! isset($meta['permission']) || $request->user()->can($meta['permission']), 403);
         $filters = $request->only('from', 'to', 'customer_id', 'company_id', 'product_id', 'direction', 'expiry_window', 'order');
+        $supplierPurchaseValue = $key === SupplierPurchaseValueReport::KEY;
+        if ($supplierPurchaseValue) {
+            $filters = $request->validate(['company_id' => 'nullable|integer|exists:companies,id']);
+        }
         $data = $this->reports->build($key, $filters);
 
         if ($request->format === 'xlsx') {
             return Excel::download(
-                new ReportExport($data['columns'], $data['rows'], $data['totals'] ?? []),
+                new ReportExport(
+                    $data['columns'], $data['rows'], $data['totals'] ?? [],
+                    $data['sections'] ?? [], $data['section_title'] ?? null,
+                    $data['context'] ?? null, $data['notes'] ?? [],
+                ),
                 "{$key}-".now()->format('Y-m-d').'.xlsx',
             );
         }
 
         if ($request->format === 'pdf') {
-            return Pdf::loadView('pdf.report', [
+            return app(ReportPdfRenderer::class)->render([
                 'title' => $meta['title'],
                 'filters' => in_array('date_range', $meta['filters'], true) ? $filters : Arr::except($filters, ['from', 'to']),
                 'columns' => $data['columns'],
@@ -58,8 +67,12 @@ class ReportController extends Controller
                 'totals' => $data['totals'] ?? [],
                 'groupBy' => $data['group_by'] ?? null,
                 'charts' => $this->visualizations->pdfCharts($key, $data),
-            ])->setPaper('a4', count($data['columns']) > 6 ? 'landscape' : 'portrait')
-                ->stream("{$key}.pdf");
+                'sections' => $data['sections'] ?? [],
+                'sectionTitle' => $data['section_title'] ?? null,
+                'context' => isset($data['supplier_name']) ? $data['period_label'] : ($data['context'] ?? null),
+                'headerLabel' => $data['supplier_name'] ?? null,
+                'notes' => $data['notes'] ?? [],
+            ], $supplierPurchaseValue ? 'landscape' : null)->stream("{$key}.pdf");
         }
 
         return Inertia::render('reports/show', [
@@ -75,6 +88,10 @@ class ReportController extends Controller
             'chart' => $data['chart'] ?? null,
             'visualization' => $this->visualizations->definition($key),
             'groupBy' => $data['group_by'] ?? null,
+            'sections' => $data['sections'] ?? [],
+            'sectionTitle' => $data['section_title'] ?? null,
+            'context' => $data['context'] ?? null,
+            'notes' => $data['notes'] ?? [],
             'filterValues' => $filters + [
                 'from' => $filters['from'] ?? now()->startOfMonth()->toDateString(),
                 'to' => $filters['to'] ?? now()->toDateString(),
@@ -83,7 +100,7 @@ class ReportController extends Controller
                 'customers' => in_array('customer', $meta['filters'])
                     ? Customer::active()->orderBy('name')->get(['id', 'name']) : [],
                 'suppliers' => in_array('supplier', $meta['filters'])
-                    ? Company::active()->orderBy('name')->get(['id', 'name']) : [],
+                    ? ($supplierPurchaseValue ? Company::withTrashed() : Company::active())->orderBy('name')->get(['id', 'name']) : [],
                 'products' => in_array('product', $meta['filters'])
                     ? Product::orderBy('name')->get(['id', 'name']) : [],
             ],

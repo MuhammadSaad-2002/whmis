@@ -26,7 +26,7 @@ import {
     Users,
 } from 'lucide-react';
 
-export type PermittedNavItem = NavItem & { permission: string };
+export type PermittedNavItem = NavItem & { permission: string; alternatePermission?: string };
 type PermittedNavGroup = { label: string; restrictedLabel?: string; icon?: NavItem['icon']; items: PermittedNavItem[] };
 
 // Canonical page paths, labels, and permission keys.
@@ -43,7 +43,8 @@ export const navGroups: PermittedNavGroup[] = [
             { title: 'Sales Invoices', url: '/sales', icon: TrendingUp, permission: 'sales.view' },
             { title: 'Purchase Invoices', url: '/purchases', icon: ShoppingCart, permission: 'purchases.view' },
             { title: 'Returns', url: '/returns/sales', icon: Undo2, permission: 'returns.view' },
-            { title: 'Dispatch & Delivery', url: '/dispatch', icon: Boxes, permission: 'dispatch.view' },
+            { title: 'Dispatch & Delivery', url: '/dispatch', icon: Boxes, permission: 'dispatch.view', alternatePermission: 'dispatch.assigned' },
+            { title: 'Booking & Delivery Schedules', url: '/dispatch/schedules', icon: ClipboardList, permission: 'dispatch.plan' },
         ],
     },
     {
@@ -130,7 +131,7 @@ export const workspaceNavGroups: PermittedNavGroup[] = [
     {
         label: 'Customers & Sales',
         icon: ContactRound,
-        items: itemsFor('/customers', '/returns/sales', '/incentives'),
+        items: itemsFor('/customers', '/returns/sales', '/incentives', '/dispatch/schedules'),
     },
     {
         label: 'Stock & Suppliers',

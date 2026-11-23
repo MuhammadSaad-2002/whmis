@@ -20,10 +20,13 @@ function WorkspaceSession({ tabScope }: { tabScope: string }) {
     const home = useMemo(() => {
         const permissions = auth?.permissions ?? [];
         if (permissions.includes('dashboard.view')) return { url: '/dashboard', title: 'Dashboard' };
+        if (permissions.includes('dispatch.assigned')) return { url: '/dispatch', title: 'My Deliveries' };
         if (permissions.includes('employees.view')) return { url: '/hr/employees', title: 'Employees' };
         if (permissions.includes('hr.self.view')) return { url: '/hr/my-profile', title: 'My HR' };
-        return { url: '/settings/profile', title: 'Profile' };
-    }, [auth?.permissions]);
+        return auth.canManageOwnAccount
+            ? { url: '/settings/profile', title: 'Profile' }
+            : { url: '/settings/appearance', title: 'Appearance' };
+    }, [auth?.permissions, auth.canManageOwnAccount]);
     const { tabs, activeId, openTab, focusTab, closeTabs, updateTab } = useTabs(tabScope, home, singleView, requested);
     const active = tabs.find((tab) => tab.id === activeId) ?? tabs[0];
     const activePath = new URL(active.url, window.location.origin).pathname;

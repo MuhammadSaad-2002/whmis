@@ -6,6 +6,9 @@ selection are detailed in [DISTRIBUTION_OPERATIONS.md](DISTRIBUTION_OPERATIONS.m
 Employee profiles explicitly explain Booker setup requirements. Permission SQL
 is additive and also restores the existing Admin/Super Admin `bookers.assign`
 grant; field Bookers receive no organization-wide operations or health access.
+The Salesman role can be combined with Booker and grants `dispatch.assigned`,
+not organization-wide access. Assignment scope and allowed actions are checked
+on the server; `dispatch.plan` gates schedule management and staff delivery sheets.
 
 WHMIS uses Laravel session authentication with Spatie Laravel Permission. Routes
 are permission-gated with `can:` middleware, and React receives roles and
@@ -82,6 +85,12 @@ supplier identities or purchase costs. The Products catalogue, product search,
 and booking details/repeats omit supplier data on the server. Supplier filters
 are ignored for these accounts. The `view-supplier-details` gate also protects
 supplier-bearing operations and exports if a field Booker has extra grants.
+
+Field Bookers cannot edit their name or email, change their password from
+Settings, or delete their login. The `manage-own-account` gate also blocks
+self-edits through User Management if a field Booker has an extra
+`users.manage` grant. The account menu keeps Appearance and Log out. Authorized
+administrators can still manage Booker accounts.
 
 Products hidden through **Show to Bookers** are excluded from field Booker
 catalogue, product/batch and incentive lookups, and repeat bookings. The server

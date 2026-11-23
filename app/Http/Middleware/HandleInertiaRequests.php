@@ -52,6 +52,7 @@ class HandleInertiaRequests extends Middleware
                 'permissions' => $permissions?->when(! $canViewSupplierDetails, fn ($names) => $names->diff(User::SUPPLIER_MODULE_PERMISSIONS)->values()) ?? [],
                 'roles' => $user?->getRoleNames() ?? [],
                 'canViewSupplierDetails' => $canViewSupplierDetails,
+                'canManageOwnAccount' => $user?->can('manage-own-account') ?? false,
             ],
             'flash' => [
                 'success' => $request->session()->get('success'),

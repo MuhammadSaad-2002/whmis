@@ -3,9 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\{Batch, Booking, BookerVisit, CollectionFollowUp, Company, Customer, Dispatch, DispatchEvent, LedgerEntry, Payment, Product, SalesInvoice, SalesReturn, StockMovement, User};
-use App\Services\{DispatchService, PaymentService, SystemHealthService};
+use App\Services\{DeliveryPlanningService, DispatchService, PaymentService, SystemHealthService};
 use Database\Seeders\{RolePermissionSeeder, SystemSeeder};
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -51,6 +52,101 @@ class DistributionOperationsTest extends TestCase
     private function ship(SalesInvoice $sale): void
     {
         foreach (['picking', 'packed', 'dispatched'] as $action) $this->action($sale, $action)->assertRedirect()->assertSessionHasNoErrors();
+    }
+
+    public function test_salesman_role_can_be_combined_with_booker_and_is_scoped_to_assigned_dispatches(): void
+    {
+        $this->booker->assignRole('Salesman');
+        $assigned = $this->sale();
+        $other = $this->sale();
+        $this->action($assigned, 'assign', ['assigned_to' => $this->booker->id, 'planned_date' => '2026-11-23'])
+            ->assertSessionHasNoErrors();
+        $this->action($other, 'assign')->assertSessionHasNoErrors();
+        $this->actingAs($this->booker->refresh());
+        $this->get(route('booker.workday'))->assertOk();
+        $this->get(route('dispatch.index', ['assignee_id' => $this->admin->id]))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('scoped', true)->where('canPlan', false)->has('invoices.data', 1)->where('invoices.data.0.id', $assigned->id));
+        $this->get(route('dispatch.show', $other))->assertNotFound();
+        $this->get(route('dispatch.show', $assigned))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('canManage', false)->has('staff', 0)->where('dispatch.planned_date', '2026-11-23'));
+        $this->get(route('dispatch.schedules'))->assertForbidden();
+        $this->get(route('dispatch.sheet', ['date' => '2026-11-23', 'assignee_id' => $this->booker->id]))->assertForbidden();
+
+        $record = fn ($sale, $action, $data = []) => $this->post(route('dispatch.record', $sale), $data + [
+            'action' => $action, 'request_key' => (string) Str::uuid(),
+        ]);
+        $record($other, 'picking')->assertNotFound();
+        $record($assigned, 'assign')->assertForbidden();
+        $record($assigned, 'picking', ['planned_date' => '2026-11-25'])->assertForbidden();
+        $record($assigned, 'picking', ['assigned_to' => $this->admin->id])->assertForbidden();
+        foreach (['picking', 'packed', 'dispatched'] as $action) {
+            $record($assigned, $action)->assertSessionHasNoErrors();
+        }
+        $record($assigned, 'delivered', [
+            'receiver_name' => 'Warehouse receiver',
+            'items' => [['sales_invoice_item_id' => $assigned->items()->first()->id, 'quantity' => 12]],
+        ])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('dispatches', ['sales_invoice_id' => $assigned->id, 'assigned_to' => $this->booker->id, 'status' => 'delivered']);
+        $record($assigned, 'correct_delivery', ['notes' => 'Invalid correction'])->assertForbidden();
+    }
+
+    public function test_weekday_planner_generates_visits_and_new_posted_deliveries_without_overwriting_manual_work(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-23 07:00:00', 'Asia/Karachi'));
+        $salesman = User::factory()->create();
+        $salesman->assignRole('Salesman');
+        $secondary = User::factory()->create();
+        $secondary->assignRole('Booker');
+        $this->customer->bookers()->attach($secondary->id);
+        $old = $this->sale(['posted_at' => now()->subDay()]);
+        $this->put(route('dispatch.schedules.update', $this->customer), [
+            'booking_days' => [1], 'delivery_days' => [5], 'salesman_id' => $salesman->id,
+        ])->assertSessionHasNoErrors();
+        $this->travel(1)->minutes();
+        $new = $this->sale(['posted_at' => now()]);
+        $draft = $this->sale(['status' => 'draft']);
+        $manual = $this->sale(['posted_at' => now()]);
+        $this->action($manual, 'assign', ['planned_date' => '2026-11-24'])->assertSessionHasNoErrors();
+        $this->artisan('whmis:generate-delivery-plan')->expectsOutput('Planned 2 booking visit(s) and 1 delivery task(s).')->assertSuccessful();
+
+        $this->assertDatabaseCount('bookings', 0);
+        $this->assertDatabaseCount('booker_visits', 2);
+        $this->assertDatabaseHas('booker_visits', ['booker_id' => $secondary->id, 'customer_id' => $this->customer->id, 'outcome' => 'planned']);
+        $this->assertDatabaseHas('dispatches', ['sales_invoice_id' => $new->id, 'assigned_to' => $salesman->id, 'planned_date' => '2026-11-27', 'status' => 'pending']);
+        $this->assertDatabaseHas('dispatches', ['sales_invoice_id' => $manual->id, 'assigned_to' => $this->admin->id, 'planned_date' => '2026-11-24']);
+        $this->assertDatabaseMissing('dispatches', ['sales_invoice_id' => $old->id]);
+        $this->assertDatabaseMissing('dispatches', ['sales_invoice_id' => $draft->id]);
+        BookerVisit::where('booker_id', $this->booker->id)->update(['outcome' => 'visited']);
+        $this->assertSame(['visits' => 0, 'dispatches' => 0], app(DeliveryPlanningService::class)->generate());
+        $this->assertDatabaseHas('booker_visits', ['booker_id' => $this->booker->id, 'outcome' => 'visited']);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('ledger_entries', 0);
+        Customer::create(['name' => 'Unscheduled Pharmacy', 'booker_id' => $this->booker->id]);
+        $this->actingAs($this->booker)->get(route('booker.workday', ['date' => '2026-11-23', 'planned' => 1]))
+            ->assertOk()->assertInertia(fn (Assert $p) => $p->has('customers.data', 1)->where('customers.data.0.id', $this->customer->id));
+    }
+
+    public function test_admin_can_print_a_one_page_daily_delivery_sheet_and_schedule_requires_a_salesman(): void
+    {
+        $this->put(route('dispatch.schedules.update', $this->customer), [
+            'booking_days' => [], 'delivery_days' => [1], 'salesman_id' => $this->booker->id,
+        ])->assertSessionHasErrors('salesman_id');
+        $this->booker->assignRole('Salesman');
+        $this->put(route('dispatch.schedules.update', $this->customer), [
+            'booking_days' => [], 'delivery_days' => [1], 'salesman_id' => $this->booker->id,
+        ])->assertSessionHasNoErrors();
+        $first = $this->sale();
+        $second = $this->sale();
+        $excluded = $this->sale();
+        foreach ([$first, $second] as $sale) {
+            $this->action($sale, 'assign', ['assigned_to' => $this->booker->id, 'planned_date' => '2026-11-23'])->assertSessionHasNoErrors();
+        }
+        $this->action($excluded, 'assign', ['assigned_to' => $this->booker->id, 'planned_date' => '2026-11-24'])->assertSessionHasNoErrors();
+        $pdf = $this->get(route('dispatch.sheet', ['date' => '2026-11-23', 'assignee_id' => $this->booker->id]))
+            ->assertOk()->assertHeader('content-type', 'application/pdf');
+        $this->assertSame(1, preg_match_all('/\/Type\s*\/Page\b/', $pdf->getContent()));
+        $this->get(route('dispatch.index', ['date' => '2026-11-23', 'assignee_id' => $this->booker->id]))
+            ->assertInertia(fn (Assert $p) => $p->has('invoices.data', 2));
     }
 
     public function test_dispatch_partial_delivery_retry_and_correction_do_not_touch_stock_or_money(): void
@@ -159,8 +255,8 @@ class DistributionOperationsTest extends TestCase
     public function test_follow_up_filter_uses_latest_follow_up_only(): void
     {
         $sale = $this->sale();
-        CollectionFollowUp::create(['sales_invoice_id' => $sale->id, 'outcome' => 'contacted', 'next_follow_up' => now()->subDay(), 'notes' => 'Old', 'created_by' => $this->admin->id]);
-        CollectionFollowUp::create(['sales_invoice_id' => $sale->id, 'outcome' => 'contacted', 'next_follow_up' => now()->addDay(), 'notes' => 'New', 'created_by' => $this->admin->id]);
+        CollectionFollowUp::create(['sales_invoice_id' => $sale->id, 'outcome' => 'contacted', 'next_follow_up' => now('Asia/Karachi')->subDay()->toDateString(), 'notes' => 'Old', 'created_by' => $this->admin->id]);
+        CollectionFollowUp::create(['sales_invoice_id' => $sale->id, 'outcome' => 'contacted', 'next_follow_up' => now('Asia/Karachi')->addDay()->toDateString(), 'notes' => 'New', 'created_by' => $this->admin->id]);
         $this->get(route('collections.index', ['bucket' => 'follow_up']))->assertInertia(fn (Assert $p) => $p->has('invoices.data', 0));
         $this->get(route('collections.index', ['bucket' => 'overdue']))->assertInertia(fn (Assert $p) => $p->has('invoices.data', 1));
     }

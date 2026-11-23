@@ -5,6 +5,7 @@ export interface Auth {
     permissions: string[];
     roles: string[];
     canViewSupplierDetails: boolean;
+    canManageOwnAccount: boolean;
 }
 
 export interface BreadcrumbItem {

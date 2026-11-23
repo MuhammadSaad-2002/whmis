@@ -12,10 +12,13 @@ class BookerWorkdayController extends Controller
 {
     public function index(Request $request)
     {
-        $data = $request->validate(['date' => 'nullable|date_format:Y-m-d', 'search' => 'nullable|string|max:100']);
+        $data = $request->validate(['date' => 'nullable|date_format:Y-m-d', 'search' => 'nullable|string|max:100', 'planned' => 'nullable|boolean']);
         $date = $data['date'] ?? now('Asia/Karachi')->toDateString();
         $customers = Customer::active()->forBooker($request->user()->id)
             ->when($data['search'] ?? null, fn ($q, $s) => $q->where(fn ($q) => $q->where('name', 'like', "%{$s}%")->orWhere('city', 'like', "%{$s}%")))
+            ->when($data['planned'] ?? false, fn ($q) => $q->whereExists(fn ($visits) => $visits->selectRaw('1')->from('booker_visits')
+                ->whereColumn('booker_visits.customer_id', 'customers.id')
+                ->where('booker_visits.booker_id', $request->user()->id)->whereDate('booker_visits.visit_date', $date)))
             ->select('id', 'name', 'city')
             ->withSum('ledgerEntries as account_balance', DB::raw('debit - credit'))
             ->addSelect(['last_booking_id' => Booking::select('id')->whereColumn('customer_id', 'customers.id')
@@ -24,7 +27,9 @@ class BookerWorkdayController extends Controller
         $visits = BookerVisit::where('booker_id', $request->user()->id)->whereDate('visit_date', $date)->whereIn('customer_id', $customers->pluck('id'))->get()->keyBy('customer_id');
         $last = Booking::whereIn('id', $customers->pluck('last_booking_id')->filter())->get(['id', 'booking_number', 'booking_date', 'status'])->keyBy('id');
         $customers->through(fn ($c) => $c->toArray() + ['visit' => $visits->get($c->id), 'last_booking' => $last->get($c->last_booking_id)]);
-        return Inertia::render('booker/workday', ['customers' => $customers, 'filters' => ['date' => $date, 'search' => $data['search'] ?? '']]);
+        return Inertia::render('booker/workday', ['customers' => $customers, 'filters' => [
+            'date' => $date, 'search' => $data['search'] ?? '', 'planned' => empty($data['planned']) ? null : 1,
+        ]]);
     }
 
     public function visit(Request $request, Customer $customer)
