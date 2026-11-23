@@ -317,8 +317,8 @@ export default function ExecutiveDashboard({ asOf, filterValues, kpis, financial
     const waterfall = useMemo(() => [
         { label: 'Receivables', value: financials.receivable, color: colors.profit },
         { label: 'Payables', value: -financials.payable, color: '#f08a8a' },
-        { label: 'Advances', value: financials.employee_advances, color: '#cbd5e1' },
-        { label: 'Salary pay.', value: -financials.employee_payable, color: '#cbd5e1' },
+        { label: 'Staff advances', value: financials.employee_advances, color: '#cbd5e1' },
+        { label: 'Salary payable', value: -financials.employee_payable, color: '#cbd5e1' },
     ], [financials]);
     const agingSlices = useMemo(() => aging.map((slice, index) => ({ ...slice, label: `${slice.label} days`, color: ['#99e0d6', '#14b8a6', '#0f6f66', '#dc2626'][index] })), [aging]);
     const agingTotal = agingSlices.reduce((sum, slice) => sum + slice.value, 0);

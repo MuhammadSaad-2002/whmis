@@ -1,4 +1,6 @@
+import { chartTick, shortBalanceLabel } from '@/lib/chart-theme';
 import { money } from '@/lib/format';
+import { useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 export const bucketLabels = ['Current', '31–60', '61–90', '90+'];
@@ -7,8 +9,7 @@ const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFracti
 export const compactNumber = (value: number) => compact.format(value);
 export const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 export const share = (value: number, total: number) => total > 0 ? value / total * 100 : 0;
-const tick = { fill: '#8a97a6', fontSize: 10 };
-const tip = { borderRadius: 9, color: 'white', background: '#0d2436', border: 0, fontSize: 12 };
+const tip = { borderRadius: 9, color: 'white', background: '#0d2436', border: 0, fontSize: 14 };
 const tipValues = { color: 'white' };
 
 function animated() {
@@ -16,21 +17,23 @@ function animated() {
 }
 
 export function PositionBridge({ receivable, payable, advances, salary, net }: { receivable: number; payable: number; advances: number; salary: number; net: number }) {
+    const [narrow, setNarrow] = useState(false);
     const trade = receivable - payable;
     const afterAdvances = trade + advances;
     const rows = [
         { name: 'Receivables', range: [0, receivable], amount: receivable, color: '#14b8a6' },
         { name: 'Payables', range: [receivable, trade], amount: -payable, color: '#e76f6f' },
-        { name: 'Emp. advances', range: [trade, afterAdvances], amount: advances, color: '#cbd5e1' },
+        { name: 'Staff advances', range: [trade, afterAdvances], amount: advances, color: '#cbd5e1' },
         { name: 'Salary payable', range: [afterAdvances, net], amount: -salary, color: '#cbd5e1' },
         { name: 'Net position', range: [0, net], amount: net, color: net < 0 ? '#dc2626' : '#059669' },
     ];
     return <div className="chart">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <BarChart data={rows} margin={{ top: 5, right: 4, bottom: 0, left: 0 }}>
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} onResize={(width) => setNarrow(width < 530)}>
+            <BarChart data={rows} margin={{ top: 5, right: 12, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke="#eef1f4" vertical={false} />
-                <XAxis dataKey="name" tick={tick} tickLine={false} axisLine={false} interval={0} height={45} />
-                <YAxis tick={tick} tickLine={false} axisLine={false} width={47} tickFormatter={compactNumber} />
+                <XAxis dataKey="name" tick={chartTick} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={narrow ? 3 : 10} height={38}
+                    tickFormatter={narrow ? shortBalanceLabel : undefined} />
+                <YAxis tick={chartTick} tickLine={false} axisLine={false} width={56} tickFormatter={compactNumber} />
                 <ReferenceLine y={0} stroke="#cbd5e1" />
                 <Tooltip contentStyle={tip} itemStyle={tipValues} cursor={{ fill: '#f3f5f7' }}
                     formatter={(_, __, entry) => [money(entry.payload.amount), 'Change']} />
@@ -48,8 +51,8 @@ export function AgingBars({ first, second, planner = false }: { first: number[];
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <BarChart data={rows} margin={{ top: 5, right: 4, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke="#eef1f4" vertical={false} />
-                <XAxis dataKey="name" tick={tick} tickLine={false} axisLine={false} interval={0} />
-                <YAxis tick={tick} tickLine={false} axisLine={false} width={47} tickFormatter={compactNumber} />
+                <XAxis dataKey="name" tick={chartTick} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={8} height={34} />
+                <YAxis tick={chartTick} tickLine={false} axisLine={false} width={56} tickFormatter={compactNumber} />
                 <Tooltip contentStyle={tip} itemStyle={tipValues} cursor={{ fill: '#f3f5f7' }} formatter={(value) => money(Number(value))} />
                 <Bar dataKey="first" name={planner ? 'Today' : 'Receivable'} radius={[4, 4, 0, 0]} maxBarSize={26}
                     fill={planner ? '#e5e9ee' : '#14b8a6'} isAnimationActive={animated()} animationDuration={400} />

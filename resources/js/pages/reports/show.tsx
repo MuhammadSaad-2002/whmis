@@ -347,7 +347,7 @@ function NegativeValueInfo({ explanation }: { explanation: string }) {
 function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData & { title?: string | null }) {
     return (
         <section className="min-w-0 space-y-2" aria-label={title ?? undefined}>
-            {title && <h2 className="text-lg font-semibold">{title}</h2>}
+            {title && <h2 className="text-xl font-semibold">{title}</h2>}
             <div className="max-h-[70vh] overflow-hidden rounded-xl border shadow-sm [&>div]:max-h-[70vh]">
                 <Table className="min-w-max">
                     <TableHeader className="bg-background sticky top-0 z-20 shadow-sm">
@@ -838,7 +838,7 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
                 {chart && chart.length > 0 && (
                     <Card>
                         <CardHeader className="pb-0">
-                            <CardTitle className="flex items-center gap-2 text-base">
+                            <CardTitle className="flex items-center gap-2 text-xl">
                                 <BarChart3 className="text-muted-foreground size-4" /> Trend
                             </CardTitle>
                         </CardHeader>
@@ -851,7 +851,7 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
                 {rankedConfig && metric && (
                     <Card>
                         <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 pb-2">
-                            <CardTitle className="flex items-center gap-2 text-base">
+                            <CardTitle className="flex items-center gap-2 text-xl">
                                 <BarChart3 className="text-muted-foreground size-4" /> Visual Analysis
                             </CardTitle>
                             <div className="flex flex-wrap gap-2">

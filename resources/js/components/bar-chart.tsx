@@ -1,4 +1,4 @@
-import { chartTheme } from '@/lib/chart-theme';
+import { chartTheme, chartTick } from '@/lib/chart-theme';
 import { amount, qty } from '@/lib/format';
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
@@ -28,16 +28,16 @@ export function HBarChart({ data, valueLabel = 'Net Revenue', valueFormat = 'mon
     return (
         <div style={{ height: Math.max(140, data.length * 40) }} className="w-full">
             <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data} layout="vertical" margin={{ top: 4, right: 56, bottom: 4, left: 8 }}>
+                <BarChart data={data} layout="vertical" margin={{ top: 4, right: 12, bottom: 4, left: 6 }}>
                     <XAxis type="number" hide />
                     <YAxis
                         type="category"
                         dataKey="label"
-                        width={140}
-                        tick={{ fill: chartTheme.text, fontSize: 12 }}
+                        width={158}
+                        tick={chartTick}
                         tickLine={false}
                         axisLine={false}
-                        tickFormatter={(v: string) => (v.length > 20 ? v.slice(0, 19) + '…' : v)}
+                        tickFormatter={(v: string) => (v.length > 17 ? v.slice(0, 16) + '…' : v)}
                     />
                     <Tooltip
                         cursor={{ fill: 'var(--muted)' }}

@@ -1,4 +1,4 @@
-import { chartTheme } from '@/lib/chart-theme';
+import { chartTheme, chartTick } from '@/lib/chart-theme';
 import { amount } from '@/lib/format';
 import {
     CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -10,6 +10,8 @@ export interface TrendPoint {
     profit: number;
 }
 
+const compactNumber = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
+
 export function TrendChart({ data }: { data: TrendPoint[] }) {
     return (
         <div className="h-72 w-full">
@@ -18,26 +20,26 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
                     <CartesianGrid stroke={chartTheme.grid} vertical={false} />
                     <XAxis
                         dataKey="label"
-                        tick={{ fill: chartTheme.text, fontSize: 11 }}
+                        tick={chartTick}
+                        tickMargin={8}
+                        minTickGap={16}
+                        interval="preserveStartEnd"
+                        height={36}
                         tickLine={false}
                         axisLine={{ stroke: chartTheme.grid }}
                     />
                     <YAxis
-                        tick={{ fill: chartTheme.text, fontSize: 11 }}
+                        tick={chartTick}
                         tickLine={false}
                         axisLine={false}
-                        tickFormatter={(value: number) =>
-                            value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M`
-                                : value >= 1_000 ? `${(value / 1_000).toFixed(0)}K`
-                                : String(value)
-                        }
-                        width={48}
+                        tickFormatter={(value: number) => compactNumber.format(value)}
+                        width={57}
                     />
                     <Tooltip
                         formatter={(value, name) => [`Rs ${amount(Number(value ?? 0))}`, String(name ?? '')]}
                         contentStyle={chartTheme.tooltip}
                     />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontSize: 14, fontWeight: 600 }} formatter={(label) => <span style={{ color: chartTheme.text }}>{label}</span>} />
                     <Line
                         type="monotone" dataKey="sales" name="Sales"
                         stroke={chartTheme.sales} strokeWidth={2}

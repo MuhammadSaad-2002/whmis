@@ -1,3 +1,4 @@
+import { chartTick, shortBalanceLabel } from '@/lib/chart-theme';
 import { money } from '@/lib/format';
 import { memo, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
@@ -13,7 +14,6 @@ export const colors = {
     accumulated: '#0f8f80',
     margin: '#94a3b8',
     danger: '#dc2626',
-    muted: '#8a97a6',
     grid: '#eef1f4',
 };
 
@@ -34,9 +34,8 @@ export function compact(value: number): string {
     return `${Number((value / divisor).toFixed(magnitude < divisor * 10 && suffix ? 1 : 0))}${suffix}`;
 }
 
-const tick = { fill: colors.muted, fontSize: 11 };
 const tooltip = {
-    contentStyle: { background: '#0d2436', border: 'none', borderRadius: 8, color: '#fff', padding: '9px 11px', fontSize: 12 },
+    contentStyle: { background: '#0d2436', border: 'none', borderRadius: 8, color: '#fff', padding: '9px 11px', fontSize: 14 },
     itemStyle: { color: '#f8fafc' },
     labelStyle: { color: '#fff', fontWeight: 600 },
 };
@@ -125,11 +124,11 @@ export const ActivityChart = memo(function ActivityChart({ data, stock, title, s
             </header>
             <div className="exec-chart" style={{ height: stock ? 240 : 300 }}>
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <ComposedChart data={points} title={title} margin={{ top: 9, right: 4, bottom: 1, left: 0 }}>
+                    <ComposedChart data={points} title={title} margin={{ top: 9, right: 22, bottom: 1, left: 0 }}>
                         <CartesianGrid vertical={false} stroke={colors.grid} />
-                        <XAxis dataKey="label" axisLine={false} tickLine={false} tick={tick} minTickGap={13} tickMargin={8} />
-                        <YAxis axisLine={false} tickLine={false} tick={tick} tickFormatter={compact} width={42} yAxisId="money" />
-                        {!stock && <YAxis axisLine={false} tickLine={false} tick={tick} tickFormatter={(value) => `${value}%`} width={40} yAxisId="margin" orientation="right"
+                        <XAxis dataKey="label" axisLine={false} tickLine={false} tick={chartTick} minTickGap={20} tickMargin={8} height={36} interval="preserveStartEnd" />
+                        <YAxis axisLine={false} tickLine={false} tick={chartTick} tickFormatter={compact} width={56} yAxisId="money" />
+                        {!stock && <YAxis axisLine={false} tickLine={false} tick={chartTick} tickFormatter={(value) => `${value}%`} width={57} yAxisId="margin" orientation="right"
                             domain={[(min: number) => Math.min(0, min), (max: number) => Math.max(100, max)]} />}
                         <Tooltip {...tooltip} formatter={(value, name) => name === 'Margin %' ? `${value}%` : pretty(Number(value))} />
                         <ReferenceLine y={0} yAxisId="money" stroke={colors.grid} />
@@ -159,11 +158,11 @@ export const RankingChart = memo(function RankingChart({ data, title, height, co
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart data={data} title={title} layout="vertical" margin={{ left: 0, right: 10, top: 0, bottom: 0 }}>
                     <CartesianGrid horizontal={false} stroke={colors.grid} />
-                    <XAxis type="number" axisLine={false} tickLine={false} tick={tick} tickCount={5}
+                    <XAxis type="number" axisLine={false} tickLine={false} tick={chartTick} tickCount={5} minTickGap={12} height={32}
                         domain={[(min: number) => Math.min(0, min), 'auto']} tickFormatter={percentage ? (value) => `${value}%` : compact} />
-                    <YAxis dataKey="label" type="category" hide={!showLabels} width={125} axisLine={false} tickLine={false}
-                        tick={{ fill: '#475569', fontWeight: 500, fontSize: 11 }} interval={0}
-                        tickFormatter={(name: string) => name.length > 20 ? `${name.slice(0, 19)}…` : name} />
+                    <YAxis dataKey="label" type="category" hide={!showLabels} width={154} axisLine={false} tickLine={false}
+                        tick={chartTick} interval={0}
+                        tickFormatter={(name: string) => name.length > 17 ? `${name.slice(0, 16)}…` : name} />
                     <Tooltip {...tooltip} formatter={(value) => percentage ? `${Number(value).toFixed(1)}% of sales` : pretty(Number(value))} />
                     <ReferenceLine x={0} stroke={colors.grid} />
                     <Bar dataKey="value" name={percentage ? 'Share' : 'Revenue'} barSize={showLabels ? 16 : 18} radius={4} {...motion}>
@@ -198,6 +197,7 @@ export const Donut = memo(function Donut({ slices, label, value, centered }: { s
 
 export const Waterfall = memo(function Waterfall({ entries, total }: { entries: Slice[]; total: number }) {
     const motion = useChartMotion(entries);
+    const [narrow, setNarrow] = useState(false);
     let cumulative = 0;
     const steps = entries.map((entry) => {
         const start = cumulative;
@@ -207,11 +207,12 @@ export const Waterfall = memo(function Waterfall({ entries, total }: { entries: 
     steps.push({ label: 'Net position', value: total, color: total < 0 ? colors.danger : colors.profit, range: [Math.min(total, 0), Math.max(total, 0)] });
     return (
         <div className="exec-chart" style={{ height: 150 }}>
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <BarChart data={steps} title="Working capital waterfall" margin={{ top: 6, right: 0, bottom: 1, left: 0 }}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} onResize={(width) => setNarrow(width < 530)}>
+                <BarChart data={steps} title="Working capital waterfall" margin={{ top: 6, right: 12, bottom: 1, left: 0 }}>
                     <CartesianGrid vertical={false} stroke={colors.grid} />
-                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ ...tick, fontSize: 10 }} minTickGap={2} />
-                    <YAxis axisLine={false} tickLine={false} tick={tick} tickFormatter={compact} width={38} tickCount={5} />
+                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={chartTick} minTickGap={narrow ? 3 : 10} height={34} interval="preserveStartEnd"
+                        tickFormatter={narrow ? shortBalanceLabel : undefined} />
+                    <YAxis axisLine={false} tickLine={false} tick={chartTick} tickFormatter={compact} width={56} tickCount={5} />
                     <Tooltip {...tooltip} formatter={(_range, _name, item) => pretty(Number(item.payload?.value ?? 0))} />
                     <ReferenceLine y={0} stroke={colors.grid} />
                     <Bar dataKey="range" name="Amount" maxBarSize={38} radius={4} minPointSize={2} {...motion}>

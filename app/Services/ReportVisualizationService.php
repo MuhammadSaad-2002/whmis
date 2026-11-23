@@ -15,7 +15,7 @@ class ReportVisualizationService
 
     private const GRID_COLOR = '#d3e0e8';
 
-    private const LABEL_COLOR = '#496175';
+    private const LABEL_COLOR = '#263b4d';
 
     /**
      * Report-specific ranked chart definitions shared by Inertia and PDF exports.
@@ -183,10 +183,10 @@ class ReportVisualizationService
     private function rankedSvgDataUri(array $rows, string $format): string
     {
         $width = 760;
-        $rowHeight = 31;
+        $rowHeight = 32;
         $height = 30 + count($rows) * $rowHeight;
-        $barStart = 250;
-        $barMax = 360;
+        $barStart = 262;
+        $barMax = 335;
         $max = max(1.0, ...array_map(fn (array $row) => abs((float) $row['value']), $rows));
         $parts = [$this->svgOpen($width, $height)];
 
@@ -195,13 +195,13 @@ class ReportVisualizationService
             $y = 12 + $index * $rowHeight;
             $barWidth = max(1, (int) round(abs($value) / $max * $barMax));
             $color = $value < 0 ? self::NEGATIVE_COLOR : self::SALES_COLOR;
-            $label = $this->escape($this->truncate((string) $row['label'], 35));
+            $label = $this->escape($this->truncate((string) $row['label'], 28));
             $formatted = $this->escape($this->formatValue($value, $format));
 
-            $parts[] = '<text x="0" y="'.($y + 13).'" font-size="11" fill="'.self::LABEL_COLOR.'">'.$label.'</text>';
+            $parts[] = '<text x="0" y="'.($y + 14).'" font-size="14" fill="'.self::LABEL_COLOR.'">'.$label.'</text>';
             $parts[] = "<rect x=\"{$barStart}\" y=\"{$y}\" width=\"{$barMax}\" height=\"18\" rx=\"3\" fill=\"".self::GRID_COLOR.'"/>';
             $parts[] = "<rect x=\"{$barStart}\" y=\"{$y}\" width=\"{$barWidth}\" height=\"18\" rx=\"3\" fill=\"{$color}\"/>";
-            $parts[] = '<text x="625" y="'.($y + 13)."\" font-size=\"11\" font-weight=\"bold\" fill=\"{$color}\">{$formatted}</text>";
+            $parts[] = '<text x="610" y="'.($y + 14)."\" font-size=\"14\" font-weight=\"bold\" fill=\"{$color}\">{$formatted}</text>";
         }
 
         $parts[] = '</svg>';
@@ -216,10 +216,10 @@ class ReportVisualizationService
             ['key' => 'profit', 'label' => 'Net Profit', 'color' => self::PROFIT_COLOR, 'dash' => ' stroke-dasharray="6 4"'],
         ];
         $width = 760;
-        $height = 205;
+        $height = 220;
         $left = 64;
         $top = 15;
-        $plotWidth = 670;
+        $plotWidth = 660;
         $plotHeight = 125;
         $values = collect($points)->flatMap(fn (array $point) => collect($series)->map(
             fn (array $item) => (float) ($point[$item['key']] ?? 0),
@@ -239,7 +239,7 @@ class ReportVisualizationService
             $gridY = $top + ($step / 4) * $plotHeight;
             $gridValue = $max - ($step / 4) * $range;
             $parts[] = "<line x1=\"{$left}\" y1=\"{$gridY}\" x2=\"".($left + $plotWidth)."\" y2=\"{$gridY}\" stroke=\"".self::GRID_COLOR.'" stroke-width="1"/>';
-            $parts[] = '<text x="0" y="'.($gridY + 4).'" font-size="9" fill="'.self::LABEL_COLOR.'">'.$this->escape($this->compactValue($gridValue)).'</text>';
+            $parts[] = '<text x="0" y="'.($gridY + 4).'" font-size="14" fill="'.self::LABEL_COLOR.'">'.$this->escape($this->compactValue($gridValue)).'</text>';
         }
 
         foreach ($series as $item) {
@@ -254,16 +254,19 @@ class ReportVisualizationService
             }
         }
 
+        // Leave room for the larger labels without dropping any plotted data.
+        $labelStep = max(1, (int) ceil($count / 10));
         foreach ($points as $index => $point) {
+            if ($index !== $count - 1 && ($index % $labelStep !== 0 || $count - 1 - $index < $labelStep)) continue;
             $label = $this->escape($this->truncate((string) ($point['label'] ?? ''), 9));
-            $parts[] = '<text x="'.round($x($index), 1).'" y="158" text-anchor="middle" font-size="8" fill="'.self::LABEL_COLOR.'">'.$label.'</text>';
+            $parts[] = '<text x="'.round($x($index), 1).'" y="163" text-anchor="middle" font-size="14" fill="'.self::LABEL_COLOR.'">'.$label.'</text>';
         }
 
-        $legendX = 500;
+        $legendX = 474;
         foreach ($series as $index => $item) {
-            $lx = $legendX + $index * 115;
-            $parts[] = "<rect x=\"{$lx}\" y=\"180\" width=\"10\" height=\"10\" rx=\"2\" fill=\"{$item['color']}\"/>";
-            $parts[] = '<text x="'.($lx + 15).'" y="189" font-size="10" fill="'.self::LABEL_COLOR.'">'.$item['label'].'</text>';
+            $lx = $legendX + $index * 130;
+            $parts[] = "<rect x=\"{$lx}\" y=\"184\" width=\"12\" height=\"12\" rx=\"2\" fill=\"{$item['color']}\"/>";
+            $parts[] = '<text x="'.($lx + 18).'" y="195" font-size="14" fill="'.self::LABEL_COLOR.'">'.$item['label'].'</text>';
         }
         $parts[] = '</svg>';
 

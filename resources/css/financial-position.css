@@ -1,6 +1,6 @@
 /* Scoped reference styling for Financial Position and the shared payment form. */
 .financial-position, .finance-dialog{
-  --bg:#f3f5f7; --card:#fff; --ink:#0f1f2c; --ink2:#475569; --ink3:#8a97a6; --line:#e5e9ee; --line2:#eef1f4;
+  --bg:#f3f5f7; --card:#fff; --ink:#0f1f2c; --ink2:#475569; --ink3:#415467; --chart-label:#263b4d; --line:#e5e9ee; --line2:#eef1f4;
   --navy:#0d2436; --teal:#0f8f80; --teal2:#14b8a6; --tealbg:#e6f6f3;
   --sales:#1f4e79; --red:#dc2626; --redbg:#fdecec; --amber:#b45309; --amberbg:#fff6e0; --green:#059669; --greenbg:#e3f7ef;
   --a0:#99e0d6; --a1:#14b8a6; --a2:#f59e0b; --a3:#dc2626;
@@ -41,8 +41,8 @@
     /* hero */
     .hero{background:linear-gradient(120deg,var(--navy) 0%,#11384a 55%,#0f4d4a 100%);border-radius:var(--radius);padding:18px 22px;color:#fff;display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:relative;overflow:hidden}
     .hero:after{content:"";position:absolute;right:-60px;top:-90px;width:320px;height:320px;border-radius:50%;background:radial-gradient(circle,rgba(20,184,166,.25),transparent 65%);pointer-events:none}
-    .hero h1{font-size:23px;font-weight:700;letter-spacing:-.4px}
-    .hero .sub{color:#9fb4c3;font-size:12.5px;margin-top:4px;max-width:640px;line-height:1.45}
+    .hero h1{font-size:clamp(25px,2.1vw,34px);font-weight:700;letter-spacing:-.4px;line-height:1.15}
+    .hero .sub{color:#d1e1ea;font-size:14px;margin-top:5px;max-width:640px;line-height:1.45}
     .hero .sp{flex:1}
     .hfld{position:relative;z-index:1;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:9px;padding:0 10px;height:36px}
     .hfld small{font-size:10.5px;color:#9fb4c3;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
@@ -59,8 +59,8 @@
     .c3{grid-column:span 3}.c4{grid-column:span 4}.c5{grid-column:span 5}.c7{grid-column:span 7}.c8{grid-column:span 8}.c9{grid-column:span 9}.c12{grid-column:span 12}
     .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;min-width:0}
     .ch{display:flex;align-items:center;gap:8px;margin-bottom:12px;min-height:26px;flex-wrap:wrap}
-    .ch h3{font-size:14px;font-weight:700;letter-spacing:-.15px}
-    .ch .tag{font-size:11px;color:var(--ink3)}
+    .ch h3{font-size:18px;font-weight:700;line-height:1.25;letter-spacing:-.15px}
+    .ch .tag{font-size:13px;color:var(--ink3)}
     .ch .sp{flex:1}
     .pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px}
     .pill.r{background:var(--redbg);color:var(--red)}.pill.g{background:var(--greenbg);color:var(--green)}.pill.a{background:var(--amberbg);color:var(--amber)}.pill.n{background:var(--line2);color:var(--ink2)}
@@ -69,9 +69,9 @@
     .kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-top:14px}
     .kpi{padding:14px 16px 12px;position:relative;overflow:hidden}
     .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--k)}
-    .kpi .lbl{font-size:12px;color:var(--ink2);font-weight:500}
+    .kpi .lbl{font-size:14px;color:var(--ink);font-weight:600}
     .kpi .val{font-size:clamp(16px, 1.6vw, 22px);font-weight:700;letter-spacing:-.5px;margin-top:6px}
-    .kpi .foot{font-size:11.5px;color:var(--ink3);margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+    .kpi .foot{font-size:13px;color:var(--ink3);margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
     .abar{display:flex;height:7px;border-radius:5px;overflow:hidden;background:var(--line2);margin-top:10px}
     .abar span{height:100%}
     .staff{display:grid;grid-template-columns:repeat(5,1fr);padding:0}
@@ -93,7 +93,7 @@
 
     /* section */
     .sech{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
-    .sech h2{font-size:16px;font-weight:700;letter-spacing:-.2px}
+    .sech h2{font-size:20px;font-weight:700;letter-spacing:-.2px}
     .sech .sp{flex:1}
     .fld{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:9px;padding:0 10px;height:32px;background:#fff;color:var(--ink3)}
     .fld:focus-within{border-color:var(--teal2);box-shadow:0 0 0 3px rgba(20,184,166,.14)}
@@ -104,7 +104,7 @@
     .side{border-left:1px solid var(--line);padding-left:18px}
 
     table{width:100%;border-collapse:collapse}
-    th{text-align:left;font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap;background:#fafbfc;user-select:none}
+    th{text-align:left;font-size:12px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap;background:#fafbfc;user-select:none}
     th.s{cursor:pointer}th.s:hover{color:var(--ink)}
     td{padding:11px 10px;border-bottom:1px solid var(--line2);font-size:12.5px;white-space:nowrap}
     .r{text-align:right}
@@ -133,22 +133,22 @@
     .age.b0{background:var(--tealbg);color:var(--teal)}.age.b1{background:#e0f5f1;color:#0f766e}.age.b2{background:var(--amberbg);color:var(--amber)}.age.b3{background:var(--redbg);color:var(--red)}
     .donut{position:relative;width:150px;height:150px;margin:0 auto}
     .donut .c{position:absolute;inset:0;display:grid;place-items:center;text-align:center;pointer-events:none}
-    .donut .c small{display:block;font-size:10px;color:var(--ink3)}
+    .donut .c small{display:block;font-size:13px;font-weight:600;color:var(--ink3)}
     .donut .c b{font-size:14px}
-    .lrow{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:12px}
+    .lrow{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:14px}
     .lrow:last-child{border-bottom:0}
     .lrow i{width:9px;height:9px;border-radius:3px;flex:none}
     .lrow .nm{flex:1;color:var(--ink2)}
     .lrow .v{font-weight:600}
-    .lrow .p{color:var(--ink3);width:38px;text-align:right;font-size:11px}
+    .lrow .p{color:var(--ink3);width:42px;text-align:right;font-size:13px}
     .note{border-radius:10px;padding:10px 12px;font-size:11.5px;line-height:1.45;margin-top:12px;border:1px solid}
     .note.r{background:var(--redbg);border-color:#f8d0d0;color:#7f1d1d}
     .note.a{background:var(--amberbg);border-color:#f6e2ad;color:#78350f}
     .note.t{background:var(--tealbg);border-color:#bfe8e1;color:#134e4a}
     .note b{font-weight:700}
-    .legend{display:flex;gap:12px;font-size:11.5px;color:var(--ink2);flex-wrap:wrap}
+    .legend{display:flex;gap:12px;font-size:14px;font-weight:600;color:var(--chart-label);flex-wrap:wrap}
     .legend span{display:flex;align-items:center;gap:5px}
-    .legend i{width:10px;height:10px;border-radius:3px}
+    .legend i{width:12px;height:12px;border-radius:3px;flex:none}
 
     /* planner */
     .sl{margin-bottom:14px}
@@ -175,7 +175,7 @@
     .tblwrap{overflow-x:auto}
     .chart{height:240px;min-width:0}
     .planner{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
-    .planner-label{color:var(--ink2);font-size:12px;font-weight:600;margin-bottom:6px}
+    .planner-label{color:var(--ink2);font-size:14px;font-weight:600;margin-bottom:6px}
     .planner-chart{height:200px}
     .hero .sub b{color:#e2f3f1}
     .sech .muted{font-size:12px}
@@ -186,7 +186,6 @@
     .log-scroll{max-height:400px;margin-top:6px}
     .log-scroll th{position:sticky;top:0;z-index:1}
     .recharts-tooltip-wrapper{z-index:2}
-    .recharts-cartesian-axis-tick text{font-size:10px}
     .sort,.party-toggle{color:inherit;border:0;background:none;text-align:inherit;padding:0}
     .sort:hover,.party-toggle:hover{color:var(--teal)}
     .party-toggle{display:flex;align-items:center;gap:6px;font-weight:600}
@@ -205,7 +204,6 @@
         padding:12px 12px 26px;
         .hero{padding:15px;gap:8px}
         .hero .sp,.sech .sp{display:none}
-        .hero h1{font-size:21px}
         .hero .intro,.hero .seg{width:100%}
         .seg button{flex:1;min-height:35px}
         .hfld{flex:1;min-width:125px;justify-content:space-between}

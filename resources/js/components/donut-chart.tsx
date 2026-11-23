@@ -44,7 +44,7 @@ export function DonutChart({ data }: { data: DonutSlice[] }) {
                     </PieChart>
                 </ResponsiveContainer>
                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-xs text-muted-foreground">Total</span>
+                    <span className="text-sm font-medium text-muted-foreground">Total</span>
                     <span className="text-lg font-semibold tabular-nums">Rs {amount(total)}</span>
                 </div>
             </div>

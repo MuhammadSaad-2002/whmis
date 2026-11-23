@@ -104,7 +104,7 @@
     --secondary: #e5edf3;
     --secondary-foreground: var(--foreground);
     --muted: #edf3f6;
-    --muted-foreground: #496175;
+    --muted-foreground: #3e5367;
     --accent: #dff4ee;
     --accent-foreground: #125749;
     --destructive: #b4232a;
@@ -145,7 +145,7 @@
     --primary-foreground: var(--color-brand-navy);
     --secondary: #263d52;
     --muted: #1a3044;
-    --muted-foreground: #aabecf;
+    --muted-foreground: #bdcede;
     --accent: #204841;
     --accent-foreground: #a4f5e1;
     --destructive: #ff8a90;

@@ -17,10 +17,11 @@
         .figure-left { padding-right: 4px; }
         .figure-right { padding-left: 4px; }
         .figure { padding: 8px; border: 1px solid #d3e0e8; border-radius: 5px; }
-        .figure h2 { margin-bottom: 2px; }
+        .figure h2 { margin-bottom: 3px; font-size: 14px; }
+        .figure .meta { font-size: 11px; color: #3e5367; }
         .figure img { display: block; width: 100%; height: auto; margin: 4px 0 2px; }
         .figure img.mix-image { margin: 8px 0 4px; }
-        .figure-labels td { text-align: center; vertical-align: top; font-size: 9px; }
+        .figure-labels td { text-align: center; vertical-align: top; font-size: 11px; color: #263b4d; }
         .dot { display: inline-block; width: 6px; height: 6px; }
         .details { page-break-before: always; }
         .details h2 { page-break-after: avoid; }
