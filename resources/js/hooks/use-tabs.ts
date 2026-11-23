@@ -6,17 +6,38 @@ export interface Tab {
     title: string;
 }
 
-const STORAGE_PREFIX = 'whmis:workspace-tabs';
+const STORAGE_KEY = 'whmis:workspace-tabs';
 const HOME: Omit<Tab, 'id'> = { url: '/dashboard', title: 'Dashboard' };
 export const MAX_TABS = 15;
 
-/**
- * Per-user storage key. localStorage is shared by everyone on the same browser,
- * so the open-tabs set must be namespaced by user id — otherwise the next person
- * to sign in on this browser inherits the previous user's tabs.
- */
-function storageKey(scope: string | number | undefined): string {
-    return `${STORAGE_PREFIX}:${scope ?? 'anon'}`;
+export function clearWorkspaceTabs(): void {
+    try {
+        sessionStorage.removeItem(STORAGE_KEY);
+    } catch {
+        // Storage may be disabled in the browser.
+    }
+}
+
+export const WORKSPACE_LOGOUT_EVENT = 'whmis:workspace-logout';
+
+export function endWorkspaceSession(): void {
+    clearWorkspaceTabs();
+    try {
+        localStorage.setItem(WORKSPACE_LOGOUT_EVENT, newId());
+    } catch {
+        // Other browser tabs will revalidate on their next server request.
+    }
+}
+
+function clearLegacyTabs(): void {
+    try {
+        for (let index = localStorage.length - 1; index >= 0; index--) {
+            const key = localStorage.key(index);
+            if (key === STORAGE_KEY || key?.startsWith(`${STORAGE_KEY}:`)) localStorage.removeItem(key);
+        }
+    } catch {
+        // Older versions used localStorage. The current workspace never reads it.
+    }
 }
 
 function newId(): string {
@@ -33,22 +54,24 @@ function pathOf(url: string): string {
 }
 
 interface Persisted {
+    scope: string;
     items: { url: string; title: string }[];
     active: number;
 }
 
-function loadInitial(key: string, home: Omit<Tab, 'id'>): { tabs: Tab[]; activeId: string } {
+function loadInitial(scope: string, home: Omit<Tab, 'id'>): { tabs: Tab[]; activeId: string } {
     let items: { url: string; title: string }[] = [];
     let active = 0;
 
     if (typeof window !== 'undefined') {
         try {
-            const raw = localStorage.getItem(key);
+            const raw = sessionStorage.getItem(STORAGE_KEY);
             if (raw) {
                 const parsed = JSON.parse(raw) as Persisted;
-                if (Array.isArray(parsed.items)) {
-                    items = parsed.items.filter((i) => i && typeof i.url === 'string');
-                    active = Math.min(Math.max(parsed.active ?? 0, 0), Math.max(items.length - 1, 0));
+                if (scope && parsed.scope === scope && Array.isArray(parsed.items)) {
+                    items = parsed.items.filter((item) => item && isWorkspaceUrl(item.url) && typeof item.title === 'string');
+                    const activeUrl = parsed.items[parsed.active]?.url;
+                    active = Math.max(items.findIndex((item) => item.url === activeUrl), 0);
                 }
             }
         } catch {
@@ -63,10 +86,9 @@ function loadInitial(key: string, home: Omit<Tab, 'id'>): { tabs: Tab[]; activeI
     return { tabs, activeId: tabs[active]?.id ?? tabs[0].id };
 }
 
-export function useTabs(scope?: string | number, home: Omit<Tab, 'id'> = HOME) {
-    const key = storageKey(scope);
+export function useTabs(scope: string, home: Omit<Tab, 'id'> = HOME) {
     const initialRef = useRef<{ tabs: Tab[]; activeId: string } | null>(null);
-    const seed = (initialRef.current ??= loadInitial(key, home));
+    const seed = (initialRef.current ??= loadInitial(scope, home));
 
     const [tabs, setTabs] = useState<Tab[]>(seed.tabs);
     const [activeId, setActiveId] = useState<string>(seed.activeId);
@@ -76,20 +98,24 @@ export function useTabs(scope?: string | number, home: Omit<Tab, 'id'> = HOME) {
     const tabsRef = useRef(tabs);
     tabsRef.current = tabs;
 
-    // Persist tabs + active index for refresh-restore.
+    useEffect(clearLegacyTabs, []);
+
+    // Restore on refresh only within this authenticated session and browser tab.
     useEffect(() => {
+        if (!scope) return;
         try {
             const active = Math.max(tabs.findIndex((t) => t.id === activeId), 0);
-            const payload: Persisted = { items: tabs.map((t) => ({ url: t.url, title: t.title })), active };
-            localStorage.setItem(key, JSON.stringify(payload));
+            const payload: Persisted = { scope, items: tabs.map((t) => ({ url: t.url, title: t.title })), active };
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
         } catch {
             // ignore quota/serialisation errors
         }
-    }, [tabs, activeId, key]);
+    }, [tabs, activeId, scope]);
 
     const focusTab = useCallback((id: string) => setActiveId(id), []);
 
     const openTab = useCallback((url: string, title?: string) => {
+        if (!isWorkspaceUrl(url)) return;
         const path = pathOf(url);
         const existing = tabsRef.current.find((t) => pathOf(t.url) === path);
         if (existing) {
@@ -131,6 +157,7 @@ export function useTabs(scope?: string | number, home: Omit<Tab, 'id'> = HOME) {
 
     // Relabel / re-url a tab from a frame's tab-state message (mount or in-tab redirect).
     const updateTab = useCallback((id: string, patch: { url?: string; title?: string }) => {
+        if (patch.url && !isWorkspaceUrl(patch.url)) return;
         setTabs((prev) =>
             prev.map((t) =>
                 t.id === id
@@ -143,4 +170,14 @@ export function useTabs(scope?: string | number, home: Omit<Tab, 'id'> = HOME) {
     const atLimit = tabs.length >= MAX_TABS;
 
     return { tabs, activeId, openTab, focusTab, closeTab, closeAll, updateTab, atLimit };
+}
+
+function isWorkspaceUrl(url: unknown): url is string {
+    if (typeof url !== 'string' || !url.startsWith('/')) return false;
+    try {
+        const target = new URL(url, window.location.origin);
+        return target.origin === window.location.origin && !['/', '/workspace', '/login', '/logout'].includes(target.pathname);
+    } catch {
+        return false;
+    }
 }

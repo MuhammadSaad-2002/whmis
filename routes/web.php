@@ -25,6 +25,7 @@ use App\Http\Controllers\SampleIssueController;
 use App\Http\Controllers\SampleReceiptController;
 use App\Http\Controllers\StockLoanController;
 use App\Http\Controllers\UserController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -64,7 +65,19 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     Route::get('license/locked', [LicenseController::class, 'locked'])->name('license.locked');
 
     // Tabbed workspace shell: hosts every page as an in-app browser tab.
-    Route::get('workspace', fn () => Inertia::render('workspace/index'))->name('workspace');
+    Route::get('workspace', function (Request $request) {
+        $user = $request->user();
+        $scope = [
+            $request->session()->getId(),
+            $user->getAuthIdentifier(),
+            $user->getAllPermissions()->pluck('name')->sort()->values()->all(),
+        ];
+
+        return Inertia::render('workspace/index', [
+            // Expose an opaque storage scope. The session ID itself is a credential.
+            'tabScope' => hash_hmac('sha256', json_encode($scope, JSON_THROW_ON_ERROR), config('app.key')),
+        ]);
+    })->middleware('cache.headers:no_store')->name('workspace');
 
     Route::get('dashboard', DashboardController::class)
         ->middleware('can:dashboard.view')->name('dashboard');

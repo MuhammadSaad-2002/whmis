@@ -14,6 +14,8 @@ likely to matter when changing each module.
 - Dashboard: `/dashboard`; Booker users receive own-data dashboard, while users with `dashboard.executive` receive the executive dashboard. Executive period KPIs use net sales/profit after posted customer credit notes and net purchases after supplier debit notes. Its sales/profit trend and revenue-ranking charts follow the selected period; short ranges use daily trend points and longer ranges use monthly points. Receivables aging remains an explicitly current snapshot.
 - Executive PDF: `/dashboard/executive/pdf`.
 - Workspace: `/workspace`; tabbed shell that hosts the app navigation experience.
+  Open tabs refresh within the same login and browser tab. Each new login starts
+  at that user's home page. Changes to permissions invalidate saved tab state.
 - Navigation source: `resources/js/components/nav-config.ts`.
 
 ## Master data

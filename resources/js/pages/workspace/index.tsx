@@ -5,16 +5,18 @@ import { NotificationBell } from '@/components/notification-bell';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { TabBar } from '@/components/workspace/tab-bar';
 import { WorkspaceFrame } from '@/components/workspace/workspace-frame';
-import { useTabs } from '@/hooks/use-tabs';
+import { clearWorkspaceTabs, useTabs, WORKSPACE_LOGOUT_EVENT } from '@/hooks/use-tabs';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { WORKSPACE_PATH, type ShellMessage } from '@/lib/embedded';
 import { Head, usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
-export default function Workspace() {
-    // Scope the open-tabs set to the signed-in user so it never leaks to whoever
-    // logs in next on the same browser.
-    const auth = (usePage().props as { auth?: { user?: { id?: number }; permissions?: string[] } }).auth;
+export default function Workspace({ tabScope }: { tabScope: string }) {
+    return <WorkspaceSession key={tabScope} tabScope={tabScope} />;
+}
+
+function WorkspaceSession({ tabScope }: { tabScope: string }) {
+    const auth = (usePage().props as { auth?: { permissions?: string[] } }).auth;
     const home = useMemo(() => {
         const permissions = auth?.permissions ?? [];
         if (permissions.includes('dashboard.view')) return { url: '/dashboard', title: 'Dashboard' };
@@ -22,7 +24,7 @@ export default function Workspace() {
         if (permissions.includes('hr.self.view')) return { url: '/hr/my-profile', title: 'My HR' };
         return { url: '/settings/profile', title: 'Profile' };
     }, [auth?.permissions]);
-    const { tabs, activeId, openTab, focusTab, closeTab, closeAll, updateTab } = useTabs(auth?.user?.id, home);
+    const { tabs, activeId, openTab, focusTab, closeTab, closeAll, updateTab } = useTabs(tabScope, home);
     // Phones don't get the tab strip — navigation just swaps the visible page.
     const isMobile = useIsMobile();
 
@@ -55,13 +57,30 @@ export default function Workspace() {
 
     // Listen for messages from the framed pages.
     useEffect(() => {
+        const onPageShow = (event: PageTransitionEvent) => {
+            if (event.persisted) window.location.reload();
+        };
+        const onLogout = (event: StorageEvent) => {
+            if (event.key !== WORKSPACE_LOGOUT_EVENT) return;
+            clearWorkspaceTabs();
+            window.location.replace(WORKSPACE_PATH);
+        };
+        window.addEventListener('pageshow', onPageShow);
+        window.addEventListener('storage', onLogout);
+        return () => {
+            window.removeEventListener('pageshow', onPageShow);
+            window.removeEventListener('storage', onLogout);
+        };
+    }, []);
+
+    useEffect(() => {
         const onMessage = (event: MessageEvent) => {
             if (event.origin !== window.location.origin) return;
             const data = event.data as ShellMessage | undefined;
             if (!data || data.source !== 'whmis') return;
 
             if (data.type === 'open-tab') {
-                openTab(data.url);
+                if ([...frames.current.values()].some((frame) => frame.contentWindow === event.source)) openTab(data.url);
                 return;
             }
             if (data.type === 'tab-state') {

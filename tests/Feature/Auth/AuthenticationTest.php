@@ -3,6 +3,8 @@
 namespace Tests\Feature\Auth;
 
 use App\Models\User;
+use Database\Seeders\RolePermissionSeeder;
+use Database\Seeders\SystemSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -50,5 +52,33 @@ class AuthenticationTest extends TestCase
 
         $this->assertGuest();
         $response->assertRedirect('/');
+    }
+
+    public function test_workspace_tab_scope_changes_on_relogin_and_when_access_changes(): void
+    {
+        $this->seed([RolePermissionSeeder::class, SystemSeeder::class]);
+        $user = User::factory()->create();
+        $user->assignRole('Booker');
+        $credentials = ['email' => $user->email, 'password' => 'password'];
+        $sessionCookie = config('session.cookie');
+
+        $login = $this->post('/login', $credentials)->assertRedirect(route('workspace', absolute: false));
+        $this->withCookie($sessionCookie, $login->getCookie($sessionCookie)->getValue());
+        $firstScope = $this->get('/workspace')->assertOk()->inertiaProps('tabScope');
+        $this->assertMatchesRegularExpression('/\A[a-f0-9]{64}\z/', $firstScope);
+        $this->assertNotSame(session()->getId(), $firstScope);
+        $this->assertSame($firstScope, $this->get('/workspace')->assertOk()->inertiaProps('tabScope'));
+
+        $logout = $this->post('/logout')->assertRedirect('/');
+        $this->assertGuest();
+        $this->withCookie($sessionCookie, $logout->getCookie($sessionCookie)->getValue());
+        $login = $this->post('/login', $credentials)->assertRedirect(route('workspace', absolute: false));
+        $this->withCookie($sessionCookie, $login->getCookie($sessionCookie)->getValue());
+        $secondScope = $this->get('/workspace')->assertOk()->inertiaProps('tabScope');
+        $this->assertNotSame($firstScope, $secondScope);
+
+        $user->givePermissionTo('reports.view');
+        auth()->forgetGuards();
+        $this->assertNotSame($secondScope, $this->get('/workspace')->assertOk()->inertiaProps('tabScope'));
     }
 }

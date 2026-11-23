@@ -21,9 +21,7 @@ const OUT = resolve(__dirname, '..', 'docs', 'presentation', 'img');
 mkdirSync(OUT, { recursive: true });
 
 // [path, output filename, tab title]. Order = document order.
-// Every page runs inside the /workspace shell as a workspace tab. To keep the
-// tab strip clean (and avoid the MAX_TABS=15 cap freezing later shots), we seed
-// localStorage with a SINGLE tab for the target page before loading /workspace.
+// Each screenshot opens its page from a fresh workspace so tabs do not accumulate.
 const SHOTS = [
   ['/dashboard', '02-dashboard.png', 'Dashboard'],
   ['/sales', '03-sales-index.png', 'Sales Invoices'],
@@ -78,19 +76,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     process.exit(1);
   }
 
-  // 2) Each app screen — seed a single workspace tab, load the shell, wait for
-  //    the tab's iframe to render, then screenshot the whole shell.
-  for (const [route, file, title] of SHOTS) {
+  // 2) Each app screen — open a deep link from a fresh workspace.
+  for (const [route, file] of SHOTS) {
     try {
-      await page.evaluate(
-        ([key, url, tabTitle]) =>
-          localStorage.setItem(key, JSON.stringify({ items: [{ url, title: tabTitle }], active: 0 })),
-        [TABS_KEY, route, title],
-      );
-      await page.goto(`${BASE}/workspace`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.evaluate((key) => sessionStorage.removeItem(key), TABS_KEY);
+      await page.goto(`${BASE}/workspace?open=${encodeURIComponent(route)}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
       // Wait for the tab's content iframe to load its own page.
-      await page.waitForSelector('iframe', { timeout: 15000 });
-      const handle = await page.$('iframe');
+      const handle = await page.locator(`iframe[src=${JSON.stringify(route)}]`).elementHandle({ timeout: 15000 });
       const frame = await handle.contentFrame();
       if (frame) await frame.waitForLoadState('domcontentloaded').catch(() => {});
       await sleep(1800); // let Inertia render + charts/animations settle
@@ -103,23 +95,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     }
   }
 
-  // 3) Workspace showcase — seed several tabs to show the in-app tab strip.
+  // 3) Workspace showcase — open several tabs from the sidebar.
   try {
-    const many = [
-      ['/dashboard', 'Dashboard'],
-      ['/sales', 'Sales Invoices'],
-      ['/bookings', 'Bookings'],
-      ['/inventory', 'Inventory'],
-      ['/reports', 'Reports'],
-      ['/customers', 'Customers'],
-    ];
-    await page.evaluate(
-      ([key, items]) => localStorage.setItem(key, JSON.stringify({ items, active: 1 })),
-      [TABS_KEY, many.map(([url, title]) => ({ url, title }))],
-    );
+    await page.evaluate((key) => sessionStorage.removeItem(key), TABS_KEY);
     await page.goto(`${BASE}/workspace`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    // With several tabs, only the active iframe is visible; wait for attachment.
-    await page.waitForSelector('iframe', { state: 'attached', timeout: 15000 });
+    for (const title of ['Sales Invoices', 'Bookings', 'Inventory', 'Reports', 'Customers']) {
+      await page.getByRole('button', { name: title, exact: true }).click();
+    }
+    await page.getByRole('tab', { name: 'Sales Invoices' }).click();
     await sleep(2500);
     await page.screenshot({ path: resolve(OUT, '21-workspace.png') });
     ok.push('21-workspace.png');
