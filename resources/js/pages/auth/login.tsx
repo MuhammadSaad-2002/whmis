@@ -1,11 +1,9 @@
 import { Head, useForm } from '@inertiajs/react';
-import { LoaderCircle } from 'lucide-react';
-import { type FormEventHandler, useEffect } from 'react';
+import { ArrowRight, Eye, EyeOff, LoaderCircle, LockKeyhole, Mail } from 'lucide-react';
+import { type FormEventHandler, useEffect, useState } from 'react';
 
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { clearWorkspaceTabs } from '@/hooks/use-tabs';
 import AuthLayout from '@/layouts/auth-layout';
@@ -13,81 +11,108 @@ import AuthLayout from '@/layouts/auth-layout';
 type LoginForm = {
     email: string;
     password: string;
-    remember: boolean;
 };
 
 interface LoginProps {
     status?: string;
 }
 
+const inputClass = 'h-12 w-full rounded-xl border border-slate-300 bg-background pl-10 text-base text-foreground placeholder:text-muted-foreground focus-visible:border-teal-700 focus-visible:ring-2 focus-visible:ring-teal-600/30 focus-visible:outline-none aria-invalid:border-destructive sm:text-sm dark:border-white/15 dark:bg-white/5 dark:focus-visible:border-[#35d6b2]';
+const fieldIconClass = 'pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground';
+
 export default function Login({ status }: LoginProps) {
     useEffect(clearWorkspaceTabs, []);
+    const [showPassword, setShowPassword] = useState(false);
 
     const { data, setData, post, processing, errors, reset } = useForm<LoginForm>({
         email: '',
         password: '',
-        remember: false,
     });
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
         post(route('login'), {
-            onFinish: () => reset('password'),
+            onFinish: () => {
+                reset('password');
+                setShowPassword(false);
+            },
         });
     };
 
     return (
-        <AuthLayout title="Log in to your account" description="Enter your email and password below to log in">
+        <AuthLayout title="Log in" description="Enter your email and password to open your workspace.">
             <Head title="Log in" />
 
-            <form className="flex flex-col gap-6" onSubmit={submit}>
-                <div className="grid gap-6">
-                    <div className="grid gap-2">
-                        <Label htmlFor="email">Email address</Label>
-                        <Input
+            {status && (
+                <p role="status" className="mb-5 rounded-xl border border-teal-700/20 bg-teal-50 px-3 py-2.5 text-sm text-teal-900 dark:bg-teal-900/30 dark:text-teal-100">
+                    {status}
+                </p>
+            )}
+
+            <form className="grid gap-5" onSubmit={submit} aria-busy={processing}>
+                <div className="grid gap-2">
+                    <Label htmlFor="email">Email address</Label>
+                    <div className="relative">
+                        <Mail aria-hidden="true" className={fieldIconClass} />
+                        <input
                             id="email"
+                            name="email"
                             type="email"
                             required
                             autoFocus
-                            tabIndex={1}
-                            autoComplete="email"
+                            autoComplete="username"
+                            autoCapitalize="none"
+                            spellCheck={false}
                             value={data.email}
                             onChange={(e) => setData('email', e.target.value)}
-                            placeholder="email@example.com"
+                            placeholder="you@company.com"
+                            className={`${inputClass} pr-3`}
+                            aria-invalid={Boolean(errors.email)}
+                            aria-describedby={errors.email ? 'login-email-error' : undefined}
                         />
-                        <InputError message={errors.email} />
                     </div>
+                    <InputError id="login-email-error" role="alert" message={errors.email} />
+                </div>
 
-                    <div className="grid gap-2">
-                        <div className="flex items-center">
-                            <Label htmlFor="password">Password</Label>
-                        </div>
-                        <Input
+                <div className="grid gap-2">
+                    <Label htmlFor="password">Password</Label>
+                    <div className="relative">
+                        <LockKeyhole aria-hidden="true" className={fieldIconClass} />
+                        <input
                             id="password"
-                            type="password"
+                            name="password"
+                            type={showPassword ? 'text' : 'password'}
                             required
-                            tabIndex={2}
                             autoComplete="current-password"
+                            autoCapitalize="none"
+                            spellCheck={false}
                             value={data.password}
                             onChange={(e) => setData('password', e.target.value)}
-                            placeholder="Password"
+                            placeholder="Enter password"
+                            className={`${inputClass} pr-12`}
+                            aria-invalid={Boolean(errors.password)}
+                            aria-describedby={errors.password ? 'login-password-error' : undefined}
                         />
-                        <InputError message={errors.password} />
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                            aria-controls="password"
+                            onClick={() => setShowPassword((visible) => !visible)}
+                            className="absolute top-0.5 right-0.5 size-11 rounded-lg text-muted-foreground"
+                        >
+                            {showPassword ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                        </Button>
                     </div>
-
-                    <div className="flex items-center space-x-3">
-                        <Checkbox id="remember" name="remember" tabIndex={3} />
-                        <Label htmlFor="remember">Remember me</Label>
-                    </div>
-
-                    <Button type="submit" className="mt-4 w-full" tabIndex={4} disabled={processing}>
-                        {processing && <LoaderCircle className="h-4 w-4 animate-spin" />}
-                        Log in
-                    </Button>
+                    <InputError id="login-password-error" role="alert" message={errors.password} />
                 </div>
-            </form>
 
-            {status && <div className="mb-4 text-center text-sm font-medium text-green-600">{status}</div>}
+                <Button type="submit" disabled={processing} className="h-12 w-full rounded-xl bg-[#10243a] font-semibold text-white hover:bg-[#1b3951] dark:bg-[#35d6b2] dark:text-[#10243a] dark:hover:bg-[#69e5c9]">
+                    Log in
+                    {processing ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ArrowRight aria-hidden="true" />}
+                </Button>
+            </form>
         </AuthLayout>
     );
 }
