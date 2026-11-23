@@ -12,6 +12,7 @@ use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\Cell;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
+use PhpOffice\PhpSpreadsheet\RichText\RichText;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
@@ -54,8 +55,8 @@ class ReportExport extends DefaultValueBinder implements FromArray, ShouldAutoSi
     public function bindValue(Cell $cell, mixed $value): bool
     {
         // Report fields are data, never spreadsheet formulas.
-        if (is_string($value) && str_starts_with($value, '=')) {
-            $cell->setValueExplicit($value, DataType::TYPE_STRING);
+        if ($value instanceof RichText || (is_string($value) && str_starts_with($value, '='))) {
+            $cell->setValueExplicit($value instanceof RichText ? $value->getPlainText() : $value, DataType::TYPE_STRING);
 
             return true;
         }
@@ -78,12 +79,19 @@ class ReportExport extends DefaultValueBinder implements FromArray, ShouldAutoSi
         $header = $headingCount;
         foreach ([['columns' => $this->columns, 'rows' => $this->rows, 'totals' => $this->totals], ...$this->sections] as $section) {
             $total = $header + count($section['rows']) + (int) ($section['totals'] !== []);
-            $sheet->getStyle('A'.($header - 1).":{$last}{$header}")->getFont()->setBold(true);
-            $sheet->getStyle("A{$total}:{$last}{$total}")->getFont()->setBold(true);
+            $sectionLast = Coordinate::stringFromColumnIndex(count($section['columns']));
+            $sheet->getStyle('A'.($header - 1).":{$sectionLast}{$header}")->getFont()->setBold(true);
+            $sheet->getStyle("A{$total}:{$sectionLast}{$total}")->getFont()->setBold(true);
             foreach ($section['columns'] as $index => $column) {
-                if (($column['format'] ?? null) !== 'money' || $total === $header) continue;
                 $letter = Coordinate::stringFromColumnIndex($index + 1);
-                $sheet->getStyle($letter.($header + 1).":{$letter}{$total}")->getNumberFormat()->setFormatCode('#,##0.00');
+                if (($column['wrap'] ?? false) && $section['rows'] !== []) {
+                    $dataEnd = $header + count($section['rows']);
+                    $sheet->getColumnDimension($letter)->setAutoSize(false)->setWidth(36);
+                    $sheet->getStyle($letter.($header + 1).":{$letter}{$dataEnd}")->getAlignment()->setWrapText(true);
+                }
+                if (($column['format'] ?? null) === 'money' && $total !== $header) {
+                    $sheet->getStyle($letter.($header + 1).":{$letter}{$total}")->getNumberFormat()->setFormatCode('#,##0.00');
+                }
             }
             $header = $total + 3;
         }
@@ -93,10 +101,18 @@ class ReportExport extends DefaultValueBinder implements FromArray, ShouldAutoSi
     {
         $keys = array_column($columns, 'key');
 
-        $data = array_map(
-            fn ($row) => array_map(fn ($key) => $row[$key] ?? '', $keys),
-            $rows,
-        );
+        $data = array_map(fn ($row) => array_map(static function ($column) use ($row) {
+            $value = $row[$column['key']] ?? '';
+            if (($column['wrap'] ?? false) && is_string($value) && $value !== '') {
+                // Mark free text so Excel keeps numeric-looking remarks verbatim.
+                $text = new RichText;
+                $text->createText($value);
+
+                return $text;
+            }
+
+            return $value;
+        }, $columns), $rows);
 
         if ($totals !== []) {
             $data[] = array_map(function ($key, $index) use ($totals) {

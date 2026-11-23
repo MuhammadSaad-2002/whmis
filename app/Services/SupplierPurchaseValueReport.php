@@ -25,7 +25,7 @@ class SupplierPurchaseValueReport
                 'items:id,sales_invoice_id,product_id,quantity,bonus_quantity,net_amount,cost_amount,sort_order',
                 'items.product' => fn ($query) => $query->withTrashed()->select('id', 'name', 'company_id'),
                 'items.product.company' => fn ($query) => $query->withTrashed()->select('id', 'name'),
-            ])->select('id', 'customer_id', 'invoice_number', 'invoice_date', 'total_amount');
+            ])->select('id', 'customer_id', 'invoice_number', 'invoice_date', 'notes', 'total_amount');
 
         $posted->chunkById(250, function (Collection $sales) use ($supplierId, $today, &$products, &$invoices) {
             $returns = SalesReturnItem::query()
@@ -93,7 +93,8 @@ class SupplierPurchaseValueReport
                     $supplierKey = $companyId ?? 0;
                     $bySupplier[$supplierKey] ??= [
                         'invoice_number' => $sale->invoice_number, 'invoice_date' => $sale->invoice_date->toDateString(),
-                        'customer' => $sale->customer?->name ?? 'Customer #'.$sale->customer_id, 'supplier' => $company,
+                        'customer' => $sale->customer?->name ?? 'Customer #'.$sale->customer_id,
+                        'remarks' => $sale->notes, 'supplier' => $company,
                         'purchase_value' => 0, 'invoice_total' => $total, 'net_sale_value' => 0,
                     ];
                     $bySupplier[$supplierKey]['purchase_value'] += $cost;
@@ -136,7 +137,8 @@ class SupplierPurchaseValueReport
                 'columns' => [
                     ['key' => 'invoice_number', 'label' => 'Sale Inv #'],
                     ['key' => 'invoice_date', 'label' => 'Sale Date', 'format' => 'date'],
-                    ['key' => 'customer', 'label' => 'Customer'], ...$supplierColumn,
+                    ['key' => 'customer', 'label' => 'Customer'],
+                    ['key' => 'remarks', 'label' => 'Remarks', 'wrap' => true], ...$supplierColumn,
                     $this->column('purchase_value', 'Purchase Value', 'money'),
                     $this->column('invoice_total', 'Full Invoice Total', 'money'),
                     $this->column('net_sale_value', 'Net Sale Value', 'money'),

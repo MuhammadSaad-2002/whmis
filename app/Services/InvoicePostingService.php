@@ -272,6 +272,10 @@ class InvoicePostingService
             }
 
             if ($invoice->isPosted()) {
+                if ($invoice->postedReturns()->exists()) {
+                    throw new RuntimeException('Cancel the posted sales returns first before cancelling this invoice.');
+                }
+
                 $movements = StockMovement::where('reference_type', $invoice->getMorphClass())
                     ->where('reference_id', $invoice->id)
                     ->where('type', 'sale')

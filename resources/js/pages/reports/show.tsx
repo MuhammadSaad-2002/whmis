@@ -32,6 +32,7 @@ interface Column {
     label: string;
     align?: 'right';
     format?: 'money' | 'qty' | 'date' | 'pct';
+    wrap?: boolean;
 }
 
 interface Option {
@@ -393,7 +394,7 @@ function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData 
                                         {columns.map((column, columnIndex) => {
                                             const value = row[column.key] ?? null;
                                             const profit = column.key.includes('profit') && Number(value) !== 0;
-                                            const negative = value !== null && value !== '' && Number(value) < 0;
+                                            const negative = !column.wrap && value !== null && value !== '' && Number(value) < 0;
                                             const explanation = negative ? negativeExplanation(column.key, column.label, row) : null;
                                             return (
                                                 <TableCell
@@ -412,6 +413,8 @@ function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData 
                                                             <span>{formatCell(value, column.format)}</span>
                                                             <NegativeValueInfo explanation={explanation} />
                                                         </span>
+                                                    ) : column.wrap ? (
+                                                        <div className="max-w-72 whitespace-pre-wrap [overflow-wrap:anywhere]">{value}</div>
                                                     ) : (
                                                         formatCell(value, column.format)
                                                     )}

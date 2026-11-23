@@ -30,6 +30,7 @@ interface ReturnableDto {
     company: string | null;
     batch_number: string | null;
     returnable: number;
+    bonus_returnable: number;
     unit_refund: number;
 }
 
@@ -93,13 +94,14 @@ export default function SalesReturnForm({ warehouse, initialInvoiceId }: { wareh
         setInvoice(data.invoice);
         setLines(
             (data.lines as ReturnableDto[])
-                .filter((l) => l.returnable > 0)
+                .filter((l) => l.returnable > 0 || l.bonus_returnable > 0)
                 .map((l) => ({
                     line_id: l.sales_invoice_item_id,
                     product: l.product,
                     company: l.company,
                     batch_number: l.batch_number,
                     returnable: l.returnable,
+                    bonus_returnable: l.bonus_returnable,
                     unit_amount: l.unit_refund,
                 })),
         );
@@ -126,21 +128,23 @@ export default function SalesReturnForm({ warehouse, initialInvoiceId }: { wareh
             return;
         }
         const payloadLines = rows
-            .filter((r) => r.line_id && toNumber(r.qty) > 0)
-            .map((r) => ({ sales_invoice_item_id: Number(r.line_id), quantity: toNumber(r.qty) }));
+            .filter((r) => r.line_id && (toNumber(r.qty) !== 0 || toNumber(r.bonus_qty ?? '') !== 0))
+            .map((r) => ({ sales_invoice_item_id: Number(r.line_id), quantity: toNumber(r.qty), bonus_quantity: toNumber(r.bonus_qty ?? '') }));
         if (payloadLines.length === 0) {
             toast.error('Add a product and a return quantity on at least one line.');
             return;
         }
-        const over = rows.some((r) => {
-            const line = lineById.get(r.line_id);
-            return line && toNumber(r.qty) > line.returnable + 1e-9;
+        const invalid = payloadLines.some(({ sales_invoice_item_id, quantity, bonus_quantity }) => {
+            const line = lineById.get(String(sales_invoice_item_id));
+            return !line || quantity < 0 || bonus_quantity < 0 || quantity > line.returnable + 1e-9 || bonus_quantity > (line.bonus_returnable ?? 0) + 1e-9;
         });
-        if (over) {
-            toast.error('One or more return quantities exceed the returnable amount.');
+        if (invalid) {
+            toast.error('Enter valid quantities within the billed and bonus amounts available to return.');
             return;
         }
-        if (!confirm(`Post this return for ${money(totalRefund)}? Stock and the customer ledger update immediately.`)) return;
+        if (!confirm(totalRefund > 0
+            ? `Post this return and issue a credit of ${money(totalRefund)}? Stock is restored immediately.`
+            : 'Post this return? Stock is restored immediately. No customer credit will be issued.')) return;
         setSaving(true);
         router.post(route('returns.sales.store'), {
             sales_invoice_id: invoice.id,
@@ -200,7 +204,7 @@ export default function SalesReturnForm({ warehouse, initialInvoiceId }: { wareh
                             </div>
                         </div>
 
-                        <ReturnGrid lines={lines} rows={rows} setRows={setRows} amountHeader="Refund" />
+                        <ReturnGrid lines={lines} rows={rows} setRows={setRows} amountHeader="Refund" showBonus />
 
                         <div className="sticky bottom-0 z-10 mt-auto ml-auto w-80 space-y-1 rounded-xl border bg-background p-4 text-base">
                             <div className="flex justify-between text-xl font-bold">
@@ -208,7 +212,7 @@ export default function SalesReturnForm({ warehouse, initialInvoiceId }: { wareh
                                 <span className="tabular-nums">{money(totalRefund)}</span>
                             </div>
                             <p className="text-xs text-muted-foreground">
-                                The dropdown lists only this invoice's products. Bonus (free) units are not refundable; posting restores stock to the original batches.
+                                Both billed and bonus returns restore stock to the original batches. Only billed units generate a customer credit.
                             </p>
                         </div>
                     </>

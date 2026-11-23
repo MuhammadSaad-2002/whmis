@@ -2,7 +2,7 @@
     <thead>
         <tr>
             @foreach($columns as $column)
-                <th @if(($column['align'] ?? '') === 'right') class="num" @endif>{{ $column['label'] }}</th>
+                <th @if(($column['align'] ?? '') === 'right') class="num" @endif @if($column['wrap'] ?? false) style="width: 24%;" @endif>{{ $column['label'] }}</th>
             @endforeach
         </tr>
     </thead>
@@ -18,8 +18,10 @@
             <tr>
                 @foreach($columns as $column)
                     @php $value = $row[$column['key']] ?? ''; @endphp
-                    <td class="{{ ($column['align'] ?? '') === 'right' ? 'num' : '' }} {{ is_numeric($value) && (float) $value < 0 ? 'negative-value' : '' }}">
-                        @if(in_array($column['format'] ?? '', ['money']))
+                    <td class="{{ ($column['align'] ?? '') === 'right' ? 'num' : '' }} {{ !($column['wrap'] ?? false) && is_numeric($value) && (float) $value < 0 ? 'negative-value' : '' }}">
+                        @if($column['wrap'] ?? false)
+                            <span style="white-space: pre-wrap; overflow-wrap: break-word;">{{ $value }}</span>
+                        @elseif(in_array($column['format'] ?? '', ['money']))
                             {{ is_numeric($value) ? number_format((float) $value, 2) : $value }}
                         @elseif(($column['format'] ?? '') === 'pct')
                             {{ $value }}%

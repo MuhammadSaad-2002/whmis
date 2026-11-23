@@ -62,12 +62,17 @@
     @endif
 
     @php
-        $hasNegativeValues = collect($rows)->contains(
-            fn ($row) => collect($row)->contains(fn ($value) => is_numeric($value) && (float) $value < 0)
-        ) || collect($totals)->contains(fn ($value) => is_numeric($value) && (float) $value < 0)
-            || collect($sections ?? [])->contains(fn ($section) => collect($section['rows'])->contains(
-                fn ($row) => collect($row)->contains(fn ($value) => is_numeric($value) && (float) $value < 0)
-            ));
+        $hasNegativeRows = function ($tableRows, $tableColumns) {
+            $textKeys = array_column(array_filter($tableColumns, fn ($column) => $column['wrap'] ?? false), 'key');
+
+            return collect($tableRows)->contains(fn ($row) => collect($row)->except($textKeys)
+                ->contains(fn ($value) => is_numeric($value) && (float) $value < 0));
+        };
+        $hasNegativeValues = $hasNegativeRows($rows, $columns)
+            || collect($totals)->contains(fn ($value) => is_numeric($value) && (float) $value < 0)
+            || collect($sections ?? [])->contains(
+                fn ($section) => $hasNegativeRows($section['rows'], $section['columns'])
+            );
     @endphp
     @if($hasNegativeValues)
         <div class="negative-guide">

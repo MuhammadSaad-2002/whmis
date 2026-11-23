@@ -1,12 +1,22 @@
 import { useCallback, useRef } from 'react';
 
+function canFocusCell(cell: HTMLElement | undefined): cell is HTMLElement {
+    return !!cell?.isConnected && !cell.matches(':disabled') && cell.getClientRects().length > 0
+        && !cell.closest('details:not([open])');
+}
+
+function focusGridElement(cell: HTMLElement) {
+    cell.focus();
+    if (cell instanceof HTMLInputElement) cell.select();
+}
+
 /**
  * Roving focus for spreadsheet-style invoice entry.
  *
  * Enter  -> next cell in `enterOrder` (or next editable cell when no order is
  *           given); past the last ordered cell it jumps to the next row's
  *           first ordered cell, appending a row at the end of the grid.
- * ArrowUp/Down -> same column, previous/next row
+ * ArrowUp/Down -> previous/next row, same column when editable
  * F2     -> onProductSearch(row)
  * F4     -> onRulePicker(row) (reserved for the incentive engine)
  * Ctrl/Cmd+D -> onDeleteRow(row) then focus the previous row (same column)
@@ -25,8 +35,9 @@ export function useKeyboardGrid(options: {
     onDeleteRow?: (row: number) => void;
     onInsertRow?: (row: number) => void;
     enterOrder?: number[];
+    appendOnArrowDown?: boolean;
 }) {
-    const { rowCount, colCount, onAppendRow, onProductSearch, onRulePicker, onDeleteRow, onInsertRow, enterOrder } = options;
+    const { rowCount, colCount, onAppendRow, onProductSearch, onRulePicker, onDeleteRow, onInsertRow, enterOrder, appendOnArrowDown = true } = options;
     const cellRefs = useRef<Map<string, HTMLElement>>(new Map());
 
     const registerCell = useCallback((row: number, col: number) => {
@@ -42,11 +53,38 @@ export function useKeyboardGrid(options: {
         requestAnimationFrame(() => {
             const el = cellRefs.current.get(`${row}:${col}`);
             if (el) {
-                el.focus();
-                if (el instanceof HTMLInputElement) el.select();
+                focusGridElement(el);
             }
         });
     }, []);
+
+    const handleVerticalKeyDown = useCallback((e: React.KeyboardEvent, row: number, col: number): boolean => {
+        const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+        if (!step || e.defaultPrevented || e.nativeEvent.isComposing) return false;
+
+        // Always consume the key, even at an edge, so number inputs never step.
+        e.preventDefault();
+        for (let next = row + step; next >= 0 && next < rowCount; next += step) {
+            const sameColumn = cellRefs.current.get(`${next}:${col}`);
+            if (canFocusCell(sameColumn)) {
+                focusGridElement(sameColumn);
+                return true;
+            }
+            // An empty invoice row may not have a batch or editable quantity yet.
+            for (let candidate = 0; candidate < colCount; candidate++) {
+                const cell = cellRefs.current.get(`${next}:${candidate}`);
+                if (canFocusCell(cell)) {
+                    focusGridElement(cell);
+                    return true;
+                }
+            }
+        }
+        if (step === 1 && row === rowCount - 1 && appendOnArrowDown) {
+            onAppendRow();
+            focusCell(rowCount, col);
+        }
+        return true;
+    }, [rowCount, colCount, appendOnArrowDown, onAppendRow, focusCell]);
 
     const nextEditable = useCallback(
         (row: number, col: number): [number, number] | 'append' => {
@@ -87,6 +125,8 @@ export function useKeyboardGrid(options: {
 
     const handleKeyDown = useCallback(
         (e: React.KeyboardEvent, row: number, col: number) => {
+            if (e.defaultPrevented || e.nativeEvent.isComposing || handleVerticalKeyDown(e, row, col)) return;
+
             if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
                 // Delete this row, cursor to the previous row (same column).
                 e.preventDefault();
@@ -114,16 +154,6 @@ export function useKeyboardGrid(options: {
                 } else {
                     focusCell(next[0], next[1]);
                 }
-            } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                if (row + 1 < rowCount) focusCell(row + 1, col);
-                else {
-                    onAppendRow();
-                    focusCell(rowCount, col);
-                }
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                if (row > 0) focusCell(row - 1, col);
             } else if (e.key === 'F2') {
                 e.preventDefault();
                 onProductSearch?.(row);
@@ -132,10 +162,10 @@ export function useKeyboardGrid(options: {
                 onRulePicker?.(row);
             }
         },
-        [enterTarget, focusCell, rowCount, enterOrder, onAppendRow, onProductSearch, onRulePicker, onDeleteRow, onInsertRow],
+        [handleVerticalKeyDown, enterTarget, focusCell, rowCount, enterOrder, onAppendRow, onProductSearch, onRulePicker, onDeleteRow, onInsertRow],
     );
 
-    return { registerCell, focusCell, handleKeyDown };
+    return { registerCell, focusCell, handleKeyDown, handleVerticalKeyDown };
 }
 
 /**

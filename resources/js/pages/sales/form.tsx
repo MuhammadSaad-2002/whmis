@@ -272,6 +272,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
     );
 
     const grid = useKeyboardGrid({
+        appendOnArrowDown: false,
         rowCount: rows.length,
         colCount: COL_COUNT,
         enterOrder: ENTER_ORDER,

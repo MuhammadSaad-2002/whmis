@@ -66,6 +66,7 @@ likely to matter when changing each module.
   still requires `sales.post` and uses the same stock and credit checks as the
   invoice editor.
 - Bookings: draft, submit, approve, reject, cancel, and convert to linked draft sales invoice.
+- In booking, sales, purchase, and both return item grids, Up/Down move between existing rows without changing values. They stay in the same field when available; Enter and Add Row still create new rows.
 - On phones and tablets the booking form puts customer selection above compact
   product cards. Product selection opens a searchable dialog; each card keeps
   quantity, bonus, unit price, incentives, and line total within reach. Optional
@@ -149,8 +150,8 @@ net COGS per product, with grand totals and an optional supplier filter.
 **Supplier Purchase Value & Net Sales** lists all-time posted sales by supplier
 through today's Pakistan business date. Products appear first, showing billed,
 bonus, and returned units and **Purchase Value** (posted COGS net of return cost).
-The second table shows one row per invoice/supplier with the customer's name,
-sale date, purchase value, the full invoice total for reference, and the supplier’s
+The second table shows one row per invoice/supplier with the sale date,
+customer, invoice-level remarks, purchase value, the full invoice total, and the supplier’s
 net sale value. Supplier revenue includes its proportional share of header
 discount and tax, less posted return credits. Product and invoice purchase
 totals reconcile; full invoice totals are not added across suppliers. Excel
@@ -270,3 +271,7 @@ balances. PDFs render the same negative values in red with a printable guide.
 ## PDFs and documents
 
 - Purchase invoice, sales invoice, statements, sales net position, financial position, executive dashboard, samples, and generic reports use Blade PDF views under `resources/views/pdf/`.
+- The sales invoice summary and net-position PDF show original stock out as
+  billed plus bonus units. A sales return can restore either or both. Bonus
+  returns reverse COGS but issue no customer credit. An invoice is fully
+  returned only once all billed and bonus units have been returned.

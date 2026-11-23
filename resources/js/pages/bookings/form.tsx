@@ -271,6 +271,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
         rowCount: rows.length,
         colCount: COL_COUNT,
         enterOrder: ENTER_ORDER,
+        appendOnArrowDown: false,
         onAppendRow: () => setRows((r) => [...r, emptyRow()]),
         onDeleteRow: (row) => setRows((r) => (r.length === 1 ? [emptyRow()] : r.filter((_, i) => i !== row))),
         onInsertRow: (row) => setRows((r) => { const c = [...r]; c.splice(row + 1, 0, emptyRow()); return c; }),
@@ -636,6 +637,8 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                     <h3 className="min-w-0 flex-1 break-words text-sm font-semibold">{row.product_name || 'No product recorded'}</h3>
                                                 ) : (
                                                     <Button type="button" variant="outline"
+                                                        ref={grid.registerCell(rowIndex, 0)}
+                                                        onKeyDown={(e) => grid.handleVerticalKeyDown(e, rowIndex, 0)}
                                                         aria-label={row.product_name ? `Change product ${rowIndex + 1}: ${row.product_name}` : `Select product ${rowIndex + 1}`}
                                                         aria-invalid={!!rowErrors[rowIndex]?.product_id}
                                                         onClick={() => setProductRow(rowIndex)}
@@ -671,6 +674,8 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                 <Label htmlFor={`qty-${rowIndex}`} className="text-xs text-muted-foreground">Qty</Label>
                                                 <Input
                                                     id={`qty-${rowIndex}`}
+                                                    ref={grid.registerCell(rowIndex, 1)}
+                                                    onKeyDown={(e) => grid.handleVerticalKeyDown(e, rowIndex, 1)}
                                                     type="number" min={1} inputMode="numeric" value={row.quantity} disabled={readonly}
                                                     aria-invalid={!!rowErrors[rowIndex]?.quantity}
                                                     onChange={(e) => { setCell(rowIndex, 'quantity', e.target.value); if (rowErrors[rowIndex]?.quantity) setRowError(rowIndex, 'quantity', null); }}
@@ -686,6 +691,8 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                 <Label htmlFor={`bonus-${rowIndex}`} className="text-xs text-muted-foreground">Bonus</Label>
                                                 <Input
                                                     id={`bonus-${rowIndex}`}
+                                                    ref={grid.registerCell(rowIndex, 2)}
+                                                    onKeyDown={(e) => grid.handleVerticalKeyDown(e, rowIndex, 2)}
                                                     type="number" inputMode="numeric" value={row.requested_bonus} disabled={readonly}
                                                     onChange={(e) => setCell(rowIndex, 'requested_bonus', e.target.value)}
                                                     className="text-right"
@@ -695,6 +702,8 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                 <Label htmlFor={`price-${rowIndex}`} className="text-xs text-muted-foreground">Unit price</Label>
                                                 <Input
                                                     id={`price-${rowIndex}`}
+                                                    ref={grid.registerCell(rowIndex, 4)}
+                                                    onKeyDown={(e) => grid.handleVerticalKeyDown(e, rowIndex, 4)}
                                                     type="number" inputMode="decimal" value={row.trade_price} disabled={readonly}
                                                     aria-invalid={!!rowErrors[rowIndex]?.trade_price}
                                                     onChange={(e) => { setCell(rowIndex, 'trade_price', e.target.value); if (rowErrors[rowIndex]?.trade_price) setRowError(rowIndex, 'trade_price', null); }}
@@ -729,6 +738,8 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                 {hasDiscountIncentive ? (
                                                     <Input
                                                         id={`discount-${rowIndex}`}
+                                                        ref={grid.registerCell(rowIndex, 5)}
+                                                        onKeyDown={(e) => grid.handleVerticalKeyDown(e, rowIndex, 5)}
                                                         readOnly
                                                         value={dec2(effectiveDiscountPercent(line.gross, line.discount_amount))}
                                                         className="bg-emerald-50 text-right text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
@@ -736,6 +747,8 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                 ) : (
                                                     <Input
                                                         id={`discount-${rowIndex}`}
+                                                        ref={grid.registerCell(rowIndex, 5)}
+                                                        onKeyDown={(e) => grid.handleVerticalKeyDown(e, rowIndex, 5)}
                                                         type="number" inputMode="decimal" value={row.discount_percent} disabled={readonly}
                                                         aria-invalid={!!rowErrors[rowIndex]?.discount_percent}
                                                         onChange={(e) => { setCell(rowIndex, 'discount_percent', e.target.value); if (rowErrors[rowIndex]?.discount_percent) setRowError(rowIndex, 'discount_percent', null); }}
@@ -752,6 +765,8 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                 <Label htmlFor={`gst-${rowIndex}`} className="text-xs text-muted-foreground">GST %</Label>
                                                 <Input
                                                     id={`gst-${rowIndex}`}
+                                                        ref={grid.registerCell(rowIndex, 6)}
+                                                        onKeyDown={(e) => grid.handleVerticalKeyDown(e, rowIndex, 6)}
                                                     aria-invalid={!!rowErrors[rowIndex]?.gst_percent}
                                                     type="number" inputMode="decimal" value={row.gst_percent} disabled={readonly}
                                                     onChange={(e) => { setCell(rowIndex, 'gst_percent', e.target.value); if (rowErrors[rowIndex]?.gst_percent) setRowError(rowIndex, 'gst_percent', null); }}
@@ -767,6 +782,8 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                             <div className="mt-2">
                                                 <Label htmlFor={`remarks-${rowIndex}`} className="text-xs text-muted-foreground">Remarks</Label>
                                                 <Input id={`remarks-${rowIndex}`} value={row.remarks} placeholder="Add a note (optional)"
+                                                    ref={grid.registerCell(rowIndex, 7)}
+                                                    onKeyDown={(e) => grid.handleVerticalKeyDown(e, rowIndex, 7)}
                                                     onChange={(e) => setCell(rowIndex, 'remarks', e.target.value)} />
                                             </div>
                                             <InputError message={rowErrors[rowIndex]?.discount_percent || rowErrors[rowIndex]?.gst_percent || rowErrors[rowIndex]?.remarks} className="mt-1 text-xs" />
@@ -788,6 +805,8 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                 {!readonly && (
                                                     <Button
                                                         type="button" variant="outline" size="sm"
+                                                        ref={grid.registerCell(rowIndex, 3)}
+                                                        onKeyDown={(e) => grid.handleVerticalKeyDown(e, rowIndex, 3)}
                                                         className="h-11"
                                                         onClick={() => { setActiveRow(rowIndex); setRuleOpen(true); }}
                                                     >

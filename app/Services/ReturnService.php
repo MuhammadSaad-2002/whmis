@@ -6,6 +6,7 @@ use App\Models\PurchaseInvoice;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnItem;
 use App\Models\SalesInvoice;
+use App\Models\SalesInvoiceItem;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnItem;
 use App\Models\StockMovement;
@@ -14,8 +15,7 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * Returns post immediately: stock and ledger are updated in one transaction.
- * Corrections are made with stock adjustments + manual ledger notes.
+ * Returns post immediately: stock and any customer credit are updated in one transaction.
  */
 class ReturnService
 {
@@ -27,12 +27,13 @@ class ReturnService
 
     /**
      * Sales return against a posted invoice.
-     * $lines: [['sales_invoice_item_id' => int, 'quantity' => float], ...]
+     * $lines: [['sales_invoice_item_id' => int, 'quantity' => float, 'bonus_quantity' => float], ...]
      * Refund per unit = line net ÷ billed qty, so discounts/GST return proportionally.
      */
     public function createSalesReturn(SalesInvoice $invoice, array $lines, string $date, ?string $reason = null): SalesReturn
     {
         return DB::transaction(function () use ($invoice, $lines, $date, $reason) {
+            $invoice = SalesInvoice::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             if (! $invoice->isPosted()) {
                 throw new RuntimeException('Returns can only be made against posted invoices.');
             }
@@ -51,16 +52,22 @@ class ReturnService
             $totalCost = 0.0;
 
             foreach ($lines as $line) {
-                $qty = (float) ($line['quantity'] ?? 0);
-                if ($qty <= 0) {
+                $qty = round((float) ($line['quantity'] ?? 0), 2);
+                $bonus = round((float) ($line['bonus_quantity'] ?? 0), 2);
+                if ($qty < 0 || $bonus < 0) {
+                    throw new RuntimeException('Return quantities cannot be negative.');
+                }
+                if ($qty + $bonus <= 0) {
                     continue;
                 }
 
-                $item = $invoice->items()->whereKey($line['sales_invoice_item_id'])->firstOrFail();
+                $item = $invoice->items()->with(['product' => fn ($q) => $q->withTrashed()])
+                    ->whereKey($line['sales_invoice_item_id'])->firstOrFail();
 
-                $alreadyReturned = (float) SalesReturnItem::where('sales_invoice_item_id', $item->id)
+                $previous = SalesReturnItem::where('sales_invoice_item_id', $item->id)
                     ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED))
-                    ->sum('quantity');
+                    ->selectRaw('SUM(quantity - bonus_quantity) as billed, SUM(bonus_quantity) as bonus')->first();
+                $alreadyReturned = (float) $previous->billed;
                 $returnable = (float) $item->quantity - $alreadyReturned;
                 if ($qty > $returnable + 1e-9) {
                     throw new RuntimeException(sprintf(
@@ -73,30 +80,37 @@ class ReturnService
                     ));
                 }
 
+                $bonusReturnable = (float) $item->bonus_quantity - (float) $previous->bonus;
+                if ($bonus > $bonusReturnable + 1e-9) {
+                    throw new RuntimeException("Cannot return {$bonus} bonus units of {$item->product->name}: only {$bonusReturnable} bonus units returnable.");
+                }
+
                 $unitPrice = (float) $item->quantity > 0
                     ? round((float) $item->net_amount / (float) $item->quantity, 4)
                     : 0.0;
 
-                // Restore stock to the batches this invoice consumed for this
-                // product, capped per batch by (consumed − previously returned).
-                $allocations = $this->restoreToConsumedBatches($invoice, $item->product_id, $qty, $return);
+                foreach ([[false, $qty], [true, $bonus]] as [$isBonus, $units]) {
+                    if ($units <= 0) continue;
 
-                foreach ($allocations as $allocation) {
-                    $refund = round($allocation['quantity'] * $unitPrice, 2);
-                    $cost = round($allocation['quantity'] * (float) $allocation['batch']->effective_cost, 4);
+                    foreach ($this->restoreToConsumedBatches($invoice, $item, $units, $return, $isBonus) as $allocation) {
+                        $price = $isBonus ? 0 : $unitPrice;
+                        $refund = round($allocation['quantity'] * $price, 2);
+                        $cost = round($allocation['quantity'] * $allocation['unit_cost'], 4);
 
-                    $return->items()->create([
-                        'sales_invoice_item_id' => $item->id,
-                        'product_id' => $item->product_id,
-                        'batch_id' => $allocation['batch']->id,
-                        'quantity' => $allocation['quantity'],
-                        'unit_price' => $unitPrice,
-                        'net_amount' => $refund,
-                        'cost_amount' => $cost,
-                    ]);
+                        $return->items()->create([
+                            'sales_invoice_item_id' => $item->id,
+                            'product_id' => $item->product_id,
+                            'batch_id' => $allocation['batch']->id,
+                            'quantity' => $allocation['quantity'],
+                            'bonus_quantity' => $isBonus ? $allocation['quantity'] : 0,
+                            'unit_price' => $price,
+                            'net_amount' => $refund,
+                            'cost_amount' => $cost,
+                        ]);
 
-                    $totalRefund += $refund;
-                    $totalCost += $cost;
+                        $totalRefund += $refund;
+                        $totalCost += $cost;
+                    }
                 }
             }
 
@@ -109,15 +123,12 @@ class ReturnService
                 'total_cost' => round($totalCost, 2),
             ]);
 
-            $this->ledger->post(
-                $invoice->customer,
-                'credit_note',
-                $date,
-                0,
-                round($totalRefund, 2),
-                $return,
-                "Credit Note {$return->return_number} against {$invoice->invoice_number}",
-            );
+            if (round($totalRefund, 2) > 0) {
+                $this->ledger->post(
+                    $invoice->customer, 'credit_note', $date, 0, $totalRefund, $return,
+                    "Credit Note {$return->return_number} against {$invoice->invoice_number}",
+                );
+            }
 
             return $return->refresh();
         });
@@ -125,13 +136,15 @@ class ReturnService
 
     /**
      * Reverse a posted sales return: remove the restored stock (inverse of the
-     * batch restore) and post an opposite debit_note to re-raise the receivable.
+     * batch restore) and reverse any credit note to re-raise the receivable.
      * The return row is kept for audit, flagged cancelled, and dropped from all
      * netting/capacity math.
      */
     public function cancelSalesReturn(SalesReturn $return): SalesReturn
     {
         return DB::transaction(function () use ($return) {
+            SalesInvoice::whereKey($return->sales_invoice_id)->lockForUpdate()->firstOrFail();
+            $return = SalesReturn::whereKey($return->id)->lockForUpdate()->firstOrFail();
             if (! $return->isPosted()) {
                 throw new RuntimeException('Only a posted return can be cancelled.');
             }
@@ -145,15 +158,12 @@ class ReturnService
             }
 
             // Opposite of the credit note posted on create — receivable goes back up.
-            $this->ledger->post(
-                $return->customer,
-                'debit_note',
-                now()->toDateString(),
-                round((float) $return->total_amount, 2),
-                0,
-                $return,
-                "Reversal of Credit Note {$return->return_number}",
-            );
+            if ((float) $return->total_amount > 0) {
+                $this->ledger->post(
+                    $return->customer, 'debit_note', now()->toDateString(), (float) $return->total_amount, 0, $return,
+                    "Reversal of Credit Note {$return->return_number}",
+                );
+            }
 
             $return->update([
                 'status' => SalesReturn::STATUS_CANCELLED,
@@ -255,14 +265,15 @@ class ReturnService
     }
 
     /**
-     * @return array<array{batch: Batch, quantity: float}>
+     * @return array<array{batch: \App\Models\Batch, quantity: float, unit_cost: float}>
      */
-    private function restoreToConsumedBatches(SalesInvoice $invoice, int $productId, float $qty, SalesReturn $return): array
+    private function restoreToConsumedBatches(SalesInvoice $invoice, SalesInvoiceItem $item, float $qty, SalesReturn $return, bool $isBonus): array
     {
         $movements = StockMovement::where('reference_type', $invoice->getMorphClass())
             ->where('reference_id', $invoice->id)
             ->where('type', 'sale')
-            ->where('product_id', $productId)
+            ->where('product_id', $item->product_id)
+            ->with('batch')
             ->orderBy('id')
             ->get();
 
@@ -270,40 +281,62 @@ class ReturnService
             throw new RuntimeException('No stock movements found for this invoice line.');
         }
 
-        // Capacity per batch = consumed − already restored by earlier returns.
+        // Reconstruct a line's part of the ordered product movements. Posting
+        // consumes each line's billed units first, then its bonus units.
+        $offset = 0.0;
+        foreach ($invoice->items->where('product_id', $item->product_id) as $invoiceItem) {
+            if ($invoiceItem->id === $item->id) break;
+            $offset += (float) $invoiceItem->quantity + (float) $invoiceItem->bonus_quantity;
+        }
+        $start = $offset + ($isBonus ? (float) $item->quantity : 0);
+        $end = $start + (float) ($isBonus ? $item->bonus_quantity : $item->quantity);
+        $position = 0.0;
+        $eligible = [];
+        foreach ($movements as $movement) {
+            $next = $position + abs((float) $movement->quantity);
+            $overlap = min($next, $end) - max($position, $start);
+            if ($overlap > 1e-9) {
+                $batchId = $movement->batch_id;
+                $eligible[$batchId] ??= ['movement' => $movement, 'quantity' => 0.0];
+                $eligible[$batchId]['quantity'] += $overlap;
+            }
+            $position = $next;
+        }
+
+        // Both the original line/category capacity and the total physical batch
+        // capacity must hold, including historical billed-only returns.
         $restored = SalesReturnItem::query()
             ->whereHas('salesReturn', fn ($q) => $q->where('sales_invoice_id', $invoice->id)
                 ->where('status', SalesReturn::STATUS_POSTED))
-            ->where('product_id', $productId)
-            ->selectRaw('batch_id, SUM(quantity) as total')
-            ->groupBy('batch_id')
-            ->pluck('total', 'batch_id');
+            ->where('product_id', $item->product_id)
+            ->selectRaw('batch_id, sales_invoice_item_id, SUM(quantity) as total, SUM(bonus_quantity) as bonus')
+            ->groupBy('batch_id', 'sales_invoice_item_id')->get()->groupBy('batch_id');
+        $consumed = $movements->groupBy('batch_id');
 
         $remaining = $qty;
         $allocations = [];
 
-        foreach ($movements as $movement) {
+        foreach ($eligible as $batchId => $allocation) {
             if ($remaining <= 0) {
                 break;
             }
 
-            $consumed = abs((float) $movement->quantity);
-            $capacity = $consumed - (float) ($restored[$movement->batch_id] ?? 0);
-            // Account for capacity already used within this same return call.
-            foreach ($allocations as $allocation) {
-                if ($allocation['batch']->id === $movement->batch_id) {
-                    $capacity -= $allocation['quantity'];
-                }
-            }
-            if ($capacity <= 0) {
+            $previous = $restored->get($batchId, collect());
+            $previousLine = $previous->firstWhere('sales_invoice_item_id', $item->id);
+            $previousBonus = (float) ($previousLine?->bonus ?? 0);
+            $previousOfKind = $isBonus ? $previousBonus : (float) ($previousLine?->total ?? 0) - $previousBonus;
+            $capacity = min($allocation['quantity'] - $previousOfKind,
+                abs((float) $consumed[$batchId]->sum('quantity')) - (float) $previous->sum('total'));
+            if ($capacity <= 1e-9) {
                 continue;
             }
 
             $take = min($capacity, $remaining);
+            $movement = $allocation['movement'];
             $batch = $movement->batch;
             $this->inventory->returnToBatch($batch, $take, $return);
 
-            $allocations[] = ['batch' => $batch, 'quantity' => $take];
+            $allocations[] = ['batch' => $batch, 'quantity' => $take, 'unit_cost' => (float) $movement->unit_cost];
             $remaining -= $take;
         }
 

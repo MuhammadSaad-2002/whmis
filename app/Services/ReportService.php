@@ -249,7 +249,7 @@ class ReportService
             ->whereHas('invoiceItem.invoice', fn ($q) => $q->where('status', 'posted')
                 ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to))
             ->when($companyId, fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id)))
-            ->selectRaw('product_id, SUM(quantity) AS quantity, SUM(net_amount) AS net_amount, SUM(cost_amount) AS cost_amount')
+            ->selectRaw('product_id, SUM(quantity - bonus_quantity) AS quantity, SUM(bonus_quantity) AS bonus_quantity, SUM(net_amount) AS net_amount, SUM(cost_amount) AS cost_amount')
             ->groupBy('product_id')->toBase()->get()->keyBy('product_id');
 
         $ids = $sold->keys()->merge($returned->keys())->unique();
@@ -273,6 +273,7 @@ class ReportService
                 'qty' => $grossQty,
                 'bonus' => (float) ($soldGroup->bonus_quantity ?? 0),
                 'returned_qty' => $retQty,
+                'bonus_returned' => (float) ($retGroup->bonus_quantity ?? 0),
                 'net_qty' => round($grossQty - $retQty, 2),
                 'revenue' => round($grossRev, 2),
                 'returns' => round($retRev, 2),
@@ -290,7 +291,8 @@ class ReportService
                 ['key' => 'supplier', 'label' => 'Supplier'],
                 ['key' => 'qty', 'label' => 'Qty Sold', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'bonus', 'label' => 'Bonus Given', 'align' => 'right', 'format' => 'qty'],
-                ['key' => 'returned_qty', 'label' => 'Qty Returned', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'returned_qty', 'label' => 'Billed Qty Returned', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'bonus_returned', 'label' => 'Bonus Returned', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'net_qty', 'label' => 'Net Qty', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'revenue', 'label' => 'Gross Revenue', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'returns', 'label' => 'Returns', 'align' => 'right', 'format' => 'money'],
@@ -305,6 +307,7 @@ class ReportService
                 'qty' => (float) $rows->sum('qty'),
                 'bonus' => (float) $rows->sum('bonus'),
                 'returned_qty' => (float) $rows->sum('returned_qty'),
+                'bonus_returned' => (float) $rows->sum('bonus_returned'),
                 'net_qty' => (float) $rows->sum('net_qty'),
                 'revenue' => (float) $rows->sum('revenue'),
                 'returns' => (float) $rows->sum('returns'),
@@ -343,7 +346,8 @@ class ReportService
             $returnGroup = $returned[$productId] ?? collect();
             $product = ($soldGroup->first() ?? $returnGroup->first())->product;
             $grossQty = (float) $soldGroup->sum('quantity');
-            $returnedQty = (float) $returnGroup->sum('quantity');
+            $returnedBonus = (float) $returnGroup->sum('bonus_quantity');
+            $returnedQty = (float) $returnGroup->sum('quantity') - $returnedBonus;
             $grossCogs = (float) $soldGroup->sum('cost_amount');
             $returnCogs = (float) $returnGroup->sum('cost_amount');
 
@@ -353,6 +357,7 @@ class ReportService
                 'qty_sold' => round($grossQty, 2),
                 'bonus_given' => round((float) $soldGroup->sum('bonus_quantity'), 2),
                 'qty_returned' => round($returnedQty, 2),
+                'bonus_returned' => round($returnedBonus, 2),
                 'net_qty_sold' => round($grossQty - $returnedQty, 2),
                 'gross_cogs' => round($grossCogs, 2),
                 'return_cogs' => round($returnCogs, 2),
@@ -366,7 +371,8 @@ class ReportService
                 ['key' => 'supplier', 'label' => 'Supplier'],
                 ['key' => 'qty_sold', 'label' => 'Qty Sold', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'bonus_given', 'label' => 'Bonus Given', 'align' => 'right', 'format' => 'qty'],
-                ['key' => 'qty_returned', 'label' => 'Qty Returned', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'qty_returned', 'label' => 'Billed Qty Returned', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'bonus_returned', 'label' => 'Bonus Returned', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'net_qty_sold', 'label' => 'Net Qty Sold', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'gross_cogs', 'label' => 'Gross COGS', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'return_cogs', 'label' => 'Return COGS', 'align' => 'right', 'format' => 'money'],
@@ -377,6 +383,7 @@ class ReportService
                 'qty_sold' => (float) $rows->sum('qty_sold'),
                 'bonus_given' => (float) $rows->sum('bonus_given'),
                 'qty_returned' => (float) $rows->sum('qty_returned'),
+                'bonus_returned' => (float) $rows->sum('bonus_returned'),
                 'net_qty_sold' => (float) $rows->sum('net_qty_sold'),
                 'gross_cogs' => (float) $rows->sum('gross_cogs'),
                 'return_cogs' => (float) $rows->sum('return_cogs'),
@@ -393,7 +400,7 @@ class ReportService
      * still costed in InvoicePostingService::postSale). So profit = net revenue −
      * COGS of every unit shipped, and the free bonus units correctly pull profit
      * down — they are never treated as zero-cost. Returns are netted by their own
-     * return_date bucket (bonus is not netted; returns rarely carry bonus units).
+     * return_date bucket, with billed and bonus quantities netted separately.
      */
     private function productSalesDaily(Carbon $from, Carbon $to, array $filters): array
     {
@@ -440,13 +447,14 @@ class ReportService
                 // Same netting the other profit reports use: return profit is
                 // (retRev − retCost), removed from the day's sale profit.
                 $profit = round((float) $soldGroup->sum('profit') - ($retRev - $retCost), 2);
+                $returnedBonus = (float) $retGroup->sum('bonus_quantity');
 
                 return [
                     'date' => $date,
                     'product' => $product?->name,
                     'supplier' => $product?->company?->name,
-                    'qty' => round((float) $soldGroup->sum('quantity') - (float) $retGroup->sum('quantity'), 2),
-                    'bonus' => (float) $soldGroup->sum('bonus_quantity'),
+                    'qty' => round((float) $soldGroup->sum('quantity') - ((float) $retGroup->sum('quantity') - $returnedBonus), 2),
+                    'bonus' => round((float) $soldGroup->sum('bonus_quantity') - $returnedBonus, 2),
                     'revenue' => $revenue,
                     'cost' => $cost,
                     'profit' => $profit,
@@ -464,7 +472,7 @@ class ReportService
                 ['key' => 'product', 'label' => 'Product'],
                 ['key' => 'supplier', 'label' => 'Supplier'],
                 ['key' => 'qty', 'label' => 'Qty', 'align' => 'right', 'format' => 'qty'],
-                ['key' => 'bonus', 'label' => 'Bonus', 'align' => 'right', 'format' => 'qty'],
+                ['key' => 'bonus', 'label' => 'Net Bonus', 'align' => 'right', 'format' => 'qty'],
                 ['key' => 'revenue', 'label' => 'Revenue', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'cost', 'label' => 'Cost', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'profit', 'label' => 'Profit', 'align' => 'right', 'format' => 'money'],

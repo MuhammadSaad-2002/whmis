@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 use OwenIt\Auditing\Auditable;
 use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
 
@@ -70,7 +71,7 @@ class SalesInvoice extends Model implements AuditableContract
 
     public function items(): HasMany
     {
-        return $this->hasMany(SalesInvoiceItem::class)->orderBy('sort_order');
+        return $this->hasMany(SalesInvoiceItem::class)->orderBy('sort_order')->orderBy('id');
     }
 
     public function creator(): BelongsTo
@@ -101,7 +102,7 @@ class SalesInvoice extends Model implements AuditableContract
 
     /**
      * Derived return lifecycle — computed from posted returns, never stored.
-     * Keys off quantity so header-level discount/GST can't distort it.
+     * Keys off physical quantity (billed + bonus), not the credit amount.
      */
     protected function returnStatus(): Attribute
     {
@@ -114,7 +115,7 @@ class SalesInvoice extends Model implements AuditableContract
                 return self::RETURN_NONE;
             }
 
-            $soldQty = (float) $this->items()->sum('quantity');
+            $soldQty = (float) $this->items()->sum(DB::raw('quantity + bonus_quantity'));
 
             return $returnedQty + 1e-9 >= $soldQty
                 ? self::RETURN_FULL

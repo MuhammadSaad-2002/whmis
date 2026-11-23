@@ -13,24 +13,27 @@ export interface ReturnableLine {
     company: string | null;
     batch_number: string | null;
     returnable: number;
+    bonus_returnable?: number;
     unit_amount: number; // refund/unit (sales) | rate (purchase)
 }
 
 export interface ReturnRow {
     line_id: string;
     qty: string;
+    bonus_qty?: string;
 }
 
 export const emptyReturnRow = (): ReturnRow => ({ line_id: '', qty: '' });
 
 const labelFor = (l: ReturnableLine) =>
-    `${l.product}${l.company ? ` · ${l.company}` : ''}${l.batch_number ? ` · ${l.batch_number}` : ''} · ${fmtQty(l.returnable)} left`;
+    `${l.product}${l.company ? ` · ${l.company}` : ''}${l.batch_number ? ` · ${l.batch_number}` : ''} · ${fmtQty(l.returnable)}${l.bonus_returnable ? ` + ${fmtQty(l.bonus_returnable)} bonus` : ''} left`;
 
 interface Props {
     lines: ReturnableLine[];
     rows: ReturnRow[];
     setRows: React.Dispatch<React.SetStateAction<ReturnRow[]>>;
     amountHeader?: string;
+    showBonus?: boolean;
 }
 
 /**
@@ -38,15 +41,16 @@ interface Props {
  * invoice forms. The product cell is a dropdown limited to the invoice's
  * returnable lines; qty is capped at the returnable amount.
  */
-export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount' }: Props) {
+export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount', showBonus = false }: Props) {
     const lineById = new Map(lines.map((l) => [String(l.line_id), l]));
     const chosen = new Set(rows.map((r) => r.line_id).filter(Boolean));
     const [searchSignal, setSearchSignal] = useState({ row: -1, n: 0 });
 
     const grid = useKeyboardGrid({
+        appendOnArrowDown: false,
         rowCount: rows.length,
-        colCount: 2,
-        enterOrder: [0, 1],
+        colCount: showBonus ? 3 : 2,
+        enterOrder: showBonus ? [0, 1, 2] : [0, 1],
         onAppendRow: () => setRows((r) => [...r, emptyReturnRow()]),
         onDeleteRow: (row) => setRows((r) => (r.length === 1 ? [emptyReturnRow()] : r.filter((_, i) => i !== row))),
         onInsertRow: (row) => setRows((r) => { const c = [...r]; c.splice(row + 1, 0, emptyReturnRow()); return c; }),
@@ -68,14 +72,15 @@ export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount' }: Pr
     return (
         <div className="rounded-xl border">
             <div className="max-h-[55dvh] overflow-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className={`w-full text-sm ${showBonus ? 'min-w-[860px]' : 'min-w-[760px]'}`}>
                 <thead className="sticky top-0 z-10 bg-muted text-xs uppercase">
                     <tr className="[&>th]:border-b [&>th]:px-2 [&>th]:py-2 [&>th]:text-left">
                         <th className="w-8">#</th>
                         <th className="min-w-64">Product</th>
                         <th className="w-28">Batch</th>
                         <th className="w-24 text-right">Returnable</th>
-                        <th className="w-24 text-right">Return Qty</th>
+                        <th className="w-24 text-right">{showBonus ? 'Billed Return' : 'Return Qty'}</th>
+                        {showBonus && <th className="w-24 text-right">Bonus Return</th>}
                         <th className="w-28 text-right">{amountHeader}</th>
                         <th className="w-10" />
                     </tr>
@@ -87,7 +92,9 @@ export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount' }: Pr
                             .filter((l) => !chosen.has(String(l.line_id)) || String(l.line_id) === row.line_id)
                             .map((l) => ({ value: String(l.line_id), label: labelFor(l) }));
                         const q = toNumber(row.qty);
+                        const bonusLimit = line?.bonus_returnable ?? 0;
                         const over = !!line && q > line.returnable + 1e-9;
+                        const bonusOver = toNumber(row.bonus_qty ?? '') > bonusLimit + 1e-9;
                         const lineAmount = line ? q * line.unit_amount : 0;
                         return (
                             <tr key={i} className="border-b last:border-0 [&>td]:border-r [&>td]:p-0 [&>td:last-child]:border-r-0">
@@ -99,17 +106,19 @@ export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount' }: Pr
                                         openSignal={searchSignal.row === i ? searchSignal.n : 0}
                                         inputRef={grid.registerCell(i, 0)}
                                         onGridKeyDown={(e) => grid.handleKeyDown(e, i, 0)}
-                                        onSelect={(v) => setRow(i, { line_id: v })}
+                                        onSelect={(v) => setRow(i, v === row.line_id ? { line_id: v } : { line_id: v, qty: '', bonus_qty: '' })}
                                     />
                                 </td>
                                 <td className="px-2 text-sm">{line?.batch_number ?? '—'}</td>
-                                <td className="px-2 text-right tabular-nums">{line ? fmtQty(line.returnable) : ''}</td>
+                                <td className="px-2 text-right tabular-nums">{line ? fmtQty(line.returnable) : ''}{bonusLimit > 0 && <div className="text-xs text-muted-foreground">+ {fmtQty(bonusLimit)} bonus</div>}</td>
                                 <td>
                                     <Input
                                         ref={grid.registerCell(i, 1) as never}
                                         type="number"
                                         min={0}
+                                        step="0.01"
                                         max={line?.returnable}
+                                        aria-label={showBonus ? `Billed return quantity, row ${i + 1}` : `Return quantity, row ${i + 1}`}
                                         value={row.qty}
                                         placeholder="0"
                                         onChange={(e) => setRow(i, { qty: e.target.value })}
@@ -118,6 +127,22 @@ export function ReturnGrid({ lines, rows, setRows, amountHeader = 'Amount' }: Pr
                                         className={`h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1 ${over ? 'bg-destructive/10 ring-1 ring-destructive' : ''}`}
                                     />
                                 </td>
+                                {showBonus && <td>
+                                    <Input
+                                        ref={grid.registerCell(i, 2) as never}
+                                        type="number"
+                                        min={0}
+                                        step="0.01"
+                                        max={bonusLimit}
+                                        aria-label={`Bonus return quantity, row ${i + 1}`}
+                                        value={row.bonus_qty ?? ''}
+                                        placeholder="0"
+                                        onChange={(e) => setRow(i, { bonus_qty: e.target.value })}
+                                        onKeyDown={(e) => grid.handleKeyDown(e, i, 2)}
+                                        title={bonusOver ? 'Bonus return quantity exceeds returnable.' : undefined}
+                                        className={`h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1 ${bonusOver ? 'bg-destructive/10 ring-1 ring-destructive' : ''}`}
+                                    />
+                                </td>}
                                 <td className="px-2 text-right tabular-nums">{amount(lineAmount)}</td>
                                 <td className="px-1 text-center">
                                     <button type="button" tabIndex={-1} onClick={() => removeRow(i)}>

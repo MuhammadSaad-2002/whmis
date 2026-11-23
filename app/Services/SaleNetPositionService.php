@@ -25,7 +25,8 @@ class SaleNetPositionService
 
         $original = [
             'amount' => (float) $invoice->total_amount,
-            'qty' => (float) $invoice->items->sum(fn ($i) => (float) $i->quantity),
+            // Match the stock taken out at posting, including free bonus units.
+            'qty' => (float) $invoice->items->sum(fn ($i) => (float) $i->quantity + (float) $i->bonus_quantity),
             'discount' => (float) $invoice->item_discount_total + (float) $invoice->discount_amount,
             'tax' => (float) $invoice->item_gst_total + (float) $invoice->gst_amount,
             'receivable' => (float) $invoice->total_amount,
@@ -84,7 +85,7 @@ class SaleNetPositionService
 
             $orig = $item->invoiceItem;
             if ($orig && (float) $orig->quantity > 0) {
-                $proportion = (float) $item->quantity / (float) $orig->quantity;
+                $proportion = ((float) $item->quantity - (float) $item->bonus_quantity) / (float) $orig->quantity;
                 $discount += (float) $orig->discount_amount * $proportion;
                 $tax += (float) $orig->gst_amount * $proportion;
             }

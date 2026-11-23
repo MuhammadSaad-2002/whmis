@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\{Company, Customer, Product, PurchaseInvoice, SalesInvoice, User};
-use App\Services\{InvoicePostingService, ReportService, ReturnService, SupplierPurchaseValueReport};
+use App\Services\{InvoicePostingService, ReportPdfRenderer, ReportService, ReturnService, SupplierPurchaseValueReport};
 use Database\Seeders\{RolePermissionSeeder, SystemSeeder};
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -14,6 +14,8 @@ use Tests\TestCase;
 class SupplierPurchaseValueReportTest extends TestCase
 {
     use RefreshDatabase;
+
+    private const REMARKS = 'MP INV:11428 & Gate B';
 
     private Company $supplier;
     private Company $otherSupplier;
@@ -35,10 +37,11 @@ class SupplierPurchaseValueReportTest extends TestCase
         $this->sale = SalesInvoice::create([
             'invoice_number' => 'SI-MIXED', 'customer_id' => $customer->id, 'warehouse_id' => 1,
             'invoice_date' => '2023-09-10', 'sale_type' => 'credit', 'discount_percent' => 10, 'gst_percent' => 10,
+            'notes' => self::REMARKS,
         ]);
         $this->sale->items()->create([
             'product_id' => $this->product->id, 'quantity' => 3, 'bonus_quantity' => 1,
-            'trade_price' => 100, 'discount_percent' => 10,
+            'trade_price' => 100, 'discount_percent' => 10, 'remarks' => 'Line-level remark',
         ]);
         $this->sale->items()->create([
             'product_id' => $this->otherProduct->id, 'quantity' => 2, 'bonus_quantity' => 1, 'trade_price' => 150,
@@ -70,12 +73,15 @@ class SupplierPurchaseValueReportTest extends TestCase
         $this->get(route('reports.show', ['key' => SupplierPurchaseValueReport::KEY, 'company_id' => $this->supplier->id]))
             ->assertOk()->assertInertia(fn (Assert $page) => $page
                 ->has('rows', 1)->where('rows.0.product', 'Alpha Product')
-                ->where('columns.1.key', 'qty_sold')->where('sections.0.columns.3.key', 'purchase_value')
+                ->where('columns.1.key', 'qty_sold')
+                ->where('sections.0.columns.2.key', 'customer')->where('sections.0.columns.3.label', 'Remarks')
+                ->where('sections.0.columns.4.key', 'purchase_value')
                 ->where('rows.0.qty_sold', 3)->where('rows.0.bonus_qty', 1)
                 ->where('rows.0.returned_qty', 1)->where('rows.0.net_units', 3)
                 ->where('totals.purchase_value', 90)
                 ->has('sections.0.rows', 1)
                 ->where('sections.0.rows.0.customer', 'City Pharmacy')
+                ->where('sections.0.rows.0.remarks', self::REMARKS)
                 ->where('sections.0.rows.0.invoice_number', 'SI-MIXED')
                 ->where('sections.0.rows.0.invoice_date', '2023-09-10')
                 ->where('sections.0.rows.0.invoice_total', 564.3)
@@ -92,6 +98,8 @@ class SupplierPurchaseValueReportTest extends TestCase
         $this->assertCount(2, $all['sections'][0]['rows']);
         $this->assertContains('supplier', array_column($all['columns'], 'key'));
         $this->assertContains('supplier', array_column($all['sections'][0]['columns'], 'key'));
+        $this->assertSame(['customer', 'remarks', 'supplier'], array_slice(array_column($all['sections'][0]['columns'], 'key'), 2, 3));
+        $this->assertSame([self::REMARKS, self::REMARKS], array_column($all['sections'][0]['rows'], 'remarks'));
         $this->assertEquals(240, $all['totals']['purchase_value']);
         $this->assertEquals(240, $all['sections'][0]['totals']['purchase_value']);
         $this->assertEquals(474.30, $all['sections'][0]['totals']['net_sale_value']);
@@ -116,10 +124,17 @@ class SupplierPurchaseValueReportTest extends TestCase
         $this->assertEquals($data['totals']['purchase_value'], $data['sections'][0]['totals']['purchase_value']);
         $this->assertEquals(20.01, $data['sections'][0]['rows'][1]['purchase_value']);
         $this->assertEquals(0.01, $data['sections'][0]['rows'][1]['net_sale_value']);
+        $this->assertNull($data['sections'][0]['rows'][1]['remarks']);
     }
 
     public function test_exports_render_the_invoice_totals_and_end_with_the_profit_summary(): void
     {
+        $invoice = SalesInvoice::create([
+            'invoice_number' => 'SI-NUMBER-REMARK', 'customer_id' => $this->sale->customer_id,
+            'warehouse_id' => 1, 'invoice_date' => '2026-11-24', 'status' => 'posted', 'notes' => '+11428',
+        ]);
+        $invoice->items()->create(['product_id' => $this->product->id, 'quantity' => 1]);
+
         $params = ['key' => SupplierPurchaseValueReport::KEY, 'company_id' => $this->supplier->id];
         $this->get(route('reports.show', $params + ['format' => 'pdf']))->assertOk()->assertHeader('content-type', 'application/pdf');
         $response = $this->get(route('reports.show', $params + ['format' => 'xlsx']))
@@ -129,12 +144,25 @@ class SupplierPurchaseValueReportTest extends TestCase
         $labels = array_column($values, 0);
         $this->assertContains('Products by Supplier', $labels);
         $this->assertContains('Sales Invoices by Supplier', $labels);
-        $this->assertContains('SI-MIXED', $labels);
+        $invoiceRow = array_search('SI-MIXED', $labels, true);
+        $this->assertNotFalse($invoiceRow);
+        $this->assertSame(['Customer', 'Remarks', 'Purchase Value'], array_slice($values[$invoiceRow - 1], 2, 3));
+        $this->assertSame(self::REMARKS, $values[$invoiceRow][3]);
+        $this->assertSame('+11428', $values[$invoiceRow + 1][3]);
+        $this->assertTrue($sheet->getStyle('D'.($invoiceRow + 1))->getAlignment()->getWrapText());
         $this->assertNotContains('Supplier', array_merge(...$values));
         $this->assertSame('Summary', $values[count($values) - 5][0]);
         $lastRows = array_slice($values, -3);
         $this->assertSame(['Total Purchase Value', 'Total Net Sale Value', 'Gross Profit'], array_column($lastRows, 0));
         $this->assertEquals([120, 267.3, 147.3], array_column($lastRows, 1));
+
+        $data = app(SupplierPurchaseValueReport::class)->build($this->supplier->id);
+        $pdf = app(ReportPdfRenderer::class)->render($data + [
+            'title' => 'Supplier Purchase Value & Net Sales', 'filters' => [],
+        ], 'landscape')->output(['compress' => false]);
+        $this->assertTrue(str_contains($pdf, mb_convert_encoding('REMARKS', 'UTF-16BE', 'UTF-8')), 'PDF draws the Remarks heading.');
+        $this->assertTrue(str_contains($pdf, mb_convert_encoding(self::REMARKS, 'UTF-16BE', 'UTF-8')), 'PDF draws the invoice-level remarks.');
+        $this->assertFalse(str_contains($pdf, mb_convert_encoding('Line-level remark', 'UTF-16BE', 'UTF-8')), 'PDF excludes line-level remarks.');
     }
 
     private function receiveProduct(Company $company, string $name, float $cost): Product

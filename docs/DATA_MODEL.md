@@ -53,6 +53,10 @@ These timestamps have no stock, ledger, or calculation effects.
 - Sales: `sales_invoices`, `sales_invoice_items`, and incentive snapshot rows.
 - Bookings: `bookings`, `booking_items`, and booking incentive snapshot rows.
 - Returns: `sales_returns`, `sales_return_items`, `purchase_returns`, and `purchase_return_items`.
+  Sales-return item `quantity` is total physical units restored; `bonus_quantity`
+  is the free portion (defaults to zero for historical returns). Apply the
+  matching [manual SQL](../database/manual/2026_11_24_add_bonus_quantity_to_sales_return_items.sql)
+  or the Laravel migration before deploying.
 - Samples: `sample_receipts`, `sample_receipt_items`, `sample_issues`, and `sample_issue_items`.
 - Loans: `stock_loans` and `stock_loan_items`.
 - Loan-out outside-party people are stored as text fields on `stock_loans`;
@@ -80,7 +84,9 @@ These timestamps have no stock, ledger, or calculation effects.
 - Purchase bonus quantity dilutes `batches.effective_cost`.
 - Sales consume FIFO by earliest expiry then id unless a batch is selected.
 - Samples and loan stock are segregated through batch flags.
-- Sales returns restore stock to consumed batches, capped by consumed minus already returned quantities.
+- Sales returns restore billed and bonus units to consumed batches, with
+  independent return limits by invoice line. Reports reverse COGS using the
+  original sale movement costs. Only billed returns can credit the customer.
 
 ## Ledger truth
 

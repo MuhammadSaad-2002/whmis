@@ -63,6 +63,10 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
   reported paid-plus-returned invoice, partial/cancelled returns and supplier
   returns. Unlinked supplier returns remain party credits, not invoice credits.
 - FIFO: sale posting depends on earliest expiry then id unless a batch is explicitly chosen.
+- Bonus sales returns rely on ordered, intact sale stock movements. Post and
+  cancel returns under the invoice lock. Do not cancel a sale that still has a
+  posted return; that would restore the same stock twice. Keep physical return
+  quantities separate from billed-quantity, discount and tax calculations.
 - Incentives: rules fill line fields; posting math should not special-case incentive internals.
 - Reports: netting returns, bonus quantities, sample/loan segregation, and PHP date grouping exist to keep SQLite tests and MySQL production aligned. Keep invoice-cohort reports distinct from transaction-date activity reports, and always net returned COGS with returned revenue. The Stock on Loan report uses `loan_date`, groups rows by product, includes settled loan transactions, and derives dated returns from stock movements while loan items retain aggregate quantities. Dashboard period figures and charts must use the selected range and `ReportService` math so posted credit/debit notes are deducted consistently.
 - Stock-loan return history is derived from the append-only stock movements and

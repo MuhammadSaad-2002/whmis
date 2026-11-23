@@ -79,7 +79,7 @@
         <tbody>
             @php
                 $lines = [
-                    'Amount' => 'amount', 'Quantity' => 'qty', 'Discount' => 'discount',
+                    'Amount' => 'amount', 'Stock Qty (Incl. Bonus)' => 'qty', 'Discount' => 'discount',
                     'Tax (GST)' => 'tax', 'Receivable' => 'receivable',
                 ];
             @endphp

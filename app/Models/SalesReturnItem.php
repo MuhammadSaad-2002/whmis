@@ -13,6 +13,7 @@ class SalesReturnItem extends Model
     {
         return [
             'quantity' => 'decimal:2',
+            'bonus_quantity' => 'decimal:2',
             'unit_price' => 'decimal:4',
             'net_amount' => 'decimal:2',
             'cost_amount' => 'decimal:4',

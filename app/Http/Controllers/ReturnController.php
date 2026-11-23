@@ -63,8 +63,9 @@ class ReturnController extends Controller
             'return_date' => ['required', 'date'],
             'reason' => ['nullable', 'string', 'max:255'],
             'lines' => ['required', 'array', 'min:1'],
-            'lines.*.sales_invoice_item_id' => ['required', 'integer'],
-            'lines.*.quantity' => ['required', 'numeric', 'min:0'],
+            'lines.*.sales_invoice_item_id' => ['required', 'integer', 'distinct'],
+            'lines.*.quantity' => ['required', 'numeric', 'decimal:0,2', 'min:0'],
+            'lines.*.bonus_quantity' => ['sometimes', 'required', 'numeric', 'decimal:0,2', 'min:0'],
         ]);
 
         try {
@@ -78,9 +79,11 @@ class ReturnController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
+        $effect = (float) $return->total_amount > 0 ? 'stock restored, credit note issued' : 'stock restored, no customer credit';
+
         return redirect()
             ->route('returns.sales.index')
-            ->with('success', "Return {$return->return_number} posted — stock restored, credit note issued.");
+            ->with('success', "Return {$return->return_number} posted — {$effect}.");
     }
 
     public function salesShow(SalesReturn $salesReturn)
@@ -108,7 +111,9 @@ class ReturnController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        return back()->with('success', "Return {$salesReturn->return_number} cancelled — stock withdrawn, credit note reversed.");
+        $effect = (float) $salesReturn->total_amount > 0 ? 'stock withdrawn, credit note reversed' : 'stock withdrawn';
+
+        return back()->with('success', "Return {$salesReturn->return_number} cancelled — {$effect}.");
     }
 
     public function purchaseIndex(Request $request)
@@ -202,14 +207,14 @@ class ReturnController extends Controller
     {
         abort_unless($sale->isPosted(), 422, 'Invoice is not posted.');
 
-        $sale->load(['items.product.company', 'items.batch', 'customer:id,name']);
+        $sale->load(['items.product' => fn ($q) => $q->withTrashed()->with('company'), 'items.batch', 'customer:id,name']);
 
         $returned = SalesReturnItem::query()
             ->whereIn('sales_invoice_item_id', $sale->items->pluck('id'))
             ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED))
-            ->selectRaw('sales_invoice_item_id, SUM(quantity) as total')
+            ->selectRaw('sales_invoice_item_id, SUM(quantity - bonus_quantity) as billed, SUM(bonus_quantity) as bonus')
             ->groupBy('sales_invoice_item_id')
-            ->pluck('total', 'sales_invoice_item_id');
+            ->get()->keyBy('sales_invoice_item_id');
 
         return response()->json([
             'invoice' => [
@@ -219,7 +224,8 @@ class ReturnController extends Controller
                 'invoice_date' => $sale->invoice_date->toDateString(),
             ],
             'lines' => $sale->items->map(function ($item) use ($returned) {
-                $alreadyReturned = (float) ($returned[$item->id] ?? 0);
+                $alreadyReturned = (float) ($returned->get($item->id)?->billed ?? 0);
+                $bonusReturned = (float) ($returned->get($item->id)?->bonus ?? 0);
                 $unitRefund = (float) $item->quantity > 0
                     ? round((float) $item->net_amount / (float) $item->quantity, 4)
                     : 0;
@@ -232,7 +238,8 @@ class ReturnController extends Controller
                     'batch_id' => $item->batch_id,
                     'sold_qty' => (float) $item->quantity,
                     'already_returned' => $alreadyReturned,
-                    'returnable' => (float) $item->quantity - $alreadyReturned,
+                    'returnable' => max(0, round((float) $item->quantity - $alreadyReturned, 2)),
+                    'bonus_returnable' => max(0, round((float) $item->bonus_quantity - $bonusReturned, 2)),
                     'unit_refund' => $unitRefund,
                 ];
             })->values(),

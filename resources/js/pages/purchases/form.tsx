@@ -226,6 +226,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
     );
 
     const grid = useKeyboardGrid({
+        appendOnArrowDown: false,
         rowCount: rows.length,
         colCount: COLS.length,
         enterOrder: ENTER_ORDER,

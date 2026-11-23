@@ -116,9 +116,9 @@ export default function SalesSummary({ invoice, position }: Props) {
                         <p className={`mt-1 text-sm font-medium ${status.className}`}>{status.label}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        {can('returns.manage') && position.status !== 'fully_returned' && (
+                        {can('returns.manage') && invoice.status === 'posted' && position.status !== 'fully_returned' && (
                             <Button variant="outline" size="sm" asChild>
-                                <Link href={route('returns.sales.create')}><Plus className="mr-1 size-4" /> New Return</Link>
+                                <Link href={route('returns.sales.create', { invoice_id: invoice.id })}><Plus className="mr-1 size-4" /> New Return</Link>
                             </Button>
                         )}
                         <Button variant="outline" size="sm" asChild>
@@ -271,7 +271,7 @@ export default function SalesSummary({ invoice, position }: Props) {
                                 </TableHeader>
                                 <TableBody>
                                     {netRow('Amount', 'amount', money)}
-                                    {netRow('Quantity', 'qty', qty)}
+                                    {netRow('Stock Qty (Incl. Bonus)', 'qty', qty)}
                                     {netRow('Discount', 'discount', money)}
                                     {netRow('Tax (GST)', 'tax', money)}
                                     {netRow('Receivable', 'receivable', money)}

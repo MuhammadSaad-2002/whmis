@@ -116,6 +116,46 @@ class ReturnFlowTest extends TestCase
         $service->createSalesReturn($sale, [['sales_invoice_item_id' => $item->id, 'quantity' => 6]], now()->toDateString());
     }
 
+    public function test_mixed_return_uses_the_original_billed_and_bonus_batch_costs(): void
+    {
+        $posting = app(InvoicePostingService::class);
+        $returns = app(ReturnService::class);
+        $date = now()->toDateString();
+        $purchase = PurchaseInvoice::create([
+            'invoice_number' => 'PI-FIFO', 'company_id' => $this->company->id, 'warehouse_id' => 1,
+            'invoice_date' => $date, 'purchase_type' => 'credit',
+        ]);
+        foreach (['B1' => 80, 'B2' => 120] as $batch => $rate) {
+            $purchase->items()->create(['product_id' => $this->product->id, 'batch_number' => $batch, 'quantity' => 10, 'purchase_rate' => $rate]);
+        }
+        $posting->postPurchase($purchase);
+        $secondBatch = Batch::where('batch_number', 'B2')->firstOrFail();
+        $sale = SalesInvoice::create([
+            'invoice_number' => 'SI-FIFO', 'customer_id' => $this->customer->id, 'warehouse_id' => 1,
+            'invoice_date' => $date, 'sale_type' => 'credit',
+        ]);
+        $first = $sale->items()->create(['product_id' => $this->product->id, 'quantity' => 9, 'bonus_quantity' => 3, 'trade_price' => 100]);
+        $second = $sale->items()->create(['product_id' => $this->product->id, 'batch_id' => $secondBatch->id, 'quantity' => 2, 'bonus_quantity' => 1, 'trade_price' => 100]);
+        $sale = $posting->postSale($sale);
+        // Simulate a later change to the moving-average batch cost.
+        $secondBatch->update(['effective_cost' => 190]);
+
+        $mixed = $returns->createSalesReturn($sale, [
+            ['sales_invoice_item_id' => $second->id, 'quantity' => 1, 'bonus_quantity' => 1],
+            ['sales_invoice_item_id' => $first->id, 'quantity' => 1, 'bonus_quantity' => 3],
+        ], $date);
+        $this->assertSame('200.00', $mixed->total_amount);
+        $this->assertSame('640.00', $mixed->total_cost); // 2 × 80 + 4 × 120
+        $this->assertEquals(2, $mixed->items()->where('batch_id', $secondBatch->id)->where('sales_invoice_item_id', $first->id)->sum('bonus_quantity'));
+        $other = $returns->createSalesReturn($sale, [
+            ['sales_invoice_item_id' => $first->id, 'quantity' => 8],
+            ['sales_invoice_item_id' => $second->id, 'quantity' => 1],
+        ], $date);
+        $this->assertSame('900.00', $other->total_amount);
+        $this->assertEquals($sale->total_cost, (float) $mixed->total_cost + (float) $other->total_cost);
+        $this->assertEquals(20, Batch::sum('qty_available'));
+    }
+
     public function test_sales_return_requires_posted_invoice(): void
     {
         $draft = SalesInvoice::create([
