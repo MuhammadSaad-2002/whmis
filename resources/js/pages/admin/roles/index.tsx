@@ -153,7 +153,7 @@ export default function RolesIndex({ roles, permissionGroups }: Props) {
                                     <div key={module} className="rounded-md border p-3">
                                         <label className="mb-2 flex items-center gap-2 font-medium capitalize">
                                             <Checkbox checked={allOn} onCheckedChange={(v) => toggleModule(perms, !!v)} disabled={isSuperAdmin} />
-                                            {module}
+                                            {module.replaceAll('-', ' ')}
                                         </label>
                                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                                             {perms.map((perm) => (

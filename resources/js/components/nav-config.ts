@@ -26,14 +26,14 @@ import {
     Users,
 } from 'lucide-react';
 
-export type PermittedNavItem = NavItem & { permission: string; alternatePermission?: string };
+export type PermittedNavItem = NavItem & { permission: string; alternatePermission?: string; keywords?: string[] };
 type PermittedNavGroup = { label: string; restrictedLabel?: string; icon?: NavItem['icon']; items: PermittedNavItem[] };
 
 // Canonical page paths, labels, and permission keys.
 export const navGroups: PermittedNavGroup[] = [
     {
         label: 'Overview',
-        items: [{ title: 'Dashboard', url: '/dashboard', icon: LayoutGrid, permission: 'dashboard.view' }],
+        items: [{ title: 'Dashboard', url: '/dashboard', icon: LayoutGrid, permission: 'dashboard.view', keywords: ['executive', 'overview'] }],
     },
     {
         label: 'Transactions',
@@ -42,8 +42,8 @@ export const navGroups: PermittedNavGroup[] = [
             { title: 'Bookings', url: '/bookings', icon: ClipboardList, permission: 'bookings.view' },
             { title: 'Sales Invoices', url: '/sales', icon: TrendingUp, permission: 'sales.view' },
             { title: 'Purchase Invoices', url: '/purchases', icon: ShoppingCart, permission: 'purchases.view' },
-            { title: 'Returns', url: '/returns/sales', icon: Undo2, permission: 'returns.view' },
-            { title: 'Dispatch & Delivery', url: '/dispatch', icon: Boxes, permission: 'dispatch.view', alternatePermission: 'dispatch.assigned' },
+            { title: 'Returns', url: '/returns/sales', icon: Undo2, permission: 'returns.view', keywords: ['sales returns'] },
+            { title: 'Dispatch & Delivery', url: '/dispatch', icon: Boxes, permission: 'dispatch.view', alternatePermission: 'dispatch.assigned', keywords: ['my deliveries'] },
             { title: 'Booking & Delivery Schedules', url: '/dispatch/schedules', icon: ClipboardList, permission: 'dispatch.plan' },
         ],
     },
@@ -155,3 +155,11 @@ export const workspaceNavGroups: PermittedNavGroup[] = [
         items: itemsFor('/users', '/roles', '/booker-assignments', '/audit-log', '/system/health', '/license'),
     },
 ];
+
+export function permittedWorkspaceGroups(can: (permission: string) => boolean, canViewSupplierDetails: boolean): PermittedNavGroup[] {
+    return workspaceNavGroups.map((group) => ({
+        ...group,
+        label: !canViewSupplierDetails && group.restrictedLabel ? group.restrictedLabel : group.label,
+        items: group.items.filter(({ permission, alternatePermission }) => can(permission) || (alternatePermission && can(alternatePermission))),
+    }));
+}

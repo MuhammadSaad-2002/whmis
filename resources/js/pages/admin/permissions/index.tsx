@@ -34,7 +34,7 @@ export default function PermissionsIndex({ groups }: Props) {
                 <div className="grid gap-4">
                     {Object.entries(groups).map(([module, perms]) => (
                         <div key={module} className="rounded-xl border">
-                            <div className="border-b bg-muted px-4 py-2 font-semibold capitalize">{module}</div>
+                            <div className="border-b bg-muted px-4 py-2 font-semibold capitalize">{module.replaceAll('-', ' ')}</div>
                             <Table>
                                 <TableHeader>
                                     <TableRow>
@@ -45,7 +45,7 @@ export default function PermissionsIndex({ groups }: Props) {
                                 <TableBody>
                                     {perms.map((perm) => (
                                         <TableRow key={perm.name}>
-                                            <TableCell className="font-mono text-sm">{perm.name}</TableCell>
+                                            <TableCell className="text-sm">{perm.name}</TableCell>
                                             <TableCell>
                                                 <div className="flex flex-wrap gap-1">
                                                     {perm.roles.length === 0 && <span className="text-muted-foreground">—</span>}

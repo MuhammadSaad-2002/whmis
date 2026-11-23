@@ -36,6 +36,11 @@ class ReportService
 {
     public function __construct(private readonly LedgerService $ledger) {}
 
+    public static function catalogFor(User $user): array
+    {
+        return array_filter(self::catalog(), fn ($meta) => ! isset($meta['permission']) || $user->can($meta['permission']));
+    }
+
     /** Report metadata for the hub and controller validation. */
     public static function catalog(): array
     {

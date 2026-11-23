@@ -3,11 +3,13 @@ import { router } from '@inertiajs/react';
 
 export const WORKSPACE_PATH = '/workspace';
 export const WORKSPACE_TAB_BREAKPOINT = 1024;
+export const GLOBAL_SEARCH_PERMISSION = 'global-search.use';
 const SOURCE = 'whmis';
 
 export type ShellMessage =
     | { source: typeof SOURCE; type: 'open-tab'; url: string }
-    | { source: typeof SOURCE; type: 'tab-state'; path: string; title: string; canGoBack: boolean };
+    | { source: typeof SOURCE; type: 'tab-state'; path: string; title: string; canGoBack: boolean }
+    | { source: typeof SOURCE; type: 'global-search' };
 
 interface DraftGuard {
     dirty: () => boolean;
@@ -59,6 +61,15 @@ export function currentPath(): string {
 
 function postToShell(message: ShellMessage): void {
     if (isFramed()) window.parent.postMessage(message, window.location.origin);
+}
+
+export function isGlobalSearchShortcut(event: KeyboardEvent): boolean {
+    return (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey
+        && !event.isComposing && event.key.toLowerCase() === 'k';
+}
+
+export function requestGlobalSearch(): void {
+    postToShell({ source: SOURCE, type: 'global-search' });
 }
 
 export function reportTabState(title: string): void {

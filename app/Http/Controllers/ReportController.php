@@ -24,8 +24,7 @@ class ReportController extends Controller
 
     public function index()
     {
-        $catalog = collect(ReportService::catalog())
-            ->filter(fn ($meta) => ! isset($meta['permission']) || auth()->user()->can($meta['permission']))
+        $catalog = collect(ReportService::catalogFor(auth()->user()))
             ->map(fn ($meta, $key) => $meta + ['key' => $key])
             ->groupBy('category')
             ->map(fn ($group) => $group->values());

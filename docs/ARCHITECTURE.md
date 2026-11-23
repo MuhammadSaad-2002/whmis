@@ -10,6 +10,10 @@ return Inertia pages for interactive screens and Blade views for PDFs.
 - Route-level permissions use `can:<permission>`.
 - Controllers load data, validate request payloads, call services, and return Inertia pages or redirects with flash messages.
 - React pages live under `resources/js/pages/<module>/`.
+- Instrument Sans is self-hosted from the [upstream Instrument font files](https://github.com/Instrument/instrument-sans/tree/7fa22308a3d0c94ee2b3cd537a1196b65db34a3e/fonts).
+  Vite builds the variable WOFF2 faces from `resources/fonts/`. PDF views embed
+  static TTF faces from `public/fonts/instrument-sans/`, which also contains the
+  SIL Open Font License. Dompdf caches metrics in writable `storage/fonts/`.
 - Shared navigation is defined in `resources/js/components/nav-config.ts` and filtered by permissions shared from `HandleInertiaRequests`.
 - `workspace/index.tsx` hosts the active Inertia view. `lib/embedded.ts` handles
   in-place visits and per-view Back. Explicit desktop record actions may mount

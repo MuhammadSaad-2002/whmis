@@ -111,7 +111,7 @@ export default function LicenseIndex({ keys, status }: Props) {
                             )}
                             {keys.map((k) => (
                                 <TableRow key={k.id}>
-                                    <TableCell className="font-mono text-sm">{k.key}</TableCell>
+                                    <TableCell className="text-sm tabular-nums">{k.key}</TableCell>
                                     <TableCell>{shortDate(k.expires_at)}</TableCell>
                                     <TableCell>{shortDate(k.activated_at)}</TableCell>
                                     <TableCell>{k.activated_by ?? '—'}</TableCell>

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Services\ReportPdfRenderer;
+use App\Services\ReportVisualizationService;
 use Tests\TestCase;
 
 class ReportPdfLayoutTest extends TestCase
@@ -28,6 +29,7 @@ class ReportPdfLayoutTest extends TestCase
             // Dompdf's uncompressed PDF stores text drawing commands with
             // coordinates measured upward from the bottom of the paper.
             $pdf = $document->output(['compress' => false]);
+            $this->assertTrue(str_contains($pdf, '/InstrumentSans-Regular'), 'Report embeds Instrument Sans.');
             $rowsInPdf = $this->baselines($pdf, 'Body Row');
             $footersInPdf = $this->baselines($pdf, 'Report Footer Check');
             $this->assertCount(count($rows), $rowsInPdf);
@@ -36,6 +38,28 @@ class ReportPdfLayoutTest extends TestCase
             for ($page = 1; $page <= $pages; $page++) {
                 $this->assertCount(1, $this->baselines($pdf, "Page {$page} / {$pages}"));
             }
+        }
+    }
+
+    public function test_trend_labels_render_in_the_pdf_chart_area(): void
+    {
+        $charts = app(ReportVisualizationService::class)->pdfCharts('profit-by-month', [
+            'chart' => [['label' => 'January', 'sales' => 100, 'profit' => 20], ['label' => 'February', 'sales' => 120, 'profit' => 40]],
+        ]);
+        $pdf = app(ReportPdfRenderer::class)->render([
+            'title' => 'Trend Layout', 'filters' => [], 'columns' => [['key' => 'label', 'label' => 'Breakdown']],
+            'rows' => [['label' => 'Table Row']], 'totals' => [], 'charts' => $charts,
+        ])->output(['compress' => false]);
+
+        $title = $this->baselines($pdf, 'Sales and Profit Trend');
+        $table = $this->baselines($pdf, 'Table Row');
+        $this->assertCount(1, $title);
+        $this->assertCount(1, $table);
+        foreach (['January', 'February', 'Net Sales', 'Net Profit'] as $label) {
+            $positions = $this->baselines($pdf, $label);
+            $this->assertCount(1, $positions);
+            $this->assertGreaterThan($table[0], $positions[0]);
+            $this->assertLessThan($title[0], $positions[0]);
         }
     }
 

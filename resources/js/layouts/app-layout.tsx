@@ -1,6 +1,7 @@
 import { FlashToaster } from '@/components/flash-toaster';
 import { LicenseBanner } from '@/components/license-banner';
-import { WORKSPACE_PATH, currentPath, isFramed, reportTabState } from '@/lib/embedded';
+import { usePermissions } from '@/hooks/use-permissions';
+import { GLOBAL_SEARCH_PERMISSION, WORKSPACE_PATH, currentPath, isFramed, isGlobalSearchShortcut, reportTabState, requestGlobalSearch } from '@/lib/embedded';
 import { type BreadcrumbItem } from '@/types';
 import { usePage } from '@inertiajs/react';
 import { useEffect } from 'react';
@@ -17,6 +18,18 @@ interface AppLayoutProps {
 export default function AppLayout({ children }: AppLayoutProps) {
     const framed = isFramed();
     const { url } = usePage();
+    const canSearchPages = usePermissions().can(GLOBAL_SEARCH_PERMISSION);
+
+    useEffect(() => {
+        if (!framed || !canSearchPages) return;
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || !isGlobalSearchShortcut(event)) return;
+            event.preventDefault();
+            if (!event.repeat) requestGlobalSearch();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [framed, canSearchPages]);
 
     useEffect(() => {
         if (framed) {

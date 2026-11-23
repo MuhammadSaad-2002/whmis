@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
-body { font-family: DejaVu Sans, sans-serif; font-size: 11px; color:#172033; } h1 { font-size:22px; } table { width:100%; border-collapse:collapse; margin-top:18px; } td,th { border-bottom:1px solid #ddd; padding:9px; text-align:left; } .amount {text-align:right;} .muted {color:#667085;} .total {font-weight:bold;background:#f1f5f9;}
+@include('pdf.partials.font')
+body { font-family: 'Instrument Sans', 'DejaVu Sans', sans-serif; font-size: 11px; color:#172033; } h1 { font-size:22px; } table { width:100%; border-collapse:collapse; margin-top:18px; } td,th { border-bottom:1px solid #ddd; padding:9px; text-align:left; } .amount {text-align:right;} .muted {color:#667085;} .total {font-weight:bold;background:#f1f5f9;}
 </style></head><body>
 <h1>Salary Payslip</h1><p>{{ $item->payroll->number }} · {{ $item->payroll->period->format('F Y') }} · {{ strtoupper($item->payroll->status) }}</p>
 @php $s=$item->snapshot; @endphp

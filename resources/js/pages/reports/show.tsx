@@ -712,8 +712,9 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
                             )}
                             {has('product') && (
                                 <div>
-                                    <Label className="text-xs">Product</Label>
+                                    <Label htmlFor="report-product-filter" className="text-xs">Product</Label>
                                     <SearchableSelect
+                                        id="report-product-filter"
                                         value={draftFilters.product_id ?? 'all'}
                                         onValueChange={(v) => setDraftFilter('product_id', v === 'all' ? undefined : v)}
                                         options={[
@@ -725,6 +726,8 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
                                         ]}
                                         placeholder="Product"
                                         searchPlaceholder="Search products…"
+                                        className="min-h-11 text-base"
+                                        touch
                                     />
                                 </div>
                             )}

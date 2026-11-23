@@ -274,7 +274,7 @@ export default function Dashboard(props: Props) {
                                         {(expiringSoon ?? []).map((batch) => (
                                             <TableRow key={batch.id}>
                                                 <TableCell className="font-medium">{batch.product}</TableCell>
-                                                <TableCell className="font-mono text-sm">{batch.batch_number}</TableCell>
+                                                <TableCell className="text-sm tabular-nums">{batch.batch_number}</TableCell>
                                                 <TableCell>{shortDate(batch.expiry_date)}</TableCell>
                                                 <TableCell className="text-right tabular-nums">{qty(batch.qty_available)}</TableCell>
                                             </TableRow>

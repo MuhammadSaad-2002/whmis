@@ -1,37 +1,32 @@
 import AppLogoIcon from '@/components/app-logo-icon';
 import { NotificationBell } from '@/components/notification-bell';
-import { workspaceNavGroups } from '@/components/nav-config';
+import { type permittedWorkspaceGroups } from '@/components/nav-config';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { UserMenuContent } from '@/components/user-menu-content';
 import { useInitials } from '@/hooks/use-initials';
-import { usePermissions } from '@/hooks/use-permissions';
 import { PRODUCT_NAME } from '@/lib/brand';
 import { cn } from '@/lib/utils';
 import { type SharedData } from '@/types';
 import { usePage } from '@inertiajs/react';
-import { ArrowLeft, ChevronDown, Menu } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Menu, Search } from 'lucide-react';
 
 interface WorkspaceTopBarProps {
     activePath: string;
     home: { url: string; title: string };
+    groups: ReturnType<typeof permittedWorkspaceGroups>;
     onNavigate: (url: string) => void;
+    onSearch?: () => void;
     onBack?: () => void;
     onLogout: () => void;
 }
 
 const MAX_PRIMARY_LINKS = 8;
 
-export function WorkspaceTopBar({ activePath, home, onNavigate, onBack, onLogout }: WorkspaceTopBarProps) {
+export function WorkspaceTopBar({ activePath, home, groups, onNavigate, onSearch, onBack, onLogout }: WorkspaceTopBarProps) {
     const { auth } = usePage<SharedData>().props;
-    const { can, canViewSupplierDetails } = usePermissions();
     const initials = useInitials();
-    const groups = workspaceNavGroups.map((group) => ({
-        ...group,
-        label: !canViewSupplierDetails && group.restrictedLabel ? group.restrictedLabel : group.label,
-        items: group.items.filter((item) => can(item.permission) || (item.alternatePermission && can(item.alternatePermission))),
-    }));
     const primaryLinks = groups[0].items.slice(0, MAX_PRIMARY_LINKS);
     const primaryUrls = new Set(primaryLinks.map((item) => item.url));
     const hasMore = groups.some((group) => group.items.some((item) => !primaryUrls.has(item.url)));
@@ -72,6 +67,12 @@ export function WorkspaceTopBar({ activePath, home, onNavigate, onBack, onLogout
             </nav>}
 
             <div className="ml-auto flex shrink-0 items-center gap-1">
+                {onSearch && <Button type="button" variant="ghost" size="icon" aria-label="Search pages" aria-haspopup="dialog"
+                    aria-keyshortcuts="Control+K Meta+K" title="Search pages (Ctrl+K / ⌘K)"
+                    className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring max-md:size-11"
+                    onClick={onSearch}>
+                    <Search aria-hidden="true" />
+                </Button>}
                 {(primaryLinks.length > 0 || hasMore) && <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button
@@ -79,12 +80,12 @@ export function WorkspaceTopBar({ activePath, home, onNavigate, onBack, onLogout
                             variant="ghost"
                             size="sm"
                             aria-label="Workspace pages"
-                            className={cn('gap-1.5 px-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring focus-visible:ring-offset-sidebar max-md:h-11 max-md:border max-md:border-sidebar-border max-md:px-3', inMoreMenu && 'bg-sidebar-accent text-sidebar-accent-foreground', !hasMore && 'xl:hidden')}
+                            className={cn('gap-1.5 px-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring focus-visible:ring-offset-sidebar max-md:h-11 max-md:border max-md:border-sidebar-border max-md:px-3', onSearch && 'max-[380px]:w-11 max-[380px]:p-0', inMoreMenu && 'bg-sidebar-accent text-sidebar-accent-foreground', !hasMore && 'xl:hidden')}
                         >
                             <Menu aria-hidden="true" className={cn('size-4', primaryLinks.length > 0 && 'xl:hidden')} />
-                            <span className={cn(primaryLinks.length > 0 && 'xl:hidden')}>Pages</span>
+                            <span className={cn(onSearch && 'max-[380px]:hidden', primaryLinks.length > 0 && 'xl:hidden')}>Pages</span>
                             {primaryLinks.length > 0 && <span className="hidden xl:inline">More</span>}
-                            <ChevronDown aria-hidden="true" className="size-3.5" />
+                            <ChevronDown aria-hidden="true" className={cn('size-3.5', onSearch && 'max-[380px]:hidden')} />
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" collisionPadding={8} className="max-h-[min(75dvh,var(--radix-dropdown-menu-content-available-height))] w-[min(47rem,calc(100vw-1rem))] touch-pan-y overflow-y-auto overscroll-contain p-2">

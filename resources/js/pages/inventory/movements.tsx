@@ -88,7 +88,7 @@ export default function InventoryMovements({ movements, filters }: Props) {
                                             })}
                                         </TableCell>
                                         <TableCell className="font-medium">{movement.product?.name}</TableCell>
-                                        <TableCell className="font-mono text-sm">{movement.batch?.batch_number}</TableCell>
+                                        <TableCell className="text-sm tabular-nums">{movement.batch?.batch_number}</TableCell>
                                         <TableCell>
                                             <Badge variant={isIn ? 'default' : 'secondary'} className="capitalize">
                                                 {movement.type.replace('_', ' ')}

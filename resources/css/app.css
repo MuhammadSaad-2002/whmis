@@ -6,6 +6,63 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@font-face {
+    font-family: 'Instrument Sans';
+    src: url('../fonts/InstrumentSans-Variable.woff2') format('woff2');
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Instrument Sans';
+    src: url('../fonts/InstrumentSans-VariableItalic.woff2') format('woff2');
+    font-style: italic;
+    font-weight: 400 700;
+    font-display: swap;
+}
+
+.app-search-field {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: 1 1 18rem;
+    width: 100%;
+    min-width: 0;
+    max-width: 24rem;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--input);
+    border-radius: 9px;
+    background: var(--card);
+    color: var(--ink3, var(--muted-foreground));
+}
+
+.app-search-field:focus-within {
+    border-color: var(--teal, var(--ring));
+    outline: 2px solid var(--teal, var(--ring));
+    outline-offset: 1px;
+}
+
+.app-search-field > svg { flex: none; }
+.app-search-field > input[type='search'] {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    align-self: stretch;
+    border: 0;
+    background: transparent;
+    color: var(--ink, var(--foreground));
+    font-size: 1rem;
+    outline: none;
+}
+
+.app-search-field > input::placeholder { color: var(--ink3, var(--muted-foreground)); opacity: 1; }
+
+@media (max-width: 760px) {
+    .app-search-field { flex-basis: 100%; max-width: none; }
+}
+
 @theme {
     --font-sans:
         'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';

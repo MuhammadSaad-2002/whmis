@@ -1,11 +1,12 @@
 import './invoice-list.css';
 import { type PaginatedData } from '@/components/paginator';
+import { SearchField } from '@/components/ui/search-field';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { amount, money } from '@/lib/format';
 import { Head, Link, router } from '@inertiajs/react';
-import { Check, Download, Eye, List, ListFilter, Plus, Printer, Search, Undo2, UserRound } from 'lucide-react';
+import { Check, Download, Eye, List, ListFilter, Plus, Printer, Undo2, UserRound } from 'lucide-react';
 import { type ChangeEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { InvoicePreview, type InvoiceRow, listDate, SaleStatus, SaleType, saleTypes } from './invoice-preview';
 
@@ -186,9 +187,7 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
         .filter((page) => page >= 1 && page <= invoices.last_page).sort((a, b) => a - b);
 
     return <AppLayout>
-        <Head title="Sales Invoices">
-            <link head-key="sales-inter" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" referrerPolicy="no-referrer" />
-        </Head>
+        <Head title="Sales Invoices" />
         <div className="sales-invoices" ref={printRoot} aria-busy={loading || posting}>
             <section className="hero">
                 <div className="intro"><h1>Sales Invoices</h1>
@@ -220,7 +219,7 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
                             onClick={() => changeFilters({ status: key === 'all' ? undefined : key })}>{title}<span className="ct">{counts[key]}</span></button>)}
                 </div>
                 <div className="filters">
-                    <label className="fld search"><Search className="i" /><input ref={searchRef} onKeyDown={onSearchKeyDown} maxLength={120} aria-label="Search invoices" placeholder="Search invoice # or customer…" value={search} onChange={updateSearch} /></label>
+                    <SearchField ref={searchRef} onKeyDown={onSearchKeyDown} maxLength={120} aria-label="Search invoices" placeholder="Invoice # or customer" value={search} onChange={updateSearch} />
                     <label className="fld choice"><UserRound className="i" /><select aria-label="Customer" value={filters.customer_id ?? ''} onChange={(event) => changeFilters({ customer_id: event.target.value || undefined })}>
                         <option value="">All customers</option>
                         {customers.map((customer) => <option value={customer.id} key={customer.id}>{customer.name}</option>)}

@@ -141,7 +141,7 @@ class ReportVisualizationService
         return self::RANKED[$key] ?? null;
     }
 
-    /** @return array<int, array{title: string, subtitle: string, image: string}> */
+    /** @return array<int, array{title: string, subtitle: string, image: string, height_per_width: float, labels: array}> */
     public function pdfCharts(string $key, array $report): array
     {
         $charts = [];
@@ -150,7 +150,7 @@ class ReportVisualizationService
             $charts[] = [
                 'title' => 'Sales and Profit Trend',
                 'subtitle' => 'Net sales and net profit over time',
-                'image' => $this->trendSvgDataUri($report['chart']),
+                ...$this->trendPlot($report['chart']),
             ];
         }
 
@@ -172,7 +172,7 @@ class ReportVisualizationService
                 $charts[] = [
                     'title' => 'Top 10 by '.$metric['label'],
                     'subtitle' => 'Ranked from the filtered report rows',
-                    'image' => $this->rankedSvgDataUri($ranked, $metric['format']),
+                    ...$this->rankedPlot($ranked, $metric['format']),
                 ];
             }
         }
@@ -180,7 +180,7 @@ class ReportVisualizationService
         return $charts;
     }
 
-    private function rankedSvgDataUri(array $rows, string $format): string
+    private function rankedPlot(array $rows, string $format): array
     {
         $width = 760;
         $rowHeight = 32;
@@ -189,27 +189,25 @@ class ReportVisualizationService
         $barMax = 335;
         $max = max(1.0, ...array_map(fn (array $row) => abs((float) $row['value']), $rows));
         $parts = [$this->svgOpen($width, $height)];
+        $labels = [];
 
         foreach ($rows as $index => $row) {
             $value = (float) $row['value'];
             $y = 12 + $index * $rowHeight;
             $barWidth = max(1, (int) round(abs($value) / $max * $barMax));
             $color = $value < 0 ? self::NEGATIVE_COLOR : self::SALES_COLOR;
-            $label = $this->escape($this->truncate((string) $row['label'], 28));
-            $formatted = $this->escape($this->formatValue($value, $format));
-
-            $parts[] = '<text x="0" y="'.($y + 14).'" font-size="14" fill="'.self::LABEL_COLOR.'">'.$label.'</text>';
+            $labels[] = $this->plotLabel($this->truncate((string) $row['label'], 28), 0, $y + 1, $width);
+            $labels[] = $this->plotLabel($this->formatValue($value, $format), 610, $y + 1, $width, color: $color, bold: true);
             $parts[] = "<rect x=\"{$barStart}\" y=\"{$y}\" width=\"{$barMax}\" height=\"18\" rx=\"3\" fill=\"".self::GRID_COLOR.'"/>';
             $parts[] = "<rect x=\"{$barStart}\" y=\"{$y}\" width=\"{$barWidth}\" height=\"18\" rx=\"3\" fill=\"{$color}\"/>";
-            $parts[] = '<text x="610" y="'.($y + 14)."\" font-size=\"14\" font-weight=\"bold\" fill=\"{$color}\">{$formatted}</text>";
         }
 
         $parts[] = '</svg>';
 
-        return $this->svgDataUri(implode('', $parts));
+        return ['image' => $this->svgDataUri(implode('', $parts)), 'height_per_width' => $height / $width, 'labels' => $labels];
     }
 
-    private function trendSvgDataUri(array $points): string
+    private function trendPlot(array $points): array
     {
         $series = [
             ['key' => 'sales', 'label' => 'Net Sales', 'color' => self::SALES_COLOR, 'dash' => ''],
@@ -234,12 +232,13 @@ class ReportVisualizationService
         $x = fn (int $index) => $left + ($count > 1 ? ($index / ($count - 1)) * $plotWidth : $plotWidth / 2);
         $y = fn (float $value) => $top + (($max - $value) / $range) * $plotHeight;
         $parts = [$this->svgOpen($width, $height)];
+        $labels = [];
 
         for ($step = 0; $step <= 4; $step++) {
             $gridY = $top + ($step / 4) * $plotHeight;
             $gridValue = $max - ($step / 4) * $range;
             $parts[] = "<line x1=\"{$left}\" y1=\"{$gridY}\" x2=\"".($left + $plotWidth)."\" y2=\"{$gridY}\" stroke=\"".self::GRID_COLOR.'" stroke-width="1"/>';
-            $parts[] = '<text x="0" y="'.($gridY + 4).'" font-size="14" fill="'.self::LABEL_COLOR.'">'.$this->escape($this->compactValue($gridValue)).'</text>';
+            $labels[] = $this->plotLabel($this->compactValue($gridValue), 0, $gridY - 7, $width);
         }
 
         foreach ($series as $item) {
@@ -258,19 +257,33 @@ class ReportVisualizationService
         $labelStep = max(1, (int) ceil($count / 10));
         foreach ($points as $index => $point) {
             if ($index !== $count - 1 && ($index % $labelStep !== 0 || $count - 1 - $index < $labelStep)) continue;
-            $label = $this->escape($this->truncate((string) ($point['label'] ?? ''), 9));
-            $parts[] = '<text x="'.round($x($index), 1).'" y="163" text-anchor="middle" font-size="14" fill="'.self::LABEL_COLOR.'">'.$label.'</text>';
+            $labels[] = $this->plotLabel($this->truncate((string) ($point['label'] ?? ''), 9), $x($index), 151, $width, center: true);
         }
 
         $legendX = 474;
         foreach ($series as $index => $item) {
             $lx = $legendX + $index * 130;
             $parts[] = "<rect x=\"{$lx}\" y=\"184\" width=\"12\" height=\"12\" rx=\"2\" fill=\"{$item['color']}\"/>";
-            $parts[] = '<text x="'.($lx + 18).'" y="195" font-size="14" fill="'.self::LABEL_COLOR.'">'.$item['label'].'</text>';
+            $labels[] = $this->plotLabel($item['label'], $lx + 18, 184, $width);
         }
         $parts[] = '</svg>';
 
-        return $this->svgDataUri(implode('', $parts));
+        return ['image' => $this->svgDataUri(implode('', $parts)), 'height_per_width' => $height / $width, 'labels' => $labels];
+    }
+
+    /** Keep chart labels as selectable PDF text in the document font. */
+    private function plotLabel(string $text, float $x, float $y, int $width, bool $center = false, string $color = self::LABEL_COLOR, bool $bold = false): array
+    {
+        $centerWidth = 72;
+
+        return [
+            'text' => $text,
+            'x' => round(($x - ($center ? $centerWidth / 2 : 0)) / $width * 100, 4),
+            'y_per_plot_width' => $y / $width,
+            'width' => $center ? round($centerWidth / $width * 100, 4) : null,
+            'color' => $color,
+            'bold' => $bold,
+        ];
     }
 
     private function svgOpen(int $width, int $height): string
@@ -308,10 +321,5 @@ class ReportVisualizationService
     private function truncate(string $value, int $length): string
     {
         return mb_strlen($value) > $length ? mb_substr($value, 0, $length - 1).'…' : $value;
-    }
-
-    private function escape(string $value): string
-    {
-        return htmlspecialchars($value, ENT_QUOTES | ENT_XML1, 'UTF-8');
     }
 }

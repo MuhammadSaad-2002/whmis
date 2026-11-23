@@ -238,7 +238,8 @@ class ReportTest extends TestCase
         $this->assertStringStartsWith('data:image/svg+xml;base64,', $ranked[0]['image']);
         $rankedSvg = base64_decode(substr($ranked[0]['image'], 26));
         $this->assertStringContainsString('fill="#234968"', $rankedSvg);
-        $this->assertStringContainsString('font-size="14" fill="#263b4d"', $rankedSvg);
+        $this->assertStringNotContainsString('<text ', $rankedSvg);
+        $this->assertSame('#263b4d', $ranked[0]['labels'][0]['color']);
 
         $trend = $visualizations->pdfCharts('profit-by-month', $reports->build('profit-by-month', []));
         $this->assertCount(1, $trend);
@@ -247,8 +248,9 @@ class ReportTest extends TestCase
         $this->assertStringContainsString('stroke="#234968"', $trendSvg);
         $this->assertStringContainsString('stroke="#087568"', $trendSvg);
         $this->assertStringContainsString('stroke-dasharray="6 4"', $trendSvg);
-        $this->assertStringContainsString('font-size="14" fill="#263b4d">Net Sales</text>', $trendSvg);
-        $this->assertStringContainsString('text-anchor="middle" font-size="14" fill="#263b4d"', $trendSvg);
+        $this->assertStringNotContainsString('<text ', $trendSvg);
+        $this->assertContains('Net Sales', array_column($trend[0]['labels'], 'text'));
+        $this->assertNotNull($trend[0]['labels'][5]['width']);
     }
 
     public function test_negative_ranked_values_keep_the_alert_color_in_pdf_charts(): void
@@ -259,7 +261,8 @@ class ReportTest extends TestCase
 
         $svg = base64_decode(substr($charts[0]['image'], 26));
         $this->assertStringContainsString('fill="#b4232a"', $svg);
-        $this->assertStringContainsString('Rs -10.00', $svg);
+        $this->assertSame('Rs -10.00', $charts[0]['labels'][1]['text']);
+        $this->assertSame('#b4232a', $charts[0]['labels'][1]['color']);
     }
 
     public function test_pdf_chart_images_preserve_their_intrinsic_aspect_ratio(): void

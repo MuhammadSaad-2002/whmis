@@ -1,10 +1,12 @@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { SearchField } from '@/components/ui/search-field';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { money, qty, toNumber } from '@/lib/format';
-import { Head, Link, router } from '@inertiajs/react';
-import { AlertTriangle, ArrowDownLeft, ArrowDownUp, ArrowUpRight, CalendarDays, Check, CheckCircle2, ChevronDown, Clock, FileDown, FileText, Pencil, RefreshCw, TrendingUp } from 'lucide-react';
-import { memo, useMemo, useState, type ReactNode } from 'react';
+import { type SharedData } from '@/types';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import { AlertTriangle, ArrowDownLeft, ArrowDownUp, ArrowUpRight, CalendarDays, Check, CheckCircle2, ChevronDown, Clock, FileDown, FileText, LayoutGrid, Pencil, RefreshCw, TrendingUp } from 'lucide-react';
+import { memo, useCallback, useId, useMemo, useState, type ReactNode } from 'react';
 import { ActivityChart, colors, compact, Donut, RankingChart, Spark, Waterfall, type ActivityPoint, type Datum, type Slice } from './executive-charts';
 import './executive.css';
 
@@ -80,7 +82,21 @@ const percent = (value: number, digits = 1) => `${value.toFixed(digits)}%`;
 const billTotal = (rows: RecentSale[]) => rows.reduce((total, row) => total + toNumber(row.total_amount), 0);
 const periodProps = ['filterValues', 'kpis', 'hr', 'monthlyTrend', 'topProducts', 'salesBySupplier', 'topCustomers', 'rankingTotals'];
 const snapshotProps = ['asOf', 'financials', 'aging', 'topDebtors', 'stockOnLoan', 'attention', 'recentSales', 'expiringSoon'];
-const productColor = (index: number) => index === 0 ? colors.sales : '#5f86ad';
+const optionalSections = [['operations', 'Operational snapshot'], ['insights', 'Needs attention']] as const;
+type OptionalSection = (typeof optionalSections)[number][0];
+type VisibleSections = Record<OptionalSection, boolean>;
+const defaultVisibleSections: VisibleSections = { operations: true, insights: true };
+
+function readVisibleSections(key: string | null): VisibleSections {
+    if (!key || typeof window === 'undefined') return defaultVisibleSections;
+
+    try {
+        const saved = JSON.parse(window.localStorage.getItem(key) ?? 'null') as Partial<VisibleSections> | null;
+        return { operations: saved?.operations !== false, insights: saved?.insights !== false };
+    } catch {
+        return defaultVisibleSections;
+    }
+}
 const supplierColor = (index: number) => index % 2 === 0 ? colors.sales : colors.purchases;
 const daysEstimate = (balance: number, activity: number, days: number) => activity > 0
     ? Math.round(Math.max(balance, 0) / activity * days * 10) / 10
@@ -159,8 +175,8 @@ const RecentSales = memo(function RecentSales({ sales }: { sales: RecentSale[] }
     );
     return <section className="exec-card exec-c8">
         <CardHead title="Recent Sales">
-            <div className="exec-tools">
-                <input className="exec-search" value={query} onChange={(event) => setQuery(event.target.value)} type="search" aria-label="Search recent sales" placeholder="Search invoice or customer…" />
+            <div className="exec-tools exec-recent-tools">
+                <SearchField value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search recent sales" placeholder="Invoice # or customer" />
                 <div className="exec-mini-seg" role="group" aria-label="Invoice status">
                     {invoiceStatuses.map((option) => <button key={option} type="button" className="capitalize" aria-pressed={status === option} onClick={() => setStatus(option)}>{option}</button>)}
                 </div>
@@ -185,7 +201,10 @@ const RecentSales = memo(function RecentSales({ sales }: { sales: RecentSale[] }
     </section>;
 });
 
-const Header = memo(function Header({ asOf, filterValues }: Pick<ExecutiveProps, 'asOf' | 'filterValues'>) {
+const Header = memo(function Header({ asOf, filterValues, visibleSections, onSectionChange }: Pick<ExecutiveProps, 'asOf' | 'filterValues'> & {
+    visibleSections: VisibleSections;
+    onSectionChange: (section: OptionalSection, visible: boolean) => void;
+}) {
     const [loading, setLoading] = useState(false);
     const [periodOpen, setPeriodOpen] = useState(false);
     const [customOpen, setCustomOpen] = useState(false);
@@ -263,6 +282,7 @@ const Header = memo(function Header({ asOf, filterValues }: Pick<ExecutiveProps,
                         {rangeError && <p className="exec-period-error" role="alert">{rangeError}</p>}
                     </PopoverContent>
                 </Popover>
+                <SectionControls visible={visibleSections} onChange={onSectionChange} />
                 <button className="exec-export" type="button" disabled={loading} onClick={() => window.print()}><FileDown size={14} aria-hidden="true" />Export PDF</button>
             </div>
         </section>
@@ -271,24 +291,78 @@ const Header = memo(function Header({ asOf, filterValues }: Pick<ExecutiveProps,
 
 const ProductsCard = memo(function ProductsCard({ rows, total }: { rows: Datum[]; total: number }) {
     const [mode, setMode] = useState<'revenue' | 'share'>('revenue');
-    const plot = useMemo(() => mode === 'revenue' ? rows : total > 0
-        ? rows.map((row) => ({ ...row, value: Number(share(row.value, total).toFixed(1)) }))
-        : [], [mode, rows, total]);
+    const titleId = useId();
+    const showShare = mode === 'share';
+    const values = showShare ? (total > 0 ? rows.map((row) => share(row.value, total)) : []) : rows.map((row) => row.value);
+    const min = Math.min(0, ...values);
+    // Revenue bars compare against the largest item; share bars use a true 100% scale.
+    const max = Math.max(showShare ? 100 : 0, ...values);
+    const position = (value: number) => ((value - min) / (max - min || 1)) * 100;
+    const zero = position(0);
+
     return (
-        <section className="exec-card exec-c5">
-            <CardHead title="Top Products" tag="by net revenue · period">
+        <section className="exec-card exec-c5 exec-products" aria-labelledby={titleId}>
+            <header className="exec-card-head exec-products-head">
+                <div>
+                    <h2 id={titleId}>Top Products</h2>
+                    <p className="exec-tag">{showShare ? 'Share of positive net revenue' : 'Net revenue'} · selected period</p>
+                </div>
                 <div className="exec-mini-seg" role="group" aria-label="Product ranking metric">
                     <button type="button" aria-pressed={mode === 'revenue'} onClick={() => setMode('revenue')}>Revenue</button>
                     <button type="button" aria-pressed={mode === 'share'} onClick={() => setMode('share')}>Share %</button>
                 </div>
-            </CardHead>
-            <RankingChart title="Top product ranking" data={plot} height={250} color={productColor} percentage={mode === 'share'} />
+            </header>
+            {values.length ? <ol className="exec-product-ranking" aria-label="Product ranking" role="list">
+                {values.map((value, index) => <li className="exec-product-rank" key={`${rows[index].label}-${index}`}>
+                    <span className="exec-product-rank-number exec-num" aria-hidden="true">{index + 1}</span>
+                    <div className="exec-product-rank-detail">
+                        <div className="exec-product-rank-label">
+                            <span className="exec-product-name">{rows[index].label}</span>
+                            <span className={`exec-product-value exec-num${value < 0 ? ' exec-red' : ''}`}>{showShare ? percent(value) : money(value)}</span>
+                        </div>
+                        <div className="exec-product-track" aria-hidden="true">
+                            {min < 0 && max > 0 && <span className="exec-product-zero" style={{ left: `${zero}%` }} />}
+                            <span className={`exec-product-bar${value < 0 ? ' exec-product-bar-negative' : ''}`}
+                                style={{ left: `${Math.min(zero, position(value))}%`, width: `${Math.abs(position(value) - zero)}%` }} />
+                        </div>
+                    </div>
+                </li>)}
+            </ol> : <p className="exec-empty">{showShare && rows.length ? 'No positive net revenue to calculate a share for this period.' : 'No product sales in this period.'}</p>}
         </section>
     );
 });
 
+function SectionControls({ visible, onChange }: { visible: VisibleSections; onChange: (section: OptionalSection, visible: boolean) => void }) {
+    return <Popover>
+        <PopoverTrigger asChild>
+            <button className="exec-export" type="button" aria-label="Dashboard sections">
+                <LayoutGrid size={14} aria-hidden="true" />Sections<ChevronDown size={14} aria-hidden="true" />
+            </button>
+        </PopoverTrigger>
+        <PopoverContent align="end" sideOffset={8} className="exec-period-panel exec-sections-panel" aria-label="Dashboard section visibility">
+            <fieldset>
+                <legend>Show on dashboard</legend>
+                {optionalSections.map(([section, label]) => <label className="exec-section-option" key={section}>
+                    <input type="checkbox" checked={visible[section]} onChange={(event) => onChange(section, event.target.checked)} />
+                    {label}
+                </label>)}
+            </fieldset>
+        </PopoverContent>
+    </Popover>;
+}
+
 export default function ExecutiveDashboard({ asOf, filterValues, kpis, financials, monthlyTrend, aging, topProducts, salesBySupplier, topDebtors, topCustomers, rankingTotals, stockOnLoan, attention, recentSales, expiringSoon, hr }: ExecutiveProps) {
     const { can } = usePermissions();
+    const userId = usePage<SharedData>().props.auth.user?.id;
+    const preferenceKey = userId == null ? null : `whmis:executive-sections:v1:${userId}`;
+    const [sectionPreference, setSectionPreference] = useState(() => ({ key: preferenceKey, visible: readVisibleSections(preferenceKey) }));
+    const visibleSections = sectionPreference.key === preferenceKey ? sectionPreference.visible : readVisibleSections(preferenceKey);
+    const changeSection = useCallback((section: OptionalSection, visible: boolean) => {
+        const next = { ...visibleSections, [section]: visible };
+        setSectionPreference({ key: preferenceKey, visible: next });
+        if (!preferenceKey) return;
+        try { window.localStorage.setItem(preferenceKey, JSON.stringify(next)); } catch { /* Keep the current view when storage is unavailable. */ }
+    }, [preferenceKey, visibleSections]);
     const ops = [
         { label: 'Draft invoices', value: attention.draft_sales, detail: attention.draft_sales ? `${money(attention.draft_sales_total)} unposted` : '', Icon: FileText, tone: attention.draft_sales ? 'hot' : '', href: can('sales.view') ? route('sales.index', { status: 'draft' }) : null },
         { label: 'Pending bookings', value: attention.pending_bookings, Icon: CalendarDays, href: can('bookings.view') ? route('bookings.index', { status: 'pending' }) : null },
@@ -353,11 +427,9 @@ export default function ExecutiveDashboard({ asOf, filterValues, kpis, financial
     ];
 
     return <AppLayout breadcrumbs={[{ title: 'Dashboard', href: '/dashboard' }]}>
-        <Head title="Executive Dashboard">
-            <link head-key="executive-inter" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" referrerPolicy="no-referrer" />
-        </Head>
+        <Head title="Executive Dashboard" />
         <main className="executive">
-            <Header asOf={asOf} filterValues={filterValues} />
+            <Header asOf={asOf} filterValues={filterValues} visibleSections={visibleSections} onSectionChange={changeSection} />
             <section className="exec-grid" aria-label="Key performance indicators">
                 <Kpi title="Net Sales" color={colors.sales} value={money(kpis.sales)} foot={<Delta value={kpis.sales_delta} />}><Spark values={monthlyTrend.map((point) => point.sales)} color={colors.sales} /></Kpi>
                 <Kpi title="Net Profit" color={colors.profit} value={money(kpis.profit)} foot={<Delta value={kpis.profit_delta} />}><Spark values={monthlyTrend.map((point) => point.profit)} color={colors.profit} /></Kpi>
@@ -374,22 +446,22 @@ export default function ExecutiveDashboard({ asOf, filterValues, kpis, financial
                     <div className="exec-meta"><span title={money(financials.receivable)}>AR {compact(financials.receivable)}</span><span title={money(financials.payable)}>AP {compact(financials.payable)}</span></div>
                 </Kpi>
             </section>
-            <section className="exec-grid" aria-label="Operational snapshot">
+            {visibleSections.operations && <section className="exec-grid" aria-label="Operational snapshot">
                 <div className="exec-card exec-c12 exec-ops">
                     {ops.map(({ value, label, detail, Icon, tone, href }) => {
                         const content = <><span className={`exec-op-icon ${tone ?? ''}`}><Icon size={17} aria-hidden="true" /></span><span><span className="exec-op-value exec-num block">{qty(value)}</span><span className="exec-op-label block">{label}</span>{detail && <span className="exec-op-detail block">{detail}</span>}</span></>;
                         return href ? <Link href={href} className="exec-op" key={label}>{content}</Link> : <div className="exec-op" key={label}>{content}</div>;
                     })}
                 </div>
-            </section>
-            <section className="exec-grid">
+            </section>}
+            {visibleSections.insights && <section className="exec-grid" aria-label="Needs attention">
                 <div className="exec-card exec-c12">
                     <CardHead title="Needs attention" tag="auto-generated from current data" />
                     <div className="exec-insights">{insights.map(({ tone, Icon, title, text }) => <article className={`exec-insight ${tone}`} key={tone}>
                         <span className="exec-insight-icon"><Icon size={13} aria-hidden="true" /></span><div><b>{title}</b><p>{text}</p></div>
                     </article>)}</div>
                 </div>
-            </section>
+            </section>}
             <div className="exec-grid">
                 <section className="exec-card exec-c8"><ActivityChart data={monthlyTrend} title="Sales, Profit & Margin" subtitle={periodTag} /></section>
                 <section className="exec-card exec-c4">

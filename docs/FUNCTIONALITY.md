@@ -19,6 +19,8 @@ likely to matter when changing each module.
   menu updates them without navigating away. Charts draw immediately on first
   load, then animate data changes unless reduced motion is enabled.
 - Executive Overview's Export PDF opens the browser's print-to-PDF view with charts. The server-generated summary remains at `/dashboard/executive/pdf`.
+- The Executive Overview **Sections** menu can hide or show the Operational snapshot and Needs attention independently. Both start visible; the browser remembers choices for each account on that device.
+- Top Products shows full product names in ranked rows, with exact net revenue or percentage share beside each bar. Share uses all positive product net revenue for the selected period, not only the rows shown.
 - Workspace: `/workspace`. Ordinary links and the top bar navigate in the
   current view. **Back** restores the previous screen's list filters and scroll.
   Desktop booking, sale, and purchase rows have a separate **Open in workspace
@@ -31,6 +33,9 @@ likely to matter when changing each module.
   close or reload.
 - All roles use the top bar. Wide screens show permitted **Daily Work** links
   with remaining pages under **More**. Narrow screens use **Pages**.
+- **Search pages** in the top bar (Ctrl+K or Cmd+K) finds allowed pages and
+  individual reports by name. Selecting a result opens it in the current view
+  and respects the same unsaved-draft prompt as ordinary navigation.
 - Field Bookers can change the workspace appearance, but their profile and
   signed-in password settings and account deletion are not self-service.
 - Navigation source: `resources/js/components/nav-config.ts`.

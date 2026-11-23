@@ -26,6 +26,7 @@ use App\Http\Controllers\SampleReceiptController;
 use App\Http\Controllers\StockLoanController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\AuthorizeOperations;
+use App\Services\ReportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -84,6 +85,13 @@ Route::middleware(['auth', 'licensed'])->group(function () {
         return Inertia::render('workspace/index', [
             // Expose an opaque storage scope. The session ID itself is a credential.
             'tabScope' => hash_hmac('sha256', json_encode($scope, JSON_THROW_ON_ERROR), config('app.key')),
+            'searchableReports' => fn () => $user->can('global-search.use') && $user->can('reports.view') && $user->can('view-supplier-details')
+                ? collect(ReportService::catalogFor($user))->map(fn ($meta, $key) => [
+                    'title' => $meta['title'],
+                    'url' => route('reports.show', ['key' => $key], false),
+                    'category' => $meta['category'],
+                ])->values()->all()
+                : [],
         ]);
     })->middleware('cache.headers:no_store')->name('workspace');
 

@@ -7,7 +7,8 @@ import { amount, money, shortDate } from '@/lib/format';
 import { ageBucket, invoiceAge, type PaymentParties, paymentMethods, type PartyType } from '@/lib/payment-allocation';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, CreditCard, Plus, Printer, Search } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, CreditCard, Plus, Printer } from 'lucide-react';
+import { SearchField } from '@/components/ui/search-field';
 import { type CSSProperties, Fragment, type ReactNode, useEffect, useMemo, useState } from 'react';
 
 interface Aging {
@@ -231,7 +232,7 @@ function PartySection({ type, parties, balance, aging, asOf, revision, pay }: {
         <div className="sech">
             <h2>{customer ? 'Receivables' : 'Payables'}</h2><span className={`pill ${customer ? 'g' : 'r'}`}>{money(balance)}</span><span className="muted">{customer ? 'Due from customers' : 'Owed to suppliers'}</span>
             <div className="sp" />
-            <label className="fld"><Search className="i" /><input aria-label={`Search ${kind}`} placeholder={`Search ${kind}…`} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+            <SearchField aria-label={`Search ${kind}`} placeholder={`Search ${kind}s…`} value={search} onChange={(event) => setSearch(event.target.value)} />
             {customer && <label className="tg"><input type="checkbox" checked={hideCredit} onChange={(event) => setHideCredit(event.target.checked)} />Hide credit / zero balances</label>}
         </div>
         <div className="split">
@@ -377,9 +378,7 @@ export default function FinancialPosition({ data, filters, asOf, paymentParties 
     }
 
     return <AppLayout breadcrumbs={breadcrumbs}>
-        <Head title="Financial Position">
-            <link head-key="financial-inter" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" referrerPolicy="no-referrer" />
-        </Head>
+        <Head title="Financial Position" />
         <div className="financial-position" aria-busy={updating}>
             <section className="hero">
                 <div className="intro"><h1>Financial Position</h1>

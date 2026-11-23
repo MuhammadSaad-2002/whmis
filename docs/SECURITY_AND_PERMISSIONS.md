@@ -37,6 +37,7 @@ Current modules include:
 - `ledger`
 - `reports`
 - `dashboard`
+- `global-search`
 - `users`
 - `roles`
 - `audit`
@@ -60,6 +61,16 @@ access decisions.
 - `usePermissions()` exposes `can()` and `canAny()` in React.
 - `nav-config.ts` defines the workspace top bar's groups and page permission keys.
 - Server-side route middleware remains the real authorization boundary.
+
+**Global Search** (`global-search.use`) enables the workspace search button and
+keyboard shortcut. Admin and Super Admin have it by default; grant it to other
+roles in **Roles & Permissions → Global Search**. Results reuse the signed-in
+user's permitted navigation and exclude supplier pages for field Bookers. The
+server shares individual report names only when the user has access to the
+reports module and any permissions required by that report. Search adds no page
+or record privileges. Existing installations can import
+[`2026_11_24_seed_global_search_permission.sql`](../database/manual/2026_11_24_seed_global_search_permission.sql),
+reset the permission cache and reload the workspace.
 
 ## Super Admin protections
 

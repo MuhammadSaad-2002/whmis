@@ -32,6 +32,7 @@ class RolePermissionSeeder extends Seeder
             'ledger.view',
             'reports.view',
             'dashboard.view', 'dashboard.view_all', 'dashboard.executive',
+            'global-search.use',
             'users.manage',
             'roles.manage',
             'audit.view',
@@ -61,6 +62,7 @@ class RolePermissionSeeder extends Seeder
                 'inventory.view', 'inventory.adjust',
                 'payments.view', 'payments.manage',
                 'ledger.view', 'reports.view', 'dashboard.view', 'dashboard.view_all', 'dashboard.executive',
+                'global-search.use',
                 'audit.view', 'users.manage',
             ],
             'Booker' => [

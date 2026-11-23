@@ -7,7 +7,7 @@
 }
 
 .sales-invoices, .sales-preview {
-    font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+    font-family:var(--font-sans);
     font-size:14px;
     line-height:1.45;
     color:var(--ink);
@@ -75,8 +75,6 @@
     .fld:focus-within{border-color:var(--teal2);box-shadow:0 0 0 3px rgba(20,184,166,.14)}
     .fld input,.fld select{border:0;outline:0;background:none;height:100%;color:var(--ink);font-size:14px}
     .fld input::placeholder{color:var(--ink3);opacity:1}
-    .fld.search{flex:1;min-width:220px;max-width:340px}
-    .fld.search input{width:100%}
     .fld small{font-size:13px;font-weight:600}
     .presets{display:flex;background:var(--line2);border-radius:9px;padding:3px}
     .presets button{border:0;background:none;padding:5px 10px;border-radius:6px;font-size:13px;font-weight:600;color:var(--ink2)}
@@ -160,7 +158,6 @@
         .list{margin-top:8px}
         .tabs,.filters{padding-left:10px;padding-right:10px}
         .filters .fld{min-height:40px}
-        .filters .search{min-width:100%;max-width:none}
         .filters .choice{flex:1;min-width:125px}
         .filters .choice select,.filters .fld input{width:100%;min-width:0}
         .filters .date-field{flex:1;min-width:125px}

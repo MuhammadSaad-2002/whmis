@@ -155,7 +155,7 @@ export default function InventoryBatches({ batches, filters }: Props) {
                                         <div className="font-medium">{batch.product?.name}</div>
                                         <div className="text-xs text-muted-foreground">{batch.product?.company?.name}</div>
                                     </TableCell>
-                                    <TableCell className="font-mono text-sm">{batch.batch_number}</TableCell>
+                                    <TableCell className="text-sm tabular-nums">{batch.batch_number}</TableCell>
                                     <TableCell>{expiryBadge(batch.expiry_date)}</TableCell>
                                     <TableCell className="text-right tabular-nums">{qty(batch.qty_purchased)}</TableCell>
                                     <TableCell className="text-right tabular-nums">{qty(batch.qty_bonus)}</TableCell>
