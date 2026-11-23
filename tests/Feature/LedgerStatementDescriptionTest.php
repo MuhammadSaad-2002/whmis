@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Company;
+use App\Models\Customer;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
 use App\Models\User;
@@ -11,7 +12,10 @@ use App\Services\LedgerService;
 use App\Services\NumberSeriesService;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSeeder;
+use DOMDocument;
+use DOMXPath;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 /**
@@ -75,5 +79,45 @@ class LedgerStatementDescriptionTest extends TestCase
 
         $this->assertNotNull($row);
         $this->assertSame("Purchase Invoice {$purchase->invoice_number}", $row['description']);
+    }
+
+    public function test_statement_pdf_totals_exclude_opening_balance_and_sum_period_entries(): void
+    {
+        $ledger = app(LedgerService::class);
+        $from = Carbon::parse('2026-11-01');
+        $to = Carbon::parse('2026-11-30');
+        $customer = Customer::create(['name' => 'Statement Pharmacy']);
+
+        foreach ([
+            [$this->company, 'Supplier', 'ledger.supplier.pdf', '90.25', '142.75'],
+            [$customer, 'Customer', 'ledger.customer.pdf', '142.75', '90.25'],
+        ] as [$party, $label, $route, $expectedDebit, $expectedCredit]) {
+            $post = fn ($type, $date, $charge, $settlement) => $ledger->post(
+                $party, $type, $date, $label === 'Customer' ? $charge : $settlement, $label === 'Customer' ? $settlement : $charge,
+            );
+            $post('opening', '2026-10-31', 400, 0);
+            $post($label === 'Customer' ? 'receipt' : 'payment', '2026-11-01', 0, 90.25);
+            $post('adjustment', '2026-11-15', 90.25, 0);
+            $post($label === 'Customer' ? 'sale' : 'purchase', '2026-11-30', 52.50, 0);
+            $post('adjustment', '2026-12-01', 0, 12);
+
+            $statement = $ledger->statement($party, $from, $to);
+            $html = view('pdf.statement', [
+                'party' => $party, 'partyLabel' => $label, 'statement' => $statement,
+                'aging' => $ledger->aging($party), 'from' => $from, 'to' => $to,
+            ])->render();
+
+            $document = new DOMDocument;
+            $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+            $xpath = new DOMXPath($document);
+            $totals = $xpath->query('//tr[td/strong="Period Totals"]/td');
+            $this->assertCount(4, $totals);
+            $this->assertSame($expectedDebit, trim($totals->item(1)->textContent));
+            $this->assertSame($expectedCredit, trim($totals->item(2)->textContent));
+            $this->assertSame('452.50', $xpath->evaluate('string(//tr[td/strong="Closing Balance"]/td[2]/strong)'));
+
+            $this->get(route($route, [$party, 'from' => $from->toDateString(), 'to' => $to->toDateString()]))
+                ->assertOk()->assertHeader('content-type', 'application/pdf');
+        }
     }
 }

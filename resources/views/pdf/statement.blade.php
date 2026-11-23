@@ -47,6 +47,12 @@
                     <td class="num">{{ number_format($sign * $row['balance'], 2) }}</td>
                 </tr>
             @endforeach
+            <tr style="background: #edf3f6;">
+                <td colspan="3"><strong>Period Totals</strong></td>
+                <td class="num"><strong>{{ number_format(array_sum(array_column($statement['rows'], 'debit')), 2) }}</strong></td>
+                <td class="num"><strong>{{ number_format(array_sum(array_column($statement['rows'], 'credit')), 2) }}</strong></td>
+                <td></td>
+            </tr>
             <tr>
                 <td colspan="5"><strong>Closing Balance</strong></td>
                 <td class="num"><strong>{{ number_format($sign * $statement['closing_balance'], 2) }}</strong></td>
