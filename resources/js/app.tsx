@@ -32,6 +32,5 @@ initializeTheme();
 // Enter moves to the next field in all forms (desktop accounting behavior).
 installEnterToNext();
 
-// When running inside a workspace tab (iframe), escalate cross-page navigations
-// to the shell so they open/focus a tab instead of navigating within the frame.
+// The active workspace view handles navigation and its draft leave guard.
 initEmbeddedNav();

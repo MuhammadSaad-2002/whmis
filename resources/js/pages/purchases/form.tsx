@@ -10,7 +10,9 @@ import {
 } from '@/components/ui/select';
 import { useInvoiceHotkeys, useKeyboardGrid } from '@/hooks/use-keyboard-grid';
 import { usePermissions } from '@/hooks/use-permissions';
+import { draftWasSaved, useDraftLeave } from '@/hooks/use-draft-leave';
 import AppLayout from '@/layouts/app-layout';
+import type { VisitOptions } from '@inertiajs/core';
 import { amount, dec2, money, toNumber } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { computeLine, computeTotals } from '@/lib/invoice-math';
@@ -310,17 +312,37 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
             })),
     });
 
-    const save = () => {
-        if (readonly || saving) return;
+    const draftVersion = JSON.stringify([header, rows]);
+    const draft = useDraftLeave({ version: draftVersion, editable: !readonly && can('purchases.create'), saving, save });
+
+    function save(done?: (saved: boolean) => void) {
+        if (readonly || saving) {
+            done?.(false);
+            return;
+        }
         if (!validate()) {
             toast.error(ALERT_FIX);
+            done?.(false);
             return;
         }
         setSaving(true);
-        const options = { preserveScroll: true, onError: handleServerErrors, onFinish: () => setSaving(false) };
+        let saved = false;
+        const options: VisitOptions = {
+            replace: true,
+            preserveScroll: true,
+            onError: handleServerErrors,
+            onSuccess: (page) => {
+                saved = draftWasSaved(page.props.flash);
+                if (saved) draft.markSaved(draftVersion);
+            },
+            onFinish: () => {
+                setSaving(false);
+                done?.(saved && draft.canLeaveAfterSave());
+            },
+        };
         if (invoice) router.put(route('purchases.update', invoice.id), payload(), options);
         else router.post(route('purchases.store'), payload(), options);
-    };
+    }
 
     const post = () => {
         if (!invoice || readonly || saving) return;
@@ -333,7 +355,14 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
         // Save latest edits first, then post.
         router.put(route('purchases.update', invoice.id), payload(), {
             preserveScroll: true,
-            onSuccess: () => router.post(route('purchases.post', invoice.id), {}, { onError: handleServerErrors, onFinish: () => setSaving(false) }),
+            onSuccess: (page) => {
+                if (!draftWasSaved(page.props.flash)) {
+                    setSaving(false);
+                    return;
+                }
+                draft.markSaved(draftVersion);
+                router.post(route('purchases.post', invoice.id), {}, { onError: handleServerErrors, onFinish: () => setSaving(false) });
+            },
             onError: (errors) => { handleServerErrors(errors); setSaving(false); },
         });
     };
@@ -391,6 +420,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
+            {draft.dialog}
             <Head title={invoice ? invoice.invoice_number : 'New Purchase'} />
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
@@ -430,7 +460,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                         )}
                         {isDraft && (
                             <>
-                                <Button variant="outline" size="sm" onClick={save} disabled={saving}>
+                                <Button variant="outline" size="sm" onClick={() => save()} disabled={saving}>
                                     <Save className="mr-1 size-4" /> Save Draft <kbd className="ml-1 text-xs opacity-60">F8</kbd>
                                 </Button>
                                 {invoice && can('purchases.post') && (

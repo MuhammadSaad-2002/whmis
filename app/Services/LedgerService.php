@@ -9,6 +9,7 @@ use App\Models\Payment;
 use App\Models\PurchaseInvoice;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 
 /**
@@ -57,15 +58,45 @@ class LedgerService
      */
     public function aging(Customer|Company $party, ?Carbon $asOf = null): array
     {
-        $asOf = $asOf ?? now();
-        $isCustomer = $party instanceof Customer;
-
         $entries = LedgerEntry::where('party_type', $party->getMorphClass())
             ->where('party_id', $party->getKey())
             ->orderBy('entry_date')
             ->orderBy('id')
             ->get();
 
+        return $this->ageEntries($entries, $party instanceof Customer, $asOf ?? now());
+    }
+
+    /** Customer balances in one aggregate query, with debit/credit identical to outstanding(). */
+    public function customerBalances(array $ids): Collection
+    {
+        return LedgerEntry::where('party_type', (new Customer)->getMorphClass())
+            ->whereIntegerInRaw('party_id', $ids)
+            ->selectRaw('party_id, SUM(debit - credit) AS balance')->groupBy('party_id')->pluck('balance', 'party_id');
+    }
+
+    /** Age positive receivables in batches without issuing a separate query for each account. */
+    public function customerAging(array $ids, ?Carbon $asOf = null): array
+    {
+        $asOf ??= now();
+        $aged = [];
+        foreach (array_chunk($ids, 250) as $batch) {
+            $entries = LedgerEntry::where('party_type', (new Customer)->getMorphClass())
+                ->whereIntegerInRaw('party_id', $batch)
+                ->selectRaw('party_id, entry_date, SUM(CASE WHEN debit > 0 THEN debit ELSE 0 END) AS debit, SUM(credit) AS credit')
+                ->groupBy('party_id', 'entry_date')->orderBy('entry_date')
+                ->toBase()->get()->groupBy('party_id');
+
+            foreach ($entries as $partyId => $group) {
+                $aged[$partyId] = $this->ageEntries($group, true, $asOf);
+            }
+        }
+
+        return $aged;
+    }
+
+    private function ageEntries(iterable $entries, bool $isCustomer, Carbon $asOf): array
+    {
         // Charges increase the balance owed; credits reduce oldest charges first.
         $charges = [];
         $creditPool = 0.0;

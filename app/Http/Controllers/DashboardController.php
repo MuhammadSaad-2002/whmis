@@ -14,25 +14,32 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
+use Inertia\Support\Header;
 
 class DashboardController extends Controller
 {
     public function __invoke(Request $request, ReportService $reports, DashboardService $dashboard)
     {
-        if (! $request->user()->canViewSupplierDetails()) {
-            return $this->bookerDashboard($request);
-        }
+        $user = $request->user();
+        $canViewSupplierDetails = $user->canViewSupplierDetails();
 
         // Admin / Super Admin get the richer Executive Dashboard.
-        if ($request->user()->can('dashboard.executive')) {
+        if ($canViewSupplierDetails && $user->can('dashboard.executive')) {
             [$from, $to, $period] = $this->resolvePeriod($request);
 
-            return Inertia::render('dashboard', $dashboard->executivePayload($from, $to, $period));
+            return Inertia::render('dashboard', $dashboard->executiveProps($from, $to, $period));
+        }
+
+        // If access changed since the executive view opened, discard its old
+        // client props instead of merging a different role's dashboard into them.
+        if ($request->header(Header::PARTIAL_COMPONENT) === 'dashboard'
+            && in_array('filterValues', explode(',', (string) $request->header(Header::PARTIAL_ONLY)), true)) {
+            return Inertia::location(route('dashboard', absolute: false));
         }
 
         // Bookers get a stripped, own-data-only dashboard — no company-wide
         // financials. Everyone else (dashboard.view_all) gets the full view.
-        if (! $request->user()->can('dashboard.view_all')) {
+        if (! $canViewSupplierDetails || ! $user->can('dashboard.view_all')) {
             return $this->bookerDashboard($request);
         }
 
@@ -105,36 +112,43 @@ class DashboardController extends Controller
     }
 
     /**
-     * Resolve the period selector into a [from, to] window.
-     * Presets: last_3, last_6, ytd, last_12; legacy URLs also support this_month and custom.
+     * Resolve the period selector into inclusive Pakistan business dates.
      *
      * @return array{0: Carbon, 1: Carbon, 2: string}
      */
     private function resolvePeriod(Request $request): array
     {
         $period = $request->string('period')->toString() ?: 'last_12';
-        $today = now(config('app.timezone'));
-        $to = $today->copy();
+        $today = now('Asia/Karachi')->startOfDay();
+        $monthStart = $today->copy()->startOfMonth();
+        $yesterday = $today->copy()->subDay();
+        $rollingMonths = ['last_3' => 3, 'last_6' => 6, 'last_9' => 9, 'last_12' => 12];
 
-        $from = match ($period) {
-            'last_3' => $today->copy()->subMonthsNoOverflow(3)->addDay()->startOfDay(),
-            'last_6' => $today->copy()->subMonthsNoOverflow(6)->addDay()->startOfDay(),
-            'last_12' => $today->copy()->subMonthsNoOverflow(12)->addDay()->startOfDay(),
-            'ytd' => $today->copy()->startOfYear(),
-            'custom' => $request->filled('from') ? Carbon::parse($request->string('from')->toString())->startOfDay() : $today->copy()->startOfMonth(),
-            default => $today->copy()->startOfMonth(),
+        if (isset($rollingMonths[$period])) {
+            return [$today->copy()->subMonthsNoOverflow($rollingMonths[$period])->addDay(), $today, $period];
+        }
+
+        if ($period === 'custom') {
+            $range = validator([
+                'from' => $request->input('from'),
+                'to' => $request->input('to', $today->toDateString()),
+            ], [
+                'from' => ['required', 'date_format:Y-m-d'],
+                'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
+            ], [
+                'to.after_or_equal' => 'The end date must be on or after the start date.',
+            ])->validate();
+
+            return [Carbon::parse($range['from'], $today->timezone), Carbon::parse($range['to'], $today->timezone), $period];
+        }
+
+        return match ($period) {
+            'today' => [$today->copy(), $today, $period],
+            'yesterday' => [$yesterday->copy(), $yesterday, $period],
+            'last_month' => [$monthStart->copy()->subMonth(), $monthStart->copy()->subDay(), $period],
+            'ytd' => [$today->copy()->startOfYear(), $today, $period],
+            default => [$monthStart, $today, 'this_month'],
         };
-
-        if ($period === 'custom' && $request->filled('to')) {
-            $to = Carbon::parse($request->string('to')->toString());
-        }
-
-        // 'custom' without a valid start falls back to a coherent this-month window.
-        if ($period === 'custom' && ! $request->filled('from')) {
-            $period = 'this_month';
-        }
-
-        return [$from, $to, $period];
     }
 
     /** Own-data-only dashboard for bookers: assigned pharmacies + their orders. */

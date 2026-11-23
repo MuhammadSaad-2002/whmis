@@ -9,6 +9,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
+import { WorkspaceRecordLink } from '@/components/workspace/record-link';
 import AppLayout from '@/layouts/app-layout';
 import { money, shortDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -180,9 +181,7 @@ export default function BookingsIndex({ bookings, customers, filters }: Props) {
                             {bookings.data.map((booking, index) => (
                                 <TableRow key={booking.id} {...rowProps(index)}>
                                     <TableCell>
-                                        <Link href={route('bookings.edit', booking.id)} className="font-medium hover:underline">
-                                            {booking.booking_number}
-                                        </Link>
+                                        <WorkspaceRecordLink href={route('bookings.edit', booking.id)} number={booking.booking_number} />
                                     </TableCell>
                                     <TableCell>
                                         <div>{booking.customer?.name}</div>

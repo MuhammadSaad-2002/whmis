@@ -22,13 +22,15 @@ use App\Models\StockLoan;
 use App\Models\StockMovement;
 use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * Registry-driven report engine. Every report returns the same shape:
  * ['columns' => [{key,label,align,format}], 'rows' => [...], 'totals' => [...], 'chart' => ?array]
  * The generic reports/show page, the xlsx export, and the PDF all render it.
  *
- * Date grouping is done in PHP (not SQL) so SQLite tests behave like MySQL.
+ * Calendar buckets are assigned in PHP; grouped SQL uses expressions shared
+ * by SQLite tests and MySQL production.
  */
 class ReportService
 {
@@ -233,9 +235,8 @@ class ReportService
             ->whereHas('invoice', fn ($q) => $q->where('status', 'posted')
                 ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to))
             ->when($companyId, fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id)))
-            ->with('product:id,name,company_id', 'product.company:id,name')
-            ->get()
-            ->groupBy('product_id');
+            ->selectRaw('product_id, SUM(quantity) AS quantity, SUM(bonus_quantity) AS bonus_quantity, SUM(net_amount) AS net_amount, SUM(cost_amount) AS cost_amount')
+            ->groupBy('product_id')->toBase()->get()->keyBy('product_id');
 
         // Invoice-cohort profitability: returns belong to the original sale's
         // period, not whichever period the credit note happened to be entered.
@@ -244,28 +245,29 @@ class ReportService
             ->whereHas('invoiceItem.invoice', fn ($q) => $q->where('status', 'posted')
                 ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to))
             ->when($companyId, fn ($q, $id) => $q->whereHas('product', fn ($p) => $p->where('company_id', $id)))
-            ->with('product:id,name,company_id', 'product.company:id,name')
-            ->get()
-            ->groupBy('product_id');
+            ->selectRaw('product_id, SUM(quantity) AS quantity, SUM(net_amount) AS net_amount, SUM(cost_amount) AS cost_amount')
+            ->groupBy('product_id')->toBase()->get()->keyBy('product_id');
 
-        $rows = $sold->keys()->merge($returned->keys())->unique()->map(function ($productId) use ($sold, $returned) {
-            $soldGroup = $sold[$productId] ?? collect();
-            $retGroup = $returned[$productId] ?? collect();
-            $product = ($soldGroup->first() ?? $retGroup->first())->product;
+        $ids = $sold->keys()->merge($returned->keys())->unique();
+        $products = Product::with('company:id,name')->whereIntegerInRaw('id', $ids->all())->get(['id', 'name', 'company_id'])->keyBy('id');
+        $rows = $ids->map(function ($productId) use ($sold, $returned, $products) {
+            $soldGroup = $sold[$productId] ?? null;
+            $retGroup = $returned[$productId] ?? null;
+            $product = $products[$productId] ?? null;
 
-            $grossQty = (float) $soldGroup->sum('quantity');
-            $retQty = (float) $retGroup->sum('quantity');
-            $grossRev = (float) $soldGroup->sum('net_amount');
-            $retRev = (float) $retGroup->sum('net_amount');
-            $retCost = (float) $retGroup->sum('cost_amount');
-            $grossCost = (float) $soldGroup->sum('cost_amount');
+            $grossQty = (float) ($soldGroup->quantity ?? 0);
+            $retQty = (float) ($retGroup->quantity ?? 0);
+            $grossRev = (float) ($soldGroup->net_amount ?? 0);
+            $retRev = (float) ($retGroup->net_amount ?? 0);
+            $retCost = (float) ($retGroup->cost_amount ?? 0);
+            $grossCost = (float) ($soldGroup->cost_amount ?? 0);
             $netCost = $grossCost - $retCost;
 
             return [
                 'product' => $product?->name,
                 'supplier' => $product?->company?->name,
                 'qty' => $grossQty,
-                'bonus' => (float) $soldGroup->sum('bonus_quantity'),
+                'bonus' => (float) ($soldGroup->bonus_quantity ?? 0),
                 'returned_qty' => $retQty,
                 'net_qty' => round($grossQty - $retQty, 2),
                 'revenue' => round($grossRev, 2),
@@ -476,35 +478,46 @@ class ReportService
         ];
     }
 
-    private function customerSales(Carbon $from, Carbon $to): array
+    /** Transaction-date customer profitability, with optional current ledger balances. */
+    public function customerSalesRows(Carbon $from, Carbon $to, bool $includeOutstanding = false): Collection
     {
-        $invoices = $this->postedSales($from, $to)->with('customer:id,name,city')->get()->groupBy('customer_id');
-        $returns = $this->postedReturns($from, $to)->with('customer:id,name,city')->get()->groupBy('customer_id');
+        $invoices = $this->postedSales($from, $to)
+            ->selectRaw('customer_id, COUNT(*) AS invoice_count, SUM(total_amount) AS revenue, SUM(total_profit) AS profit')
+            ->groupBy('customer_id')->toBase()->get()->keyBy('customer_id');
+        $returns = $this->postedReturns($from, $to)
+            ->selectRaw('customer_id, SUM(total_amount) AS revenue, SUM(total_cost) AS cost')
+            ->groupBy('customer_id')->toBase()->get()->keyBy('customer_id');
 
         $customerIds = $invoices->keys()->merge($returns->keys())->filter()->unique();
-        $customers = Customer::whereIn('id', $customerIds)->get()->keyBy('id');
+        $customers = Customer::whereIntegerInRaw('id', $customerIds->all())->get(['id', 'name', 'city'])->keyBy('id');
+        $balances = $includeOutstanding
+            ? $this->ledger->customerBalances($customerIds->all())
+            : collect();
 
-        $rows = $customerIds->map(function ($customerId) use ($invoices, $returns, $customers) {
-            $invGroup = $invoices[$customerId] ?? collect();
-            $retGroup = $returns[$customerId] ?? collect();
-            $customer = $customers[$customerId] ?? $invGroup->first()?->customer ?? $retGroup->first()?->customer;
-
-            $grossRev = (float) $invGroup->sum('total_amount');
-            $retRev = (float) $retGroup->sum('total_amount');
-            $retCost = (float) $retGroup->sum('total_cost');
+        return $customerIds->map(function ($customerId) use ($invoices, $returns, $customers, $balances, $includeOutstanding) {
+            $invGroup = $invoices[$customerId] ?? null;
+            $retGroup = $returns[$customerId] ?? null;
+            $customer = $customers[$customerId] ?? null;
+            $grossRev = (float) ($invGroup->revenue ?? 0);
+            $retRev = (float) ($retGroup->revenue ?? 0);
+            $retCost = (float) ($retGroup->cost ?? 0);
 
             return [
                 'customer_id' => (int) $customerId,
                 'customer' => $customer?->name,
                 'city' => $customer?->city,
-                'invoices' => $invGroup->count(),
+                'invoices' => (int) ($invGroup->invoice_count ?? 0),
                 'revenue' => round($grossRev, 2),
                 'returns' => round($retRev, 2),
                 'net_revenue' => round($grossRev - $retRev, 2),
-                'net_profit' => round((float) $invGroup->sum('total_profit') - ($retRev - $retCost), 2),
-                'outstanding' => $customer ? $this->ledger->outstanding($customer) : 0,
-            ];
+                'net_profit' => round((float) ($invGroup->profit ?? 0) - ($retRev - $retCost), 2),
+            ] + ($includeOutstanding ? ['outstanding' => (float) ($balances[$customerId] ?? 0)] : []);
         })->sortByDesc('net_revenue')->values();
+    }
+
+    private function customerSales(Carbon $from, Carbon $to): array
+    {
+        $rows = $this->customerSalesRows($from, $to, includeOutstanding: true);
 
         return [
             'columns' => [
@@ -1400,19 +1413,24 @@ class ReportService
 
     private function outstanding(): array
     {
-        $rows = Customer::active()
+        $customers = Customer::active()
             ->withSum('ledgerEntries as debit_sum', 'debit')
             ->withSum('ledgerEntries as credit_sum', 'credit')
             ->orderBy('name')
-            ->get()
-            ->map(function (Customer $customer) {
-                $balance = round((float) $customer->debit_sum - (float) $customer->credit_sum, 2);
-                $aging = $balance > 0 ? $this->ledger->aging($customer) : null;
+            ->get();
+        $balances = $customers->mapWithKeys(fn (Customer $customer) => [
+            $customer->id => round((float) $customer->debit_sum - (float) $customer->credit_sum, 2),
+        ]);
+        $ages = $this->ledger->customerAging($balances->filter(fn ($balance) => $balance > 0)->keys()->all());
+
+        $rows = $customers
+            ->map(function (Customer $customer) use ($balances, $ages) {
+                $aging = $ages[$customer->id] ?? null;
 
                 return [
                     'customer' => $customer->name,
                     'city' => $customer->city,
-                    'balance' => $balance,
+                    'balance' => $balances[$customer->id],
                     'current' => $aging['current'] ?? 0,
                     'd31_60' => $aging['31_60'] ?? 0,
                     'd61_90' => $aging['61_90'] ?? 0,
@@ -1549,27 +1567,30 @@ class ReportService
         $daily = $from->diffInDays($to) <= 45;
         $keyFormat = $daily ? 'Y-m-d' : 'Y-m';
         $labelFormat = $daily ? 'd M' : 'M Y';
+        $startDate = $from->toDateString();
+        $nextDate = $to->copy()->addDay()->toDateString();
+        // Aggregate by date in SQL, then group into the selected chart buckets.
+        // date() is common to SQLite and MySQL; the range predicates can use indexes.
+        $bucket = fn ($row) => $daily ? $row->activity_day : substr($row->activity_day, 0, 7);
 
         $invoices = SalesInvoice::where('status', 'posted')
-            ->whereDate('invoice_date', '>=', $from)
-            ->whereDate('invoice_date', '<=', $to)
-            ->get(['invoice_date', 'total_amount', 'total_cost', 'total_profit'])
-            ->groupBy(fn ($invoice) => $invoice->invoice_date->format($keyFormat));
+            ->where('invoice_date', '>=', $startDate)->where('invoice_date', '<', $nextDate)
+            ->selectRaw('DATE(invoice_date) AS activity_day, COUNT(*) AS invoice_count, SUM(total_amount) AS amount, SUM(total_cost) AS cost, SUM(total_profit) AS profit')
+            ->groupBy('activity_day')->toBase()->get()->groupBy($bucket);
 
         $returns = SalesReturn::where('status', SalesReturn::STATUS_POSTED)
-            ->whereDate('return_date', '>=', $from)
-            ->whereDate('return_date', '<=', $to)
-            ->get(['return_date', 'total_amount', 'total_cost'])
-            ->groupBy(fn ($return) => $return->return_date->format($keyFormat));
+            ->where('return_date', '>=', $startDate)->where('return_date', '<', $nextDate)
+            ->selectRaw('DATE(return_date) AS activity_day, SUM(total_amount) AS amount, SUM(total_cost) AS cost')
+            ->groupBy('activity_day')->toBase()->get()->groupBy($bucket);
 
         $purchases = PurchaseInvoice::where('status', 'posted')
-            ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to)
-            ->get(['invoice_date', 'total_amount'])
-            ->groupBy(fn ($invoice) => $invoice->invoice_date->format($keyFormat));
+            ->where('invoice_date', '>=', $startDate)->where('invoice_date', '<', $nextDate)
+            ->selectRaw('DATE(invoice_date) AS activity_day, SUM(total_amount) AS amount')
+            ->groupBy('activity_day')->toBase()->get()->groupBy($bucket);
         $purchaseReturns = PurchaseReturn::query()
-            ->whereDate('return_date', '>=', $from)->whereDate('return_date', '<=', $to)
-            ->get(['return_date', 'total_amount'])
-            ->groupBy(fn ($return) => $return->return_date->format($keyFormat));
+            ->where('return_date', '>=', $startDate)->where('return_date', '<', $nextDate)
+            ->selectRaw('DATE(return_date) AS activity_day, SUM(total_amount) AS amount')
+            ->groupBy('activity_day')->toBase()->get()->groupBy($bucket);
 
         $cursor = $daily ? $from->copy() : $from->copy()->startOfMonth();
         $last = $daily ? $to->copy()->startOfDay() : $to->copy()->startOfMonth();
@@ -1579,16 +1600,16 @@ class ReportService
             $key = $cursor->format($keyFormat);
             $sales = $invoices[$key] ?? collect();
             $creditNotes = $returns[$key] ?? collect();
-            $returnedRevenue = (float) $creditNotes->sum('total_amount');
-            $returnedCost = (float) $creditNotes->sum('total_cost');
+            $returnedRevenue = (float) $creditNotes->sum('amount');
+            $returnedCost = (float) $creditNotes->sum('cost');
 
             $points[] = [
                 'label' => $cursor->format($labelFormat),
-                'sales' => round((float) $sales->sum('total_amount') - $returnedRevenue, 2),
-                'profit' => round((float) $sales->sum('total_profit') - ($returnedRevenue - $returnedCost), 2),
-                'cogs' => round((float) $sales->sum('total_cost') - $returnedCost, 2),
-                'purchases' => round((float) ($purchases[$key] ?? collect())->sum('total_amount') - (float) ($purchaseReturns[$key] ?? collect())->sum('total_amount'), 2),
-                'invoice_count' => $sales->count(),
+                'sales' => round((float) $sales->sum('amount') - $returnedRevenue, 2),
+                'profit' => round((float) $sales->sum('profit') - ($returnedRevenue - $returnedCost), 2),
+                'cogs' => round((float) $sales->sum('cost') - $returnedCost, 2),
+                'purchases' => round((float) ($purchases[$key] ?? collect())->sum('amount') - (float) ($purchaseReturns[$key] ?? collect())->sum('amount'), 2),
+                'invoice_count' => (int) $sales->sum('invoice_count'),
             ];
 
             $daily ? $cursor->addDay() : $cursor->addMonth();

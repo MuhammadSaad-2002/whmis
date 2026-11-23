@@ -4,10 +4,10 @@ namespace App\Services;
 
 use App\Models\Batch;
 use App\Models\Booking;
-use App\Models\Customer;
 use App\Models\LedgerEntry;
 use App\Models\PurchaseInvoice;
 use App\Models\SalesInvoice;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -32,38 +32,82 @@ class DashboardService
 
     public function executivePayload(Carbon $from, Carbon $to, string $period): array
     {
-        $asOf = now();
-        $kpis = $this->periodKpis($from, $to);
-        $financials = $this->financials();
-        $outstanding = $this->reports->build('outstanding', []);
-        $periodFilters = ['from' => $from->toDateString(), 'to' => $to->toDateString()];
-        $productRows = collect($this->reports->build('product-sales', $periodFilters)['rows']);
-        $supplierRows = $this->salesBySupplier($productRows);
-        $customerRows = collect($this->reports->build('customer-sales', $periodFilters)['rows']);
+        return array_map(
+            fn ($prop) => $prop instanceof Closure ? $prop() : $prop,
+            $this->executiveProps($from, $to, $period),
+        );
+    }
+
+    /** Inertia resolves only the closures requested on a partial visit. */
+    public function executiveProps(Carbon $from, Carbon $to, string $period): array
+    {
+        $periodData = null;
+        $snapshotData = null;
+        $activity = function () use (&$periodData, $from, $to): array {
+            return $periodData ??= $this->periodData($from, $to);
+        };
+        $snapshot = function () use (&$snapshotData): array {
+            return $snapshotData ??= $this->snapshotData();
+        };
 
         return [
             'scope' => 'executive',
-            'asOf' => $asOf->toIso8601String(),
             'filterValues' => [
                 'period' => $period,
                 'from' => $from->toDateString(),
                 'to' => $to->toDateString(),
+                'days' => (int) $from->copy()->startOfDay()->diffInDays($to->copy()->startOfDay()) + 1,
             ],
-            'kpis' => $kpis,
+            'kpis' => fn () => $activity()['kpis'],
+            'hr' => fn () => $activity()['hr'],
+            'monthlyTrend' => fn () => $activity()['monthlyTrend'],
+            'topProducts' => fn () => $activity()['topProducts'],
+            'salesBySupplier' => fn () => $activity()['salesBySupplier'],
+            'topCustomers' => fn () => $activity()['topCustomers'],
+            'rankingTotals' => fn () => $activity()['rankingTotals'],
+            'asOf' => fn () => $snapshot()['asOf'],
+            'financials' => fn () => $snapshot()['financials'],
+            'aging' => fn () => $snapshot()['aging'],
+            'topDebtors' => fn () => $snapshot()['topDebtors'],
+            'stockOnLoan' => fn () => $snapshot()['stockOnLoan'],
+            'attention' => fn () => $snapshot()['attention'],
+            'recentSales' => fn () => $snapshot()['recentSales'],
+            'expiringSoon' => fn () => $snapshot()['expiringSoon'],
+        ];
+    }
+
+    private function periodData(Carbon $from, Carbon $to): array
+    {
+        $periodFilters = ['from' => $from->toDateString(), 'to' => $to->toDateString()];
+        $productRows = collect($this->reports->build('product-sales', $periodFilters)['rows']);
+        $supplierRows = $this->salesBySupplier($productRows);
+        $customerRows = $this->reports->customerSalesRows($from, $to);
+
+        return [
+            'kpis' => $this->periodKpis($from, $to),
             'hr' => app(HrReportService::class)->totals($from, $to),
-            'financials' => $financials,
-            'workingCapital' => $this->workingCapital($from, $to, $kpis, $financials),
             'monthlyTrend' => $this->reports->salesProfitTrend($from, $to),
-            'aging' => $this->aging($outstanding['totals']),
             'topProducts' => $this->topProducts($productRows),
             'salesBySupplier' => $supplierRows->take(8)->values()->all(),
-            'topDebtors' => $this->topDebtors($outstanding['rows']),
             'topCustomers' => $this->topCustomers($customerRows),
             'rankingTotals' => [
                 'products' => (float) $productRows->where('net_revenue', '>', 0)->sum('net_revenue'),
                 'suppliers' => (float) $supplierRows->where('value', '>', 0)->sum('value'),
                 'customers' => (float) $customerRows->where('net_revenue', '>', 0)->sum('net_revenue'),
             ],
+        ];
+    }
+
+    private function snapshotData(): array
+    {
+        $asOf = now();
+        $outstanding = $this->reports->build('outstanding', []);
+
+        return [
+            'asOf' => $asOf->toIso8601String(),
+            'financials' => $this->financials(),
+            'aging' => $this->aging($outstanding['totals']),
+            'topDebtors' => $this->topDebtors($outstanding['rows']),
             'stockOnLoan' => $this->stockOnLoan(),
             'attention' => $this->attention($outstanding['rows'], $asOf),
             'recentSales' => $this->recentSales(),
@@ -94,25 +138,6 @@ class DashboardService
             'cogs' => $now['net_cost'],
             'invoice_count' => $now['invoice_count'],
             'average_invoice' => $now['invoice_count'] > 0 ? round($now['gross_sales'] / $now['invoice_count'], 2) : null,
-        ];
-    }
-
-    /** Snapshot balances divided by the selected period's activity (estimated days). */
-    private function workingCapital(Carbon $from, Carbon $to, array $kpis, array $financials): array
-    {
-        $days = (int) $from->copy()->startOfDay()->diffInDays($to->copy()->startOfDay()) + 1;
-        $estimate = fn (float $balance, float $activity) => $activity > 0
-            ? round(max($balance, 0) / $activity * $days, 1)
-            : null;
-        $dso = $estimate($financials['receivable'], $kpis['sales']);
-        $dio = $estimate($financials['inventory_value'], $kpis['cogs']);
-        $dpo = $estimate($financials['payable'], $kpis['purchases']);
-
-        return [
-            'dso' => $dso,
-            'dio' => $dio,
-            'dpo' => $dpo,
-            'cash_cycle' => $dso !== null && $dio !== null && $dpo !== null ? round($dso + $dio - $dpo, 1) : null,
         ];
     }
 

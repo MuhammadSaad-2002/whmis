@@ -8,9 +8,11 @@ import { LogOut, Settings } from 'lucide-react';
 
 interface UserMenuContentProps {
     user: User;
+    onNavigate?: (url: string) => void;
+    onLogout?: () => void;
 }
 
-export function UserMenuContent({ user }: UserMenuContentProps) {
+export function UserMenuContent({ user, onNavigate, onLogout }: UserMenuContentProps) {
     const cleanup = useMobileNavigation();
 
     return (
@@ -22,20 +24,24 @@ export function UserMenuContent({ user }: UserMenuContentProps) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-                <DropdownMenuItem asChild>
+                {onNavigate ? <DropdownMenuItem onSelect={() => onNavigate(route('profile.edit'))}>
+                    <Settings className="mr-2" /> Settings
+                </DropdownMenuItem> : <DropdownMenuItem asChild>
                     <Link className="block w-full" href={route('profile.edit')} as="button" prefetch onClick={cleanup}>
                         <Settings className="mr-2" />
                         Settings
                     </Link>
-                </DropdownMenuItem>
+                </DropdownMenuItem>}
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
+            {onLogout ? <DropdownMenuItem onSelect={onLogout}>
+                <LogOut className="mr-2" /> Log out
+            </DropdownMenuItem> : <DropdownMenuItem asChild>
                 <Link className="block w-full" method="post" href={route('logout')} as="button" onClick={cleanup} onSuccess={endWorkspaceSession}>
                     <LogOut className="mr-2" />
                     Log out
                 </Link>
-            </DropdownMenuItem>
+            </DropdownMenuItem>}
         </>
     );
 }

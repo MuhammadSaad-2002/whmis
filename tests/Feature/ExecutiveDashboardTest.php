@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\Booking;
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\Batch;
 use App\Models\Company;
 use App\Models\Customer;
@@ -13,10 +13,14 @@ use App\Models\PurchaseReturn;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
 use App\Models\User;
+use App\Services\LedgerService;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Inertia\Support\Header;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -139,6 +143,71 @@ class ExecutiveDashboardTest extends TestCase
                 ->where('monthlyTrend', fn ($rows) => (float) collect($rows)->sum('profit') === 600.0));
     }
 
+    /** Same request the workspace sends when a period is picked. */
+    private function partialHeaders(array $props): array
+    {
+        return [
+            Header::INERTIA => 'true',
+            Header::VERSION => app(HandleInertiaRequests::class)->version(Request::create('/dashboard')),
+            Header::PARTIAL_COMPONENT => 'dashboard',
+            Header::PARTIAL_ONLY => implode(',', $props),
+        ];
+    }
+
+    public function test_period_partial_update_does_not_query_or_return_the_current_snapshot(): void
+    {
+        $date = now('Asia/Karachi')->toDateString();
+        $this->postedSale($date, 500, 100);
+        $this->actingAs($this->admin);
+        $props = ['filterValues', 'kpis', 'hr', 'monthlyTrend', 'topProducts', 'salesBySupplier', 'topCustomers', 'rankingTotals'];
+
+        DB::enableQueryLog();
+        try {
+            $response = $this->get('/dashboard?period=today', $this->partialHeaders($props));
+            $queries = strtolower(implode("\n", array_column(DB::getQueryLog(), 'query')));
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+
+        $response->assertOk()->assertHeader(Header::INERTIA, 'true')
+            ->assertJsonPath('props.filterValues.days', 1)
+            ->assertJsonPath('props.kpis.sales', 500)
+            ->assertJsonPath('props.monthlyTrend.0.profit', 100)
+            ->assertJsonMissingPath('props.asOf')
+            ->assertJsonMissingPath('props.financials')
+            ->assertJsonMissingPath('props.aging')
+            ->assertJsonMissingPath('props.recentSales');
+        $this->assertStringNotContainsString('ledger_entries', $queries);
+        $this->assertStringNotContainsString('batches', $queries);
+        $this->assertStringNotContainsString('stock_loans', $queries);
+    }
+
+    public function test_executive_partial_request_discards_old_view_if_permissions_changed(): void
+    {
+        $this->actingAs($this->accountant);
+        $this->get('/dashboard?period=today', $this->partialHeaders(['filterValues', 'kpis']))
+            ->assertStatus(409)->assertHeader(Header::LOCATION, '/dashboard');
+    }
+
+    public function test_batched_aging_matches_single_account_aging_with_same_day_charges_and_receipts(): void
+    {
+        $asOf = Carbon::parse('2026-11-23');
+        $other = Customer::create(['name' => 'Other Pharmacy']);
+        $ledger = app(LedgerService::class);
+        $ledger->post($this->customer, 'sale', '2026-06-01', 100, 0);
+        $ledger->post($this->customer, 'sale', '2026-06-01', 200, 0);
+        $ledger->post($this->customer, 'sale', '2026-11-20', 300, 0);
+        $ledger->post($this->customer, 'receipt', '2026-11-22', 0, 180);
+        $ledger->post($other, 'sale', '2026-10-10', 900, 0);
+        $aged = $ledger->customerAging([$this->customer->id, $other->id], $asOf);
+
+        $this->assertSame($ledger->aging($this->customer, $asOf), $aged[$this->customer->id]);
+        $this->assertSame($ledger->aging($other, $asOf), $aged[$other->id]);
+        $this->assertSame(120.0, $aged[$this->customer->id]['over_90']);
+        $this->assertSame(300.0, $aged[$this->customer->id]['current']);
+    }
+
     public function test_pdf_export_is_gated_to_admins(): void
     {
         $this->actingAs($this->admin);
@@ -151,6 +220,53 @@ class ExecutiveDashboardTest extends TestCase
 
         $this->actingAs($this->booker);
         $this->get(route('dashboard.executive.pdf'))->assertForbidden();
+    }
+
+    public function test_quick_ranges_use_pakistan_business_dates_and_calendar_boundaries(): void
+    {
+        $this->travelTo(Carbon::parse('2026-12-31 20:05:00', 'UTC'));
+        $this->postedSale('2026-03-31', 200);
+        $this->postedSale('2026-04-02', 400);
+        $this->postedSale('2026-12-01', 1000);
+        $this->postedSale('2026-12-31', 2000);
+        $this->postedSale('2027-01-01', 4000);
+        $this->actingAs($this->admin);
+
+        foreach ([
+            ['today', '2027-01-01', '2027-01-01', 4000],
+            ['yesterday', '2026-12-31', '2026-12-31', 2000],
+            ['this_month', '2027-01-01', '2027-01-01', 4000],
+            ['last_month', '2026-12-01', '2026-12-31', 3000],
+            ['last_9', '2026-04-02', '2027-01-01', 7400],
+        ] as [$period, $from, $to, $sales]) {
+            $this->get('/dashboard?period='.$period)->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->where('filterValues.period', $period)
+                ->where('filterValues.from', $from)
+                ->where('filterValues.to', $to)
+                ->where('kpis.sales', $sales)
+                ->where('monthlyTrend', fn ($rows) => collect($rows)->sum('sales') === $sales));
+        }
+    }
+
+    public function test_custom_range_is_inclusive_and_rejects_invalid_dates(): void
+    {
+        $this->postedSale('2026-09-07', 100);
+        $this->postedSale('2026-09-08', 200);
+        $this->postedSale('2026-09-10', 400);
+        $this->postedSale('2026-09-11', 800);
+        $this->actingAs($this->admin);
+
+        $this->get('/dashboard?period=custom&from=2026-09-08&to=2026-09-10')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('filterValues.period', 'custom')
+            ->where('filterValues.from', '2026-09-08')
+            ->where('filterValues.to', '2026-09-10')
+            ->where('kpis.sales', 600)
+            ->has('monthlyTrend', 3));
+
+        $this->getJson('/dashboard?period=custom&from=2026-09-10&to=2026-09-08')
+            ->assertUnprocessable()->assertJsonValidationErrors('to');
+        $this->getJson('/dashboard?period=custom&from=2026-09-31&to=2026-10-01')
+            ->assertUnprocessable()->assertJsonValidationErrors('from');
     }
 
     public function test_default_and_ytd_windows_report_real_invoice_and_stock_activity(): void
@@ -222,7 +338,9 @@ class ExecutiveDashboardTest extends TestCase
                 ->where('attention.expiring_90', 2)
                 ->has('expiringSoon', 2)
                 ->where('expiringSoon.0.batch_number', 'EXP-1')
-                ->where('workingCapital.cash_cycle', null));
+                ->where('kpis.sales', 0)
+                ->where('kpis.purchases', 0)
+                ->where('kpis.cogs', 0));
         }
     }
 

@@ -1,9 +1,10 @@
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { money, qty, toNumber } from '@/lib/format';
 import { Head, Link, router } from '@inertiajs/react';
-import { AlertTriangle, ArrowDownLeft, ArrowDownUp, ArrowUpRight, CalendarDays, CheckCircle2, Clock, FileDown, FileText, Pencil, TrendingUp } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { AlertTriangle, ArrowDownLeft, ArrowDownUp, ArrowUpRight, CalendarDays, Check, CheckCircle2, ChevronDown, Clock, FileDown, FileText, Pencil, RefreshCw, TrendingUp } from 'lucide-react';
+import { memo, useMemo, useState, type ReactNode } from 'react';
 import { ActivityChart, colors, compact, Donut, RankingChart, Spark, Waterfall, type ActivityPoint, type Datum, type Slice } from './executive-charts';
 import './executive.css';
 
@@ -15,6 +16,7 @@ interface Kpis {
     margin_pct: number;
     prev_margin_pct: number | null;
     purchases: number;
+    cogs: number;
     purchases_delta: number | null;
     invoice_count: number;
     average_invoice: number | null;
@@ -41,10 +43,9 @@ interface RecentSale {
 export interface ExecutiveProps {
     asOf: string;
     hr: { expense: number };
-    filterValues: { period: string; from: string; to: string };
+    filterValues: { period: string; from: string; to: string; days: number };
     kpis: Kpis;
     financials: Financials;
-    workingCapital: { dso: number | null; dio: number | null; dpo: number | null; cash_cycle: number | null };
     monthlyTrend: ActivityPoint[];
     aging: Datum[];
     topProducts: Datum[];
@@ -59,10 +60,16 @@ export interface ExecutiveProps {
 }
 
 const periods = [
-    ['last_3', '3M', 'Last 3 Months'],
-    ['last_6', '6M', 'Last 6 Months'],
-    ['ytd', 'YTD', 'Year to Date'],
-    ['last_12', '12M', 'Last 12 Months'],
+    ['today', 'Today'],
+    ['yesterday', 'Yesterday'],
+    ['this_month', 'This Month'],
+    ['last_month', 'Last Month'],
+    ['last_3', 'Last 3 Months'],
+    ['last_6', 'Last 6 Months'],
+    ['last_9', 'Last 9 Months'],
+    ['last_12', 'Last 12 Months'],
+    ['ytd', 'Year to Date'],
+    ['custom', 'Custom Range'],
 ] as const;
 const dateFormatter = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const clockFormatter = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Karachi' });
@@ -71,6 +78,13 @@ const share = (value: number, total: number) => total > 0 ? 100 * value / total 
 const clamp = (value: number) => Math.min(100, Math.max(0, value));
 const percent = (value: number, digits = 1) => `${value.toFixed(digits)}%`;
 const billTotal = (rows: RecentSale[]) => rows.reduce((total, row) => total + toNumber(row.total_amount), 0);
+const periodProps = ['filterValues', 'kpis', 'hr', 'monthlyTrend', 'topProducts', 'salesBySupplier', 'topCustomers', 'rankingTotals'];
+const snapshotProps = ['asOf', 'financials', 'aging', 'topDebtors', 'stockOnLoan', 'attention', 'recentSales', 'expiringSoon'];
+const productColor = (index: number) => index === 0 ? colors.sales : '#5f86ad';
+const supplierColor = (index: number) => index % 2 === 0 ? colors.sales : colors.purchases;
+const daysEstimate = (balance: number, activity: number, days: number) => activity > 0
+    ? Math.round(Math.max(balance, 0) / activity * days * 10) / 10
+    : null;
 
 function CardHead({ title, tag, children }: { title: string; tag?: string; children?: ReactNode }) {
     return <header className="exec-card-head"><h2>{title}</h2>{tag && <span className="exec-tag">{tag}</span>}{children && <><span className="exec-spacer" />{children}</>}</header>;
@@ -110,7 +124,7 @@ function Breakdown({ slices, renderValue, base }: { slices: Slice[]; renderValue
     </div>;
 }
 
-function RecentSales({ sales }: { sales: RecentSale[] }) {
+const RecentSales = memo(function RecentSales({ sales }: { sales: RecentSale[] }) {
     const { can } = usePermissions();
     const [status, setStatus] = useState('all');
     const [query, setQuery] = useState('');
@@ -169,20 +183,112 @@ function RecentSales({ sales }: { sales: RecentSale[] }) {
         </div>
         <p className="exec-note" aria-live="polite">{rows.length} {rows.length === 1 ? 'invoice' : 'invoices'} · total {money(billTotal(rows))}</p>
     </section>;
-}
+});
 
-export default function ExecutiveDashboard({ asOf, filterValues, kpis, financials, workingCapital, monthlyTrend, aging, topProducts, salesBySupplier, topDebtors, topCustomers, rankingTotals, stockOnLoan, attention, recentSales, expiringSoon, hr }: ExecutiveProps) {
-    const { can } = usePermissions();
+const Header = memo(function Header({ asOf, filterValues }: Pick<ExecutiveProps, 'asOf' | 'filterValues'>) {
     const [loading, setLoading] = useState(false);
-    const [productMode, setProductMode] = useState<'revenue' | 'share'>('revenue');
-    const periodLabel = periods.find(([period]) => period === filterValues.period)?.[2] ?? (filterValues.period === 'custom' ? 'Custom Range' : 'This Month');
-    const selectPeriod = (period: string) => {
-        if (period === filterValues.period) return;
-        router.get(route('dashboard'), { period }, {
+    const [periodOpen, setPeriodOpen] = useState(false);
+    const [customOpen, setCustomOpen] = useState(false);
+    const [dates, setDates] = useState({ from: filterValues.from, to: filterValues.to });
+    const [rangeError, setRangeError] = useState('');
+    const periodLabel = periods.find(([period]) => period === filterValues.period)?.[1] ?? 'This Month';
+    const selectPeriod = (period: string, range?: { from: string; to: string }, refresh = false) => {
+        if (loading) return;
+        if (range && (!range.from || !range.to || range.from > range.to)) {
+            setRangeError('Choose a start and end date. The end cannot be before the start.');
+            return;
+        }
+        if (!refresh && period === filterValues.period && (!range || (range.from === filterValues.from && range.to === filterValues.to))) {
+            setPeriodOpen(false);
+            return;
+        }
+        setRangeError('');
+        router.get(route('dashboard', undefined, false), { period, ...range }, {
+            only: refresh ? [...periodProps, ...snapshotProps] : periodProps,
             preserveState: true, preserveScroll: true, replace: true,
-            onStart: () => setLoading(true), onFinish: () => setLoading(false),
+            showProgress: false,
+            onStart: () => setLoading(true),
+            onSuccess: () => setPeriodOpen(false),
+            onError: (errors) => setRangeError(errors.to ?? errors.from ?? 'Could not apply this period.'),
+            onFinish: () => setLoading(false),
         });
     };
+    return (
+        <section className="exec-hero">
+            <div>
+                <h1>Executive Overview</h1>
+                <p className="exec-sub" aria-live="polite">
+                    <b>{periodLabel}</b> · {dateText(filterValues.from)}{filterValues.to !== filterValues.from && <> — {dateText(filterValues.to)}</>} · Snapshot {clockFormatter.format(new Date(asOf))} PKT
+                    {loading && <span className="exec-updating"> · Updating…</span>}
+                </p>
+            </div>
+            <span className="exec-spacer" />
+            <div className="exec-hero-actions">
+                <Popover open={periodOpen} onOpenChange={(open) => {
+                    setPeriodOpen(open);
+                    if (open && !loading) {
+                        setCustomOpen(filterValues.period === 'custom');
+                        setDates({ from: filterValues.from, to: filterValues.to });
+                        setRangeError('');
+                    }
+                }}>
+                    <PopoverTrigger asChild>
+                        <button className="exec-export" type="button" aria-label={`Dashboard period: ${periodLabel}`}>
+                            <CalendarDays size={14} aria-hidden="true" />{periodLabel}<ChevronDown size={14} aria-hidden="true" />
+                        </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" sideOffset={8} className="exec-period-panel" aria-label="Dashboard period options">
+                        <div className="exec-period-options">
+                            {periods.map(([period, label]) => <button
+                                key={period} type="button" disabled={loading} aria-pressed={filterValues.period === period}
+                                aria-expanded={period === 'custom' ? customOpen : undefined}
+                                onClick={() => period === 'custom' ? setCustomOpen((open) => !open) : selectPeriod(period)}
+                            >{label}{filterValues.period === period && <Check size={14} aria-hidden="true" />}</button>)}
+                        </div>
+                        {customOpen && <form className="exec-period-form" noValidate onSubmit={(event) => {
+                            event.preventDefault();
+                            selectPeriod('custom', dates);
+                        }}>
+                            <div>
+                                <label>From <input type="date" required value={dates.from} onChange={(event) => { setDates({ ...dates, from: event.target.value }); setRangeError(''); }} /></label>
+                                <label>To <input type="date" required value={dates.to} onChange={(event) => { setDates({ ...dates, to: event.target.value }); setRangeError(''); }} /></label>
+                            </div>
+                            <button type="submit" disabled={loading}>{loading ? 'Applying…' : 'Apply Range'}</button>
+                        </form>}
+                        <button className="exec-refresh" type="button" disabled={loading} onClick={() => selectPeriod(
+                            filterValues.period,
+                            filterValues.period === 'custom' ? { from: filterValues.from, to: filterValues.to } : undefined,
+                            true,
+                        )}><RefreshCw size={14} aria-hidden="true" />Refresh dashboard data</button>
+                        {rangeError && <p className="exec-period-error" role="alert">{rangeError}</p>}
+                    </PopoverContent>
+                </Popover>
+                <button className="exec-export" type="button" disabled={loading} onClick={() => window.print()}><FileDown size={14} aria-hidden="true" />Export PDF</button>
+            </div>
+        </section>
+    );
+});
+
+const ProductsCard = memo(function ProductsCard({ rows, total }: { rows: Datum[]; total: number }) {
+    const [mode, setMode] = useState<'revenue' | 'share'>('revenue');
+    const plot = useMemo(() => mode === 'revenue' ? rows : total > 0
+        ? rows.map((row) => ({ ...row, value: Number(share(row.value, total).toFixed(1)) }))
+        : [], [mode, rows, total]);
+    return (
+        <section className="exec-card exec-c5">
+            <CardHead title="Top Products" tag="by net revenue · period">
+                <div className="exec-mini-seg" role="group" aria-label="Product ranking metric">
+                    <button type="button" aria-pressed={mode === 'revenue'} onClick={() => setMode('revenue')}>Revenue</button>
+                    <button type="button" aria-pressed={mode === 'share'} onClick={() => setMode('share')}>Share %</button>
+                </div>
+            </CardHead>
+            <RankingChart title="Top product ranking" data={plot} height={250} color={productColor} percentage={mode === 'share'} />
+        </section>
+    );
+});
+
+export default function ExecutiveDashboard({ asOf, filterValues, kpis, financials, monthlyTrend, aging, topProducts, salesBySupplier, topDebtors, topCustomers, rankingTotals, stockOnLoan, attention, recentSales, expiringSoon, hr }: ExecutiveProps) {
+    const { can } = usePermissions();
     const ops = [
         { label: 'Draft invoices', value: attention.draft_sales, detail: attention.draft_sales ? `${money(attention.draft_sales_total)} unposted` : '', Icon: FileText, tone: attention.draft_sales ? 'hot' : '', href: can('sales.view') ? route('sales.index', { status: 'draft' }) : null },
         { label: 'Pending bookings', value: attention.pending_bookings, Icon: CalendarDays, href: can('bookings.view') ? route('bookings.index', { status: 'pending' }) : null },
@@ -197,19 +303,30 @@ export default function ExecutiveDashboard({ asOf, filterValues, kpis, financial
     const arBar = share(ar, ar + ap);
     const coverage = share(ar + Math.max(0, financials.inventory_value), ap);
     const arCoverage = clamp(share(ar, ap));
+    // Display-only days ratios pair the selected period with the held snapshot.
+    const dso = daysEstimate(financials.receivable, kpis.sales, filterValues.days);
+    const dio = daysEstimate(financials.inventory_value, kpis.cogs, filterValues.days);
+    const dpo = daysEstimate(financials.payable, kpis.purchases, filterValues.days);
+    const cashCycle = dso === null || dio === null || dpo === null ? null : Number((dso + dio - dpo).toFixed(1));
     const working = [
-        ['DSO', workingCapital.dso, 'Estimated days sales outstanding'],
-        ['DIO', workingCapital.dio, 'Estimated days inventory outstanding'],
-        ['DPO', workingCapital.dpo, 'Estimated days payables outstanding'],
-        ['Cash cycle', workingCapital.cash_cycle, 'Estimated days: DSO + DIO − DPO'],
+        ['DSO', dso, 'Estimated days sales outstanding'],
+        ['DIO', dio, 'Estimated days inventory outstanding'],
+        ['DPO', dpo, 'Estimated days payables outstanding'],
+        ['Cash cycle', cashCycle, 'Estimated days: DSO + DIO − DPO'],
     ] as const;
-    const agingSlices = aging.map((slice, index) => ({ ...slice, label: `${slice.label} days`, color: ['#99e0d6', '#14b8a6', '#0f6f66', '#dc2626'][index] }));
+    const waterfall = useMemo(() => [
+        { label: 'Receivables', value: financials.receivable, color: colors.profit },
+        { label: 'Payables', value: -financials.payable, color: '#f08a8a' },
+        { label: 'Advances', value: financials.employee_advances, color: '#cbd5e1' },
+        { label: 'Salary pay.', value: -financials.employee_payable, color: '#cbd5e1' },
+    ], [financials]);
+    const agingSlices = useMemo(() => aging.map((slice, index) => ({ ...slice, label: `${slice.label} days`, color: ['#99e0d6', '#14b8a6', '#0f6f66', '#dc2626'][index] })), [aging]);
     const agingTotal = agingSlices.reduce((sum, slice) => sum + slice.value, 0);
-    const supplierSlices = salesBySupplier.map((slice, index) => ({ ...slice, color: index % 2 === 0 ? colors.sales : colors.purchases }));
-    const pipeline = ['draft', 'posted', 'cancelled'].flatMap((status, index) => {
+    const supplierSlices = useMemo(() => salesBySupplier.map((slice, index) => ({ ...slice, color: supplierColor(index) })), [salesBySupplier]);
+    const pipeline = useMemo(() => ['draft', 'posted', 'cancelled'].flatMap((status, index) => {
         const rows = recentSales.filter((row) => row.status === status);
         return status === 'cancelled' && !rows.length ? [] : [{ label: `${status[0].toUpperCase() + status.slice(1)} · ${rows.length}`, value: billTotal(rows), color: [colors.purchases, '#059669', '#cbd5e1'][index] }];
-    });
+    }), [recentSales]);
     const openValue = share(pipeline[0].value, pipeline[0].value + pipeline[1].value);
     const top = topCustomers.find((row) => row.total > 0);
     const nextCustomers = topCustomers.filter((row) => row !== top && row.total > 0);
@@ -239,20 +356,8 @@ export default function ExecutiveDashboard({ asOf, filterValues, kpis, financial
         <Head title="Executive Dashboard">
             <link head-key="executive-inter" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" referrerPolicy="no-referrer" />
         </Head>
-        <main className="executive" aria-busy={loading}>
-            <section className="exec-hero">
-                <div>
-                    <h1>Executive Overview</h1>
-                    <p className="exec-sub" aria-live="polite"><b>{periodLabel}</b> · {dateText(filterValues.from)} — {dateText(filterValues.to)} · Balances as of {clockFormatter.format(new Date(asOf))} PKT</p>
-                </div>
-                <span className="exec-spacer" />
-                <div className="exec-hero-actions">
-                    <div className="exec-seg" role="group" aria-label="Dashboard period">
-                        {periods.map(([period, name, full]) => <button key={period} type="button" title={full} disabled={loading} aria-pressed={filterValues.period === period} onClick={() => selectPeriod(period)}>{name}</button>)}
-                    </div>
-                    <button className="exec-export" type="button" disabled={loading} onClick={() => window.print()}><FileDown size={14} aria-hidden="true" />Export PDF</button>
-                </div>
-            </section>
+        <main className="executive">
+            <Header asOf={asOf} filterValues={filterValues} />
             <section className="exec-grid" aria-label="Key performance indicators">
                 <Kpi title="Net Sales" color={colors.sales} value={money(kpis.sales)} foot={<Delta value={kpis.sales_delta} />}><Spark values={monthlyTrend.map((point) => point.sales)} color={colors.sales} /></Kpi>
                 <Kpi title="Net Profit" color={colors.profit} value={money(kpis.profit)} foot={<Delta value={kpis.profit_delta} />}><Spark values={monthlyTrend.map((point) => point.profit)} color={colors.profit} /></Kpi>
@@ -289,15 +394,12 @@ export default function ExecutiveDashboard({ asOf, filterValues, kpis, financial
                 <section className="exec-card exec-c8"><ActivityChart data={monthlyTrend} title="Sales, Profit & Margin" subtitle={periodTag} /></section>
                 <section className="exec-card exec-c4">
                     <CardHead title="Working Capital" tag="as of now"><span className="exec-pill" title="Calculated from current balances and selected-period activity">
-                        {workingCapital.cash_cycle === null ? 'Insufficient activity' : workingCapital.cash_cycle < 45 ? 'Short cycle' : 'Long cycle'}
+                        {cashCycle === null ? 'Insufficient activity' : cashCycle < 45 ? 'Short cycle' : 'Long cycle'}
                     </span></CardHead>
                     <div className="exec-working">{working.map(([label, value, description]) => <div key={label} title={description}>
                         <small>{label}</small><b className="exec-num">{value === null ? '—' : Math.round(value)}{value !== null && <em>days</em>}</b>
                     </div>)}</div>
-                    <Waterfall total={financials.net_position} entries={[
-                        { label: 'Receivables', value: financials.receivable, color: colors.profit }, { label: 'Payables', value: -financials.payable, color: '#f08a8a' },
-                        { label: 'Advances', value: financials.employee_advances, color: '#cbd5e1' }, { label: 'Salary pay.', value: -financials.employee_payable, color: '#cbd5e1' },
-                    ]} />
+                    <Waterfall total={financials.net_position} entries={waterfall} />
                     <div className="exec-cover">
                         <Meter parts={[{ width: arCoverage, color: colors.profit }, { width: Math.max(0, Math.min(coverage - arCoverage, 100 - arCoverage)), color: colors.cogs }]} />
                         <div className="exec-meta"><span title="Compares receivables and inventory at cost with supplier payables; it is not a cash balance.">{ap > 0 ? <><b>{percent(coverage, 0)}</b> of payables covered by AR + stock</> : 'No positive supplier payables'}</span><span>Payables {money(financials.payable)}</span></div>
@@ -310,16 +412,7 @@ export default function ExecutiveDashboard({ asOf, filterValues, kpis, financial
                     <div className="exec-donut-layout"><Donut slices={agingSlices} label="Outstanding" value={money(agingTotal)} /><Breakdown slices={agingSlices} renderValue={(slice) => money(slice.value)} base={agingTotal} /></div>
                     <p className="exec-note">{agingTotal > 0 ? <><b className="exec-red">{percent(share(agingSlices[3].value, agingTotal))}</b> is past 90 days · {percent(share(agingSlices[1].value, agingTotal), 0)} sits in the 31–60 day bucket.</> : 'No aged receivables.'}</p>
                 </section>
-                <section className="exec-card exec-c5">
-                    <CardHead title="Top Products" tag="by net revenue · period">
-                        <div className="exec-mini-seg" role="group" aria-label="Product ranking metric">
-                            <button type="button" aria-pressed={productMode === 'revenue'} onClick={() => setProductMode('revenue')}>Revenue</button>
-                            <button type="button" aria-pressed={productMode === 'share'} onClick={() => setProductMode('share')}>Share %</button>
-                        </div>
-                    </CardHead>
-                    <RankingChart title="Top product ranking" data={productMode === 'revenue' ? topProducts : rankingTotals.products > 0 ? topProducts.map((row) => ({ ...row, value: Number(share(row.value, rankingTotals.products).toFixed(1)) })) : []}
-                        height={250} color={(index) => index === 0 ? colors.sales : '#5f86ad'} percentage={productMode === 'share'} />
-                </section>
+                <ProductsCard rows={topProducts} total={rankingTotals.products} />
                 <section className="exec-card exec-c3">
                     <CardHead title="Customer Concentration" />
                     <Donut slices={concentration} label="Top customer" value={rankingTotals.customers > 0 ? percent(share(concentration[0].value, rankingTotals.customers), 0) : '—'} centered />
@@ -330,7 +423,7 @@ export default function ExecutiveDashboard({ asOf, filterValues, kpis, financial
                 <section className="exec-card exec-c6"><ActivityChart data={monthlyTrend} title="Stock Build-up" subtitle="purchases vs cost of goods sold" stock /></section>
                 <section className="exec-card exec-c3">
                     <CardHead title="Sales by Supplier" tag="period" />
-                    <RankingChart data={supplierSlices} title="Sales by supplier" height={Math.max(130, supplierSlices.length * 24 + 25)} showLabels={false} color={(index) => supplierSlices[index].color} />
+                    <RankingChart data={salesBySupplier} title="Sales by supplier" height={Math.max(130, salesBySupplier.length * 24 + 25)} showLabels={false} color={supplierColor} />
                     <Breakdown slices={supplierSlices} renderValue={(slice) => money(slice.value)} base={rankingTotals.suppliers} />
                 </section>
                 <section className="exec-card exec-c3">

@@ -15,7 +15,9 @@ import {
 import { useInvoiceHotkeys, useKeyboardGrid } from '@/hooks/use-keyboard-grid';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePermissions } from '@/hooks/use-permissions';
+import { draftWasSaved, useDraftLeave } from '@/hooks/use-draft-leave';
 import AppLayout from '@/layouts/app-layout';
+import type { VisitOptions } from '@inertiajs/core';
 import { amount, dec2, money, qty, toNumber } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { combineEffects } from '@/lib/incentive';
@@ -386,17 +388,37 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
             })),
     });
 
-    const save = () => {
-        if (readonly || saving) return;
+    const draftVersion = JSON.stringify([header, rows]);
+    const draft = useDraftLeave({ version: draftVersion, editable: !readonly && can('bookings.create'), saving, save });
+
+    function save(done?: (saved: boolean) => void) {
+        if (readonly || saving) {
+            done?.(false);
+            return;
+        }
         if (!validate()) {
             if (!isMobile) toast.error(ALERT_FIX);
+            done?.(false);
             return;
         }
         setSaving(true);
-        const options = { preserveScroll: true, onError: handleServerErrors, onFinish: () => setSaving(false) };
+        let saved = false;
+        const options: VisitOptions = {
+            replace: true,
+            preserveScroll: true,
+            onError: handleServerErrors,
+            onSuccess: (page) => {
+                saved = draftWasSaved(page.props.flash);
+                if (saved) draft.markSaved(draftVersion);
+            },
+            onFinish: () => {
+                setSaving(false);
+                done?.(saved && draft.canLeaveAfterSave());
+            },
+        };
         if (booking) router.put(route('bookings.update', booking.id), payload(), options);
         else router.post(route('bookings.store'), payload(), options);
-    };
+    }
 
     const submit = () => {
         if (!booking || readonly || saving) return;
@@ -407,7 +429,14 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
         setSaving(true);
         router.put(route('bookings.update', booking.id), payload(), {
             preserveScroll: true,
-            onSuccess: () => router.post(route('bookings.submit', booking.id), {}, { onError: handleServerErrors, onFinish: () => setSaving(false) }),
+            onSuccess: (page) => {
+                if (!draftWasSaved(page.props.flash)) {
+                    setSaving(false);
+                    return;
+                }
+                draft.markSaved(draftVersion);
+                router.post(route('bookings.submit', booking.id), {}, { onError: handleServerErrors, onFinish: () => setSaving(false) });
+            },
             onError: (errors) => { handleServerErrors(errors); setSaving(false); },
         });
     };
@@ -460,7 +489,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
             {!mobile && canCancel && <Button variant="outline" size="sm" onClick={cancelBooking}><XCircle aria-hidden="true" className="text-destructive" /> Cancel</Button>}
             {!readonly && (
                 <>
-                    <Button variant={mobile && !booking ? 'default' : 'outline'} size="sm" className={mobile ? mobileActionClass : undefined} onClick={save} disabled={saving}>
+                    <Button variant={mobile && !booking ? 'default' : 'outline'} size="sm" className={mobile ? mobileActionClass : undefined} onClick={() => save()} disabled={saving}>
                         <Save aria-hidden="true" /> Save Draft {!mobile && <kbd className="ml-1 text-xs opacity-60">F8</kbd>}
                     </Button>
                     {booking && <Button size="sm" className={mobile ? mobileActionClass : undefined} onClick={submit} disabled={saving}>
@@ -514,6 +543,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
+            {draft.dialog}
             <Head title={tabTitle} />
             <div className="flex min-h-dvh min-w-0 flex-col gap-3 p-3 md:gap-4 md:p-4 lg:min-h-full">
                 <header className="flex min-w-0 items-start justify-between gap-2 lg:flex-wrap lg:items-center lg:border-b lg:pb-4">

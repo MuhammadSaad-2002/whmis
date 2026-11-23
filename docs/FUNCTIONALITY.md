@@ -11,16 +11,26 @@ likely to matter when changing each module.
 
 ## Overview and workspace
 
-- Dashboard: `/dashboard`; Booker users receive their own-data dashboard, while users with `dashboard.executive` receive Executive Overview. It defaults to 12 months and also offers 3M, 6M and year-to-date controls. Period KPIs and the sales/profit/margin and stock build-up charts use posted sales net of credit notes and purchases net of debit notes. Rankings use their underlying product and customer profitability reports; percentage shares use the total positive net revenue for that report's population. Top Products switches between revenue and share; chart legends toggle series. Recent Sales filters, searches and sorts the latest eight invoices.
+- Dashboard: `/dashboard`; Booker users receive their own-data dashboard, while users with `dashboard.executive` receive Executive Overview. Its period menu defaults to 12 months and includes Today, Yesterday, This Month, Last Month, rolling 3/6/9/12 months, Year to Date, and a custom date range. Both ends are inclusive and presets use Pakistan business dates. Period KPIs and the sales/profit/margin and stock build-up charts use posted sales net of credit notes and purchases net of debit notes. Rankings use their underlying product and customer profitability reports; percentage shares use the total positive net revenue for that report's population. Top Products switches between revenue and share; chart legends toggle series. Recent Sales filters, searches and sorts the latest eight invoices.
 - Receivables aging, loan quantities, expiring in-stock batches, invoice pipeline and staff balances are current snapshots. Working-capital days are estimates using current balances and the selected period's sales, COGS and purchases; missing activity yields no estimate.
+- Period changes request only date-dependent dashboard props. The original view,
+  chart legends, and invoice search remain in place while the update loads.
+  Snapshot cards keep their timestamp; **Refresh dashboard data** in the period
+  menu updates them without navigating away. Charts draw immediately on first
+  load, then animate data changes unless reduced motion is enabled.
 - Executive Overview's Export PDF opens the browser's print-to-PDF view with charts. The server-generated summary remains at `/dashboard/executive/pdf`.
-- Workspace: `/workspace`; tabbed shell that hosts the app navigation experience.
-  Open tabs refresh within the same login and browser tab. Each new login starts
-  at that user's home page. Changes to permissions invalidate saved tab state.
-  All roles use the top bar. Wide screens show permitted **Daily Work** links
-  and group other pages under **More**. Narrow screens put all permitted pages
-  under **Pages**. Phones also have an **Open tabs** switcher for switching or
-  closing workspace tabs. Profile settings use a horizontal section menu.
+- Workspace: `/workspace`. Ordinary links and the top bar navigate in the
+  current view. **Back** restores the previous screen's list filters and scroll.
+  Desktop booking, sale, and purchase rows have a separate **Open in workspace
+  tab** action for comparing records. The strip appears only when multiple tabs
+  are open and is hidden on phones and narrow tablets. Tab URLs restore only in
+  the same authenticated session and browser tab; a new login starts at home.
+- Booking, sale, and purchase drafts prompt **Stay**, **Discard**, or **Save
+  Draft** before leaving, closing a workspace tab, or logging out. A failed
+  save keeps the editor open. The browser shows its own warning for browser
+  close or reload.
+- All roles use the top bar. Wide screens show permitted **Daily Work** links
+  with remaining pages under **More**. Narrow screens use **Pages**.
 - Navigation source: `resources/js/components/nav-config.ts`.
 
 ## Master data

@@ -1,5 +1,5 @@
 import { money } from '@/lib/format';
-import { useId, useState } from 'react';
+import { memo, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
     Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
@@ -41,14 +41,31 @@ const tooltip = {
     labelStyle: { color: '#fff', fontWeight: 600 },
 };
 const pretty = (value: number) => money(value);
+const still = { isAnimationActive: false } as const;
+const transition = { isAnimationActive: 'auto', animationBegin: 0, animationDuration: 340, animationEasing: 'ease-out' } as const;
+const printMedia = () => window.matchMedia('print').matches;
+function subscribeToPrint(update: () => void) {
+    const media = window.matchMedia('print');
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+}
+
+// Draw the first data immediately; only subsequent data changes animate.
+function useChartMotion(data: unknown) {
+    const first = useRef(data);
+    const printing = useSyncExternalStore(subscribeToPrint, printMedia, () => false);
+    return !printing && first.current !== data ? transition : still;
+}
 
 export function Spark({ values, color }: { values: number[]; color: string }) {
     const id = useId();
     const min = Math.min(0, ...values);
     const max = Math.max(1, ...values);
-    const line = values.map((value, index) =>
+    const path = values.map((value, index) =>
         `${index ? 'L' : 'M'}${(index / Math.max(values.length - 1, 1)) * 200} ${31 - (value - min) / (max - min) * 28}`
     ).join(' ');
+    const line = values.length === 1 ? `${path} H200` : path;
+    const first = useRef(line);
     return (
         <svg className="exec-spark" viewBox="0 0 200 34" preserveAspectRatio="none" aria-hidden="true">
             <defs>
@@ -57,8 +74,10 @@ export function Spark({ values, color }: { values: number[]; color: string }) {
                     <stop offset="100%" stopColor={color} stopOpacity="0" />
                 </linearGradient>
             </defs>
-            {values.length > 1 && <path d={`${line} L200 34 L0 34Z`} fill={`url(#${id})`} />}
-            <path d={line} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+            <g key={line} className={line !== first.current ? 'exec-spark-update' : undefined}>
+                {values.length > 0 && <path d={`${line} L200 34 L0 34Z`} fill={`url(#${id})`} />}
+                <path d={line} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+            </g>
         </svg>
     );
 }
@@ -75,19 +94,22 @@ const stockSeries = [
     { key: 'accumulated', label: 'Cumulative net stock added', color: colors.accumulated, line: true },
 ] as const;
 
-export function ActivityChart({ data, stock, title, subtitle }: { data: ActivityPoint[]; stock?: boolean; title: string; subtitle: string }) {
+export const ActivityChart = memo(function ActivityChart({ data, stock, title, subtitle }: { data: ActivityPoint[]; stock?: boolean; title: string; subtitle: string }) {
     const [hidden, setHidden] = useState<string[]>([]);
     const series = stock ? stockSeries : trendSeries;
-    let accumulated = 0;
-    const points = data.map((point) => {
-        accumulated += point.purchases - point.cogs;
-        return {
-            ...point,
-            label: point.label.replace(/ (20)(\d{2})$/, ' $2'),
-            margin: point.sales > 0 ? Number((point.profit / point.sales * 100).toFixed(1)) : null,
-            accumulated: Number(accumulated.toFixed(2)),
-        };
-    });
+    const motion = useChartMotion(data);
+    const points = useMemo(() => {
+        let accumulated = 0;
+        return data.map((point) => {
+            accumulated += point.purchases - point.cogs;
+            return {
+                ...point,
+                label: point.label.replace(/ (20)(\d{2})$/, ' $2'),
+                margin: point.sales > 0 ? Number((point.profit / point.sales * 100).toFixed(1)) : null,
+                accumulated: Number(accumulated.toFixed(2)),
+            };
+        });
+    }, [data]);
     return (
         <>
             <header className="exec-card-head">
@@ -111,25 +133,26 @@ export function ActivityChart({ data, stock, title, subtitle }: { data: Activity
                             domain={[(min: number) => Math.min(0, min), (max: number) => Math.max(100, max)]} />}
                         <Tooltip {...tooltip} formatter={(value, name) => name === 'Margin %' ? `${value}%` : pretty(Number(value))} />
                         <ReferenceLine y={0} yAxisId="money" stroke={colors.grid} />
-                        {!stock && <Bar dataKey="sales" name="Sales" yAxisId="money" hide={hidden.includes('sales')} fill={colors.sales} maxBarSize={26} radius={5} isAnimationActive={false} />}
-                        <Bar dataKey="purchases" name="Purchases" yAxisId="money" hide={hidden.includes('purchases')} fill={colors.purchasesBar} maxBarSize={stock ? 20 : 26} radius={5} isAnimationActive={false} />
+                        {!stock && <Bar dataKey="sales" name="Sales" yAxisId="money" hide={hidden.includes('sales')} fill={colors.sales} maxBarSize={26} radius={5} {...motion} />}
+                        <Bar dataKey="purchases" name="Purchases" yAxisId="money" hide={hidden.includes('purchases')} fill={colors.purchasesBar} maxBarSize={stock ? 20 : 26} radius={5} {...motion} />
                         {stock ? <>
-                            <Bar dataKey="cogs" name="COGS" yAxisId="money" hide={hidden.includes('cogs')} fill={colors.cogs} maxBarSize={20} radius={4} isAnimationActive={false} />
-                            <Line dataKey="accumulated" name="Cumulative net stock added" yAxisId="money" hide={hidden.includes('accumulated')} type="monotone" stroke={colors.accumulated} strokeWidth={2} dot={{ r: 2.5 }} isAnimationActive={false} />
+                            <Bar dataKey="cogs" name="COGS" yAxisId="money" hide={hidden.includes('cogs')} fill={colors.cogs} maxBarSize={20} radius={4} {...motion} />
+                            <Line dataKey="accumulated" name="Cumulative net stock added" yAxisId="money" hide={hidden.includes('accumulated')} type="monotone" stroke={colors.accumulated} strokeWidth={2} dot={{ r: 2.5 }} {...motion} />
                         </> : <>
-                            <Area dataKey="profit" name="Profit" yAxisId="money" hide={hidden.includes('profit')} type="monotone" stroke={colors.profit} fill={colors.profit} fillOpacity={.12} strokeWidth={2.2} dot={{ r: 3, fill: '#fff' }} isAnimationActive={false} baseValue={0} />
-                            <Line dataKey="margin" name="Margin %" yAxisId="margin" hide={hidden.includes('margin')} type="monotone" stroke={colors.margin} strokeWidth={1.6} strokeDasharray="4 4" dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />
+                            <Area dataKey="profit" name="Profit" yAxisId="money" hide={hidden.includes('profit')} type="monotone" stroke={colors.profit} fill={colors.profit} fillOpacity={.12} strokeWidth={2.2} dot={{ r: 3, fill: '#fff' }} {...motion} baseValue={0} />
+                            <Line dataKey="margin" name="Margin %" yAxisId="margin" hide={hidden.includes('margin')} type="monotone" stroke={colors.margin} strokeWidth={1.6} strokeDasharray="4 4" dot={{ r: 2.5 }} connectNulls {...motion} />
                         </>}
                     </ComposedChart>
                 </ResponsiveContainer>
             </div>
         </>
     );
-}
+});
 
-export function RankingChart({ data, title, height, color, showLabels = true, percentage = false }: {
+export const RankingChart = memo(function RankingChart({ data, title, height, color, showLabels = true, percentage = false }: {
     data: Datum[]; title: string; height: number; color: (index: number) => string; showLabels?: boolean; percentage?: boolean;
 }) {
+    const motion = useChartMotion(data);
     if (!data.length) return <div className="exec-empty" style={{ minHeight: height }}>No sales in this period.</div>;
     return (
         <div className="exec-chart" style={{ height }}>
@@ -143,24 +166,25 @@ export function RankingChart({ data, title, height, color, showLabels = true, pe
                         tickFormatter={(name: string) => name.length > 20 ? `${name.slice(0, 19)}…` : name} />
                     <Tooltip {...tooltip} formatter={(value) => percentage ? `${Number(value).toFixed(1)}% of sales` : pretty(Number(value))} />
                     <ReferenceLine x={0} stroke={colors.grid} />
-                    <Bar dataKey="value" name={percentage ? 'Share' : 'Revenue'} barSize={showLabels ? 16 : 18} radius={4} isAnimationActive={false}>
+                    <Bar dataKey="value" name={percentage ? 'Share' : 'Revenue'} barSize={showLabels ? 16 : 18} radius={4} {...motion}>
                         {data.map((row, index) => <Cell key={`${row.label}-${index}`} fill={color(index)} />)}
                     </Bar>
                 </BarChart>
             </ResponsiveContainer>
         </div>
     );
-}
+});
 
-export function Donut({ slices, label, value, centered }: { slices: Slice[]; label: string; value: string; centered?: boolean }) {
-    const nonzero = slices.filter((slice) => slice.value > 0);
+export const Donut = memo(function Donut({ slices, label, value, centered }: { slices: Slice[]; label: string; value: string; centered?: boolean }) {
+    const nonzero = useMemo(() => slices.filter((slice) => slice.value > 0), [slices]);
+    const motion = useChartMotion(slices);
     return (
         <div className={`exec-donut ${centered ? 'centered' : ''}`}>
             {nonzero.length ? (
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <PieChart title={label}>
                         <Pie data={nonzero} nameKey="label" dataKey="value" cx="50%" cy="50%" outerRadius="94%" innerRadius="68%"
-                            stroke="#fff" strokeWidth={2} paddingAngle={nonzero.length > 1 ? .5 : 0} startAngle={90} endAngle={-270} isAnimationActive={false}>
+                            stroke="#fff" strokeWidth={2} paddingAngle={nonzero.length > 1 ? .5 : 0} startAngle={90} endAngle={-270} {...motion}>
                             {nonzero.map((slice) => <Cell key={slice.label} fill={slice.color} />)}
                         </Pie>
                         <Tooltip {...tooltip} formatter={(amount) => pretty(Number(amount))} />
@@ -170,9 +194,10 @@ export function Donut({ slices, label, value, centered }: { slices: Slice[]; lab
             <div className="exec-donut-center"><div><small>{label}</small><b className="exec-num">{value}</b></div></div>
         </div>
     );
-}
+});
 
-export function Waterfall({ entries, total }: { entries: Slice[]; total: number }) {
+export const Waterfall = memo(function Waterfall({ entries, total }: { entries: Slice[]; total: number }) {
+    const motion = useChartMotion(entries);
     let cumulative = 0;
     const steps = entries.map((entry) => {
         const start = cumulative;
@@ -189,11 +214,11 @@ export function Waterfall({ entries, total }: { entries: Slice[]; total: number 
                     <YAxis axisLine={false} tickLine={false} tick={tick} tickFormatter={compact} width={38} tickCount={5} />
                     <Tooltip {...tooltip} formatter={(_range, _name, item) => pretty(Number(item.payload?.value ?? 0))} />
                     <ReferenceLine y={0} stroke={colors.grid} />
-                    <Bar dataKey="range" name="Amount" maxBarSize={38} radius={4} minPointSize={2} isAnimationActive={false}>
+                    <Bar dataKey="range" name="Amount" maxBarSize={38} radius={4} minPointSize={2} {...motion}>
                         {steps.map((entry) => <Cell key={entry.label} fill={entry.color} />)}
                     </Bar>
                 </BarChart>
             </ResponsiveContainer>
         </div>
     );
-}
+});

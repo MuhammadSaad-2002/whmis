@@ -18,7 +18,7 @@ interface NotificationRow {
     created_at: string;
 }
 
-export function NotificationBell({ className }: { className?: string } = {}) {
+export function NotificationBell({ className, onNavigate }: { className?: string; onNavigate?: (url: string) => void } = {}) {
     const [unread, setUnread] = useState(0);
     const [notifications, setNotifications] = useState<NotificationRow[]>([]);
 
@@ -63,7 +63,10 @@ export function NotificationBell({ className }: { className?: string } = {}) {
 
     const open = (notification: NotificationRow) => {
         if (!notification.read) void markRead(notification.id);
-        if (notification.url) router.visit(notification.url);
+        if (notification.url) {
+            if (onNavigate) onNavigate(notification.url);
+            else router.visit(notification.url);
+        }
     };
 
     return (

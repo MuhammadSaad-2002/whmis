@@ -11,17 +11,19 @@ import { PRODUCT_NAME } from '@/lib/brand';
 import { cn } from '@/lib/utils';
 import { type SharedData } from '@/types';
 import { usePage } from '@inertiajs/react';
-import { ChevronDown, Menu } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Menu } from 'lucide-react';
 
 interface WorkspaceTopBarProps {
     activePath: string;
     home: { url: string; title: string };
-    onNavigate: (url: string, title: string) => void;
+    onNavigate: (url: string) => void;
+    onBack?: () => void;
+    onLogout: () => void;
 }
 
 const MAX_PRIMARY_LINKS = 8;
 
-export function WorkspaceTopBar({ activePath, home, onNavigate }: WorkspaceTopBarProps) {
+export function WorkspaceTopBar({ activePath, home, onNavigate, onBack, onLogout }: WorkspaceTopBarProps) {
     const { auth } = usePage<SharedData>().props;
     const { can, canViewSupplierDetails } = usePermissions();
     const initials = useInitials();
@@ -42,10 +44,15 @@ export function WorkspaceTopBar({ activePath, home, onNavigate }: WorkspaceTopBa
                 type="button"
                 className="flex size-11 shrink-0 items-center justify-center rounded-md focus-visible:ring-2 focus-visible:ring-sidebar-ring"
                 aria-label={`${PRODUCT_NAME} ${home.title}`}
-                onClick={() => onNavigate(home.url, home.title)}
+                onClick={() => onNavigate(home.url)}
             >
                 <AppLogoIcon className="size-8 rounded-lg ring-1 ring-white/15" />
             </button>
+            {onBack && <Button type="button" variant="ghost" size="icon" aria-label="Back" title="Back"
+                className="size-11 shrink-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring"
+                onClick={onBack}>
+                <ArrowLeft aria-hidden="true" />
+            </Button>}
 
             {primaryLinks.length > 0 && <nav aria-label="Daily Work" className="hidden min-w-0 flex-1 items-center gap-0.5 pl-2 xl:flex">
                 {primaryLinks.map((item) => (
@@ -56,7 +63,7 @@ export function WorkspaceTopBar({ activePath, home, onNavigate }: WorkspaceTopBa
                         size="sm"
                         aria-current={isActive(item.url) ? 'page' : undefined}
                         className={cn('shrink-0 gap-1.5 px-2 text-xs hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring focus-visible:ring-offset-sidebar 2xl:text-sm', isActive(item.url) && 'bg-sidebar-accent text-sidebar-accent-foreground')}
-                        onClick={() => onNavigate(item.url, item.title)}
+                        onClick={() => onNavigate(item.url)}
                     >
                         {item.icon && <item.icon aria-hidden="true" className="size-4" />}
                         {item.title}
@@ -93,7 +100,7 @@ export function WorkspaceTopBar({ activePath, home, onNavigate }: WorkspaceTopBa
                                             key={item.url}
                                             aria-current={isActive(item.url) ? 'page' : undefined}
                                             className={cn('min-h-9 cursor-pointer max-md:min-h-11', primaryUrls.has(item.url) && 'xl:hidden', isActive(item.url) && 'bg-accent font-medium text-accent-foreground')}
-                                            onSelect={() => onNavigate(item.url, item.title)}
+                                            onSelect={() => onNavigate(item.url)}
                                         >
                                             {item.icon && <item.icon aria-hidden="true" />}
                                             {item.title}
@@ -105,7 +112,7 @@ export function WorkspaceTopBar({ activePath, home, onNavigate }: WorkspaceTopBa
                     </DropdownMenuContent>
                 </DropdownMenu>}
 
-                <NotificationBell className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring focus-visible:ring-offset-sidebar max-md:size-11" />
+                <NotificationBell onNavigate={onNavigate} className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring focus-visible:ring-offset-sidebar max-md:size-11" />
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button type="button" variant="ghost" size="icon" aria-label={`Account menu for ${auth.user.name}`} className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring focus-visible:ring-offset-sidebar max-md:size-11">
@@ -116,7 +123,7 @@ export function WorkspaceTopBar({ activePath, home, onNavigate }: WorkspaceTopBa
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-60">
-                        <UserMenuContent user={auth.user} />
+                        <UserMenuContent user={auth.user} onNavigate={onNavigate} onLogout={onLogout} />
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>

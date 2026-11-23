@@ -1,71 +1,203 @@
 import { PRODUCT_NAME } from '@/lib/brand';
 import { router } from '@inertiajs/react';
 
-// Shared contract between the workspace shell (top document) and the pages it
-// hosts inside <iframe>s. Same-origin only, so we can postMessage freely.
-
 export const WORKSPACE_PATH = '/workspace';
+export const WORKSPACE_TAB_BREAKPOINT = 1024;
 const SOURCE = 'whmis';
 
-// Page <title>s are templated as "<Page> - <AppName>" (see app.tsx). Tabs show
-// only the page part, so strip the app-name suffix before labelling a tab.
-function stripAppName(title: string): string {
-    const suffix = ` - ${PRODUCT_NAME}`;
-    return title.endsWith(suffix) ? title.slice(0, -suffix.length) : title;
+export type ShellMessage =
+    | { source: typeof SOURCE; type: 'open-tab'; url: string }
+    | { source: typeof SOURCE; type: 'tab-state'; path: string; title: string; canGoBack: boolean };
+
+interface DraftGuard {
+    dirty: () => boolean;
+    saving: () => boolean;
+    ask: () => Promise<boolean>;
 }
 
-export type ShellMessage =
-    // A different-page navigation happened inside a frame → open/focus a tab.
-    | { source: typeof SOURCE; type: 'open-tab'; url: string }
-    // The frame's own page/title changed (mount, in-tab redirect) → relabel the
-    // owning tab and remember its current url for refresh-restore.
-    | { source: typeof SOURCE; type: 'tab-state'; path: string; title: string };
+interface FrameNavigation {
+    visit: (url: string) => void;
+    back: () => void;
+    needsLeaveCheck: () => boolean;
+    confirmLeave: () => Promise<boolean>;
+}
 
-/** True when this document is running inside another frame (i.e. a workspace tab). */
-export function isFramed(): boolean {
-    try {
-        return typeof window !== 'undefined' && window.self !== window.top;
-    } catch {
-        // Cross-origin access throws — treat as framed to be safe.
-        return true;
+declare global {
+    interface Window {
+        tradentraFrame?: FrameNavigation;
     }
 }
 
-/** Current path (no origin), used as a tab's identity. */
+let draftGuard: DraftGuard | undefined;
+let canGoBack = false;
+
+export function registerDraftGuard(guard: DraftGuard) {
+    draftGuard = guard;
+    return () => { if (draftGuard === guard) draftGuard = undefined; };
+}
+
+export function workspacePath(url: unknown): string | null {
+    if (typeof url !== 'string' || !url.trim() || url.trim() === '#') return null;
+    try {
+        const target = new URL(url, window.location.href);
+        const pathname = target.pathname.replace(/\/+$/, '') || '/';
+        if (target.origin !== window.location.origin || !['http:', 'https:'].includes(target.protocol)
+            || ['/', WORKSPACE_PATH, '/login', '/logout'].includes(pathname)) return null;
+        return target.pathname + target.search + target.hash;
+    } catch {
+        return null;
+    }
+}
+
+export function isFramed(): boolean {
+    return typeof window !== 'undefined' && window.self !== window.top;
+}
+
 export function currentPath(): string {
-    return window.location.pathname + window.location.search;
+    return window.location.pathname + window.location.search + window.location.hash;
 }
 
 function postToShell(message: ShellMessage): void {
-    if (typeof window === 'undefined' || window.parent === window.self) return;
-    window.parent.postMessage(message, window.location.origin);
+    if (isFramed()) window.parent.postMessage(message, window.location.origin);
 }
 
-/** Tell the shell this frame's page title / url so it can relabel the tab. */
 export function reportTabState(title: string): void {
-    if (!isFramed()) return;
-    postToShell({ source: SOURCE, type: 'tab-state', path: currentPath(), title: stripAppName(title || document.title) });
+    const suffix = ` - ${PRODUCT_NAME}`;
+    const name = title || document.title;
+    postToShell({ source: SOURCE, type: 'tab-state', path: currentPath(), title: name.endsWith(suffix) ? name.slice(0, -suffix.length) : name, canGoBack });
 }
 
-/**
- * Inside a frame, intercept Inertia navigations:
- *  - non-GET (saves/posts/deletes) stay in the frame (redirect-after-POST lands here too);
- *  - GET to the SAME pathname (filters, pagination, sort) stays in the frame;
- *  - GET to a DIFFERENT pathname is a drill-down → cancel it and ask the shell to
- *    open/focus a tab instead.
- * Call once at app boot; it no-ops when not framed.
- */
+export function openWorkspaceTab(url: string): void {
+    const path = workspacePath(url);
+    if (!path) return;
+    if (isFramed() && window.matchMedia(`(width >= ${WORKSPACE_TAB_BREAKPOINT}px)`).matches) {
+        postToShell({ source: SOURCE, type: 'open-tab', url: path });
+    } else {
+        router.visit(path);
+    }
+}
+
+export function frameNavigation(frame?: HTMLIFrameElement): FrameNavigation | undefined {
+    try { return frame?.contentWindow?.tradentraFrame; } catch { return undefined; }
+}
+
+interface View {
+    path: string;
+    left: number;
+    top: number;
+}
+
+function screen(path: string): string {
+    const url = new URL(path, window.location.origin);
+    return url.pathname.endsWith('/create') ? url.pathname + url.search : url.pathname;
+}
+
+function scrollToView(view: View) {
+    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo({ left: view.left, top: view.top, behavior: 'instant' })));
+}
+
+/** Ordinary visits stay in the active frame. Each frame owns its Back stack. */
 export function initEmbeddedNav(): void {
     if (!isFramed()) return;
 
-    router.on('before', (event) => {
-        const visit = event.detail.visit;
-        if (visit.method !== 'get') return true;
+    const stack: View[] = [];
+    let displayed = currentPath();
+    let displayedState: unknown = window.history.state;
+    let outgoing: (View & { replace: boolean }) | undefined;
+    let backTarget: View | undefined;
+    let nativeTarget: string | undefined;
+    let bypass = false;
 
-        const target = new URL(String(visit.url), window.location.origin);
-        if (target.pathname === window.location.pathname) return true; // same page, refine in place
+    const capture = (): View => ({ path: displayed, left: window.scrollX, top: window.scrollY });
+    const needsLeaveCheck = () => !!(draftGuard?.dirty() || draftGuard?.saving());
+    const confirmLeave = () => needsLeaveCheck() && draftGuard ? draftGuard.ask() : Promise.resolve(true);
+    const allowedOnce = (action: () => void) => {
+        bypass = true;
+        try { action(); } finally { bypass = false; }
+    };
+    function navigateBack(target: View) {
+        backTarget = target;
+        router.visit(target.path, {
+            replace: true,
+            onSuccess: () => scrollToView(target),
+            onFinish: () => { backTarget = undefined; },
+        });
+    }
+    window.tradentraFrame = {
+        needsLeaveCheck,
+        confirmLeave,
+        visit: (url) => {
+            const path = workspacePath(url);
+            if (path && path !== currentPath()) router.visit(path);
+        },
+        back: () => {
+            const target = stack.at(-1);
+            if (!target || backTarget) return;
+            if (!needsLeaveCheck()) navigateBack(target);
+            else void confirmLeave().then((leave) => { if (leave) allowedOnce(() => navigateBack(target)); });
+        },
+    };
 
-        postToShell({ source: SOURCE, type: 'open-tab', url: target.pathname + target.search });
-        return false; // cancel the in-frame navigation; the shell takes over
+    router.on('before', ({ detail: { visit } }) => {
+        if (visit.prefetch) return true;
+        const path = workspacePath(visit.url.href);
+        const leavesView = path && (screen(path) !== screen(displayed) || (path !== displayed && !visit.preserveState));
+        if (visit.method === 'get' && leavesView && !bypass && needsLeaveCheck()) {
+            void confirmLeave().then((leave) => { if (leave) allowedOnce(() => router.visit(visit.url, visit)); });
+            return false;
+        }
+        if (!visit.async) {
+            outgoing = { ...capture(), replace: visit.replace };
+            displayedState = window.history.state;
+        }
+        return true;
     });
+
+    // Clean Back/Forward uses Inertia's own history restoration. Dirty native
+    // navigation keeps the editor open while the user chooses what to do.
+    window.addEventListener('popstate', (event) => {
+        const target = currentPath();
+        if (target === displayed) return;
+        if (needsLeaveCheck()) {
+            event.stopImmediatePropagation();
+            window.history.pushState(displayedState, '', displayed);
+            const stored = stack.findLast((entry) => entry.path === target);
+            const scroll = event.state?.documentScrollPosition;
+            void confirmLeave().then((leave) => {
+                if (leave && workspacePath(target)) {
+                    allowedOnce(() => navigateBack(stored ?? { path: target, left: scroll?.left ?? 0, top: scroll?.top ?? 0 }));
+                }
+            });
+            return;
+        }
+        nativeTarget = target;
+    }, { capture: true });
+
+    function recordNavigation(url: string) {
+        const next = workspacePath(url);
+        if (!next) return;
+        if (screen(next) !== screen(displayed)) {
+            if (backTarget) {
+                const index = stack.lastIndexOf(backTarget);
+                if (index >= 0) stack.splice(index);
+            } else if (nativeTarget) {
+                const index = stack.findLastIndex((entry) => screen(entry.path) === screen(next));
+                if (index >= 0) stack.splice(index);
+                else stack.push(outgoing ?? capture());
+            } else if (!outgoing?.replace) {
+                stack.push(outgoing ?? capture());
+            }
+            if (stack.length > 40) stack.shift();
+        }
+        nativeTarget = undefined;
+        outgoing = undefined;
+        displayed = next;
+        displayedState = window.history.state;
+        canGoBack = stack.length > 0;
+    }
+
+    // Replace visits (filter/search, toolbar Back, first save) do not emit navigate.
+    router.on('navigate', ({ detail: { page } }) => recordNavigation(page.url));
+    router.on('success', ({ detail: { page } }) => recordNavigation(page.url));
+    router.on('error', () => recordNavigation(currentPath()));
 }

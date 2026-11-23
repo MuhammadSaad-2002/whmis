@@ -11,6 +11,10 @@ return Inertia pages for interactive screens and Blade views for PDFs.
 - Controllers load data, validate request payloads, call services, and return Inertia pages or redirects with flash messages.
 - React pages live under `resources/js/pages/<module>/`.
 - Shared navigation is defined in `resources/js/components/nav-config.ts` and filtered by permissions shared from `HandleInertiaRequests`.
+- `workspace/index.tsx` hosts the active Inertia view. `lib/embedded.ts` handles
+  in-place visits and per-view Back. Explicit desktop record actions may mount
+  more frames. Booking, sale and purchase editors use `hooks/use-draft-leave.tsx`
+  to prevent losing edits. Laravel still authorizes all requests.
 - Ziggy `route()` names are the frontend route contract.
 
 ## Backend layering
@@ -34,7 +38,9 @@ return Inertia pages for interactive screens and Blade views for PDFs.
 - `BookingService`: approved booking to draft sales invoice conversion.
 - `IncentiveEngine`: incentive matching and line effect calculation.
 - `ReportService`: report catalog and uniform report payloads.
-- `DashboardService`: executive dashboard payload.
+- `DashboardService`: executive dashboard props, split into lazily resolved
+  period and snapshot data. Inertia period visits skip snapshot queries; the
+  server PDF still resolves a complete data set.
 - `LicenseService`: license status, activation, and banner payload.
 - `AlertService`: permission-targeted notifications.
 - `NumberSeriesService`: row-locked document number generation.

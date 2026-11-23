@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { usePermissions } from '@/hooks/use-permissions';
+import { WorkspaceRecordLink } from '@/components/workspace/record-link';
 import AppLayout from '@/layouts/app-layout';
 import { money, shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
@@ -139,9 +140,7 @@ export default function PurchasesIndex({ invoices, companies, filters, summary }
                             {invoices.data.map((invoice, index) => (
                                 <TableRow key={invoice.id} {...rowProps(index)}>
                                     <TableCell>
-                                        <Link href={route('purchases.edit', invoice.id)} className="font-medium hover:underline">
-                                            {invoice.invoice_number}
-                                        </Link>
+                                        <WorkspaceRecordLink href={route('purchases.edit', invoice.id)} number={invoice.invoice_number} />
                                     </TableCell>
                                     <TableCell>{invoice.supplier_invoice_number || '—'}</TableCell>
                                     <TableCell>{invoice.company?.name}</TableCell>

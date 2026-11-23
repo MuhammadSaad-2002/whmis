@@ -70,6 +70,9 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
   recalculate or replace server-authoritative financial values. Ranked chart
   definitions are supplied by `ReportVisualizationService` to both Inertia and
   PDF exports, while PDF SVGs are generated server-side for Dompdf compatibility.
+- The executive dashboard's period-only request must not query aging, loans or
+  inventory. `ExecutiveDashboardTest` covers this request and checks that
+  batched customer aging still matches the individual ledger calculation.
 - Search pickers: keyboard highlight scrolling must not be overridden by hover events when a highlighted row scrolls beneath a stationary pointer.
 - Permissions: frontend hiding is convenience only; route middleware is the boundary.
 - License: Super Admin must not be locked out.
@@ -87,6 +90,9 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
 - Permission-only DB changes can be missed in production if they do not have a
   manual seed SQL file for phpMyAdmin imports.
 - Untracked workspace state can exist. Do not clean or reset files unless explicitly asked.
+- Verify workspace Back with an applied list filter and a scrolled list. A dirty
+  editor must not close on navigation, **Close all**, or logout without consent.
+  Save Draft must check for a successful save, not just a successful HTTP redirect.
 
 ## Safe-next-work notes
 
