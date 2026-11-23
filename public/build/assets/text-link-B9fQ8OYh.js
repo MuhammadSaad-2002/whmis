@@ -1,1 +1,0 @@
-import{j as n,$ as t}from"./app-Dj4n0ww_.js";import{a as i}from"./createLucideIcon-Do7G2NIH.js";function u({className:r="",children:o,...e}){return n.jsx(t,{className:i("text-foreground underline decoration-ring/45 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current!",r),...e,children:o})}export{u as T};

@@ -130,7 +130,7 @@ class ReportService
         $sales = SalesInvoice::where('status', 'posted')
             ->whereDate('invoice_date', '>=', $from)
             ->whereDate('invoice_date', '<=', $to)
-            ->selectRaw('COALESCE(SUM(total_amount), 0) as amount, COALESCE(SUM(total_cost), 0) as cost, COALESCE(SUM(total_profit), 0) as profit')
+            ->selectRaw('COUNT(*) as invoice_count, COALESCE(SUM(total_amount), 0) as amount, COALESCE(SUM(total_cost), 0) as cost, COALESCE(SUM(total_profit), 0) as profit')
             ->first();
 
         $returns = SalesReturn::where('status', SalesReturn::STATUS_POSTED)
@@ -144,6 +144,7 @@ class ReportService
         $netCost = (float) $sales->cost - (float) $returns->cost;
 
         return [
+            'invoice_count' => (int) $sales->invoice_count,
             'gross_sales' => round($gross, 2),
             'credit_notes' => round($creditNotes, 2),
             'net_sales' => round($gross - $creditNotes, 2),
@@ -1552,13 +1553,22 @@ class ReportService
         $invoices = SalesInvoice::where('status', 'posted')
             ->whereDate('invoice_date', '>=', $from)
             ->whereDate('invoice_date', '<=', $to)
-            ->get(['invoice_date', 'total_amount', 'total_profit'])
+            ->get(['invoice_date', 'total_amount', 'total_cost', 'total_profit'])
             ->groupBy(fn ($invoice) => $invoice->invoice_date->format($keyFormat));
 
         $returns = SalesReturn::where('status', SalesReturn::STATUS_POSTED)
             ->whereDate('return_date', '>=', $from)
             ->whereDate('return_date', '<=', $to)
             ->get(['return_date', 'total_amount', 'total_cost'])
+            ->groupBy(fn ($return) => $return->return_date->format($keyFormat));
+
+        $purchases = PurchaseInvoice::where('status', 'posted')
+            ->whereDate('invoice_date', '>=', $from)->whereDate('invoice_date', '<=', $to)
+            ->get(['invoice_date', 'total_amount'])
+            ->groupBy(fn ($invoice) => $invoice->invoice_date->format($keyFormat));
+        $purchaseReturns = PurchaseReturn::query()
+            ->whereDate('return_date', '>=', $from)->whereDate('return_date', '<=', $to)
+            ->get(['return_date', 'total_amount'])
             ->groupBy(fn ($return) => $return->return_date->format($keyFormat));
 
         $cursor = $daily ? $from->copy() : $from->copy()->startOfMonth();
@@ -1576,6 +1586,9 @@ class ReportService
                 'label' => $cursor->format($labelFormat),
                 'sales' => round((float) $sales->sum('total_amount') - $returnedRevenue, 2),
                 'profit' => round((float) $sales->sum('total_profit') - ($returnedRevenue - $returnedCost), 2),
+                'cogs' => round((float) $sales->sum('total_cost') - $returnedCost, 2),
+                'purchases' => round((float) ($purchases[$key] ?? collect())->sum('total_amount') - (float) ($purchaseReturns[$key] ?? collect())->sum('total_amount'), 2),
+                'invoice_count' => $sales->count(),
             ];
 
             $daily ? $cursor->addDay() : $cursor->addMonth();

@@ -106,21 +106,23 @@ class DashboardController extends Controller
 
     /**
      * Resolve the period selector into a [from, to] window.
-     * Presets: this_month, last_3, last_6, last_12; custom reads from/to.
+     * Presets: last_3, last_6, ytd, last_12; legacy URLs also support this_month and custom.
      *
      * @return array{0: Carbon, 1: Carbon, 2: string}
      */
     private function resolvePeriod(Request $request): array
     {
-        $period = $request->string('period')->toString() ?: 'this_month';
-        $to = now();
+        $period = $request->string('period')->toString() ?: 'last_12';
+        $today = now(config('app.timezone'));
+        $to = $today->copy();
 
         $from = match ($period) {
-            'last_3' => now()->subMonthsNoOverflow(3)->addDay()->startOfDay(),
-            'last_6' => now()->subMonthsNoOverflow(6)->addDay()->startOfDay(),
-            'last_12' => now()->subMonthsNoOverflow(12)->addDay()->startOfDay(),
-            'custom' => $request->filled('from') ? Carbon::parse($request->string('from')->toString())->startOfDay() : now()->startOfMonth(),
-            default => now()->startOfMonth(),
+            'last_3' => $today->copy()->subMonthsNoOverflow(3)->addDay()->startOfDay(),
+            'last_6' => $today->copy()->subMonthsNoOverflow(6)->addDay()->startOfDay(),
+            'last_12' => $today->copy()->subMonthsNoOverflow(12)->addDay()->startOfDay(),
+            'ytd' => $today->copy()->startOfYear(),
+            'custom' => $request->filled('from') ? Carbon::parse($request->string('from')->toString())->startOfDay() : $today->copy()->startOfMonth(),
+            default => $today->copy()->startOfMonth(),
         };
 
         if ($period === 'custom' && $request->filled('to')) {

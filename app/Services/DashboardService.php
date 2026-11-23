@@ -8,15 +8,16 @@ use App\Models\Customer;
 use App\Models\LedgerEntry;
 use App\Models\PurchaseInvoice;
 use App\Models\SalesInvoice;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * Assembles the Executive Dashboard payload for Admin / Super Admin.
  *
- * Every figure is a thin slice of an existing, tested source — ReportService
- * (which owns the canonical report math) and LedgerService — so the dashboard
- * never disagrees with the Reports module. This service only READS; it touches
- * no ledger, posting, inventory or margin logic.
+ * Figures use ReportService (canonical report math), ledger balances, and
+ * persisted operational records. This service only reads; it does not post
+ * transactions or mutate stock.
  *
  * Widgets split into two kinds:
  *   - PERIOD widgets (sales/profit/margin/purchases, top products, sales by
@@ -27,33 +28,46 @@ use Illuminate\Support\Carbon;
  */
 class DashboardService
 {
-    public function __construct(
-        private readonly ReportService $reports,
-        private readonly LedgerService $ledger,
-    ) {}
+    public function __construct(private readonly ReportService $reports) {}
 
     public function executivePayload(Carbon $from, Carbon $to, string $period): array
     {
+        $asOf = now();
+        $kpis = $this->periodKpis($from, $to);
+        $financials = $this->financials();
+        $outstanding = $this->reports->build('outstanding', []);
+        $periodFilters = ['from' => $from->toDateString(), 'to' => $to->toDateString()];
+        $productRows = collect($this->reports->build('product-sales', $periodFilters)['rows']);
+        $supplierRows = $this->salesBySupplier($productRows);
+        $customerRows = collect($this->reports->build('customer-sales', $periodFilters)['rows']);
+
         return [
             'scope' => 'executive',
+            'asOf' => $asOf->toIso8601String(),
             'filterValues' => [
                 'period' => $period,
                 'from' => $from->toDateString(),
                 'to' => $to->toDateString(),
             ],
-            'kpis' => $this->periodKpis($from, $to),
+            'kpis' => $kpis,
             'hr' => app(HrReportService::class)->totals($from, $to),
-            'financials' => $this->financials(),
+            'financials' => $financials,
+            'workingCapital' => $this->workingCapital($from, $to, $kpis, $financials),
             'monthlyTrend' => $this->reports->salesProfitTrend($from, $to),
-            'aging' => $this->aging(),
-            'topProducts' => $this->topProducts($from, $to),
-            'salesBySupplier' => $this->salesBySupplier($from, $to),
-            'topDebtors' => $this->topDebtors(),
-            'topCustomers' => $this->topCustomers($from, $to),
+            'aging' => $this->aging($outstanding['totals']),
+            'topProducts' => $this->topProducts($productRows),
+            'salesBySupplier' => $supplierRows->take(8)->values()->all(),
+            'topDebtors' => $this->topDebtors($outstanding['rows']),
+            'topCustomers' => $this->topCustomers($customerRows),
+            'rankingTotals' => [
+                'products' => (float) $productRows->where('net_revenue', '>', 0)->sum('net_revenue'),
+                'suppliers' => (float) $supplierRows->where('value', '>', 0)->sum('value'),
+                'customers' => (float) $customerRows->where('net_revenue', '>', 0)->sum('net_revenue'),
+            ],
             'stockOnLoan' => $this->stockOnLoan(),
-            'attention' => $this->attention(),
+            'attention' => $this->attention($outstanding['rows'], $asOf),
             'recentSales' => $this->recentSales(),
-            'expiringSoon' => $this->expiringSoon(),
+            'expiringSoon' => $this->expiringSoon($asOf),
         ];
     }
 
@@ -62,37 +76,51 @@ class DashboardService
     {
         [$prevFrom, $prevTo] = $this->previousPeriod($from, $to);
 
-        $now = $this->salesTotals($from, $to);
-        $prev = $this->salesTotals($prevFrom, $prevTo);
+        $now = $this->reports->salesPeriodTotals($from, $to);
+        $prev = $this->reports->salesPeriodTotals($prevFrom, $prevTo);
 
         $purchases = $this->reports->purchasePeriodTotals($from, $to)['net_purchases'];
         $prevPurchases = $this->reports->purchasePeriodTotals($prevFrom, $prevTo)['net_purchases'];
 
         return [
-            'sales' => $now['sales'],
-            'sales_delta' => $this->delta($now['sales'], $prev['sales']),
-            'profit' => $now['profit'],
-            'profit_delta' => $this->delta($now['profit'], $prev['profit']),
-            'margin_pct' => $now['sales'] > 0 ? round($now['profit'] / $now['sales'] * 100, 1) : 0.0,
-            'prev_margin_pct' => $prev['sales'] > 0 ? round($prev['profit'] / $prev['sales'] * 100, 1) : 0.0,
+            'sales' => $now['net_sales'],
+            'sales_delta' => $this->delta($now['net_sales'], $prev['net_sales']),
+            'profit' => $now['net_profit'],
+            'profit_delta' => $this->delta($now['net_profit'], $prev['net_profit']),
+            'margin_pct' => $now['net_sales'] > 0 ? round($now['net_profit'] / $now['net_sales'] * 100, 1) : 0.0,
+            'prev_margin_pct' => $prev['net_sales'] > 0 ? round($prev['net_profit'] / $prev['net_sales'] * 100, 1) : null,
             'purchases' => $purchases,
             'purchases_delta' => $this->delta($purchases, $prevPurchases),
+            'cogs' => $now['net_cost'],
+            'invoice_count' => $now['invoice_count'],
+            'average_invoice' => $now['invoice_count'] > 0 ? round($now['gross_sales'] / $now['invoice_count'], 2) : null,
         ];
     }
 
-    /** @return array{sales: float, profit: float} */
-    private function salesTotals(Carbon $from, Carbon $to): array
+    /** Snapshot balances divided by the selected period's activity (estimated days). */
+    private function workingCapital(Carbon $from, Carbon $to, array $kpis, array $financials): array
     {
-        $totals = $this->reports->salesPeriodTotals($from, $to);
+        $days = (int) $from->copy()->startOfDay()->diffInDays($to->copy()->startOfDay()) + 1;
+        $estimate = fn (float $balance, float $activity) => $activity > 0
+            ? round(max($balance, 0) / $activity * $days, 1)
+            : null;
+        $dso = $estimate($financials['receivable'], $kpis['sales']);
+        $dio = $estimate($financials['inventory_value'], $kpis['cogs']);
+        $dpo = $estimate($financials['payable'], $kpis['purchases']);
 
-        return ['sales' => $totals['net_sales'], 'profit' => $totals['net_profit']];
+        return [
+            'dso' => $dso,
+            'dio' => $dio,
+            'dpo' => $dpo,
+            'cash_cycle' => $dso !== null && $dio !== null && $dpo !== null ? round($dso + $dio - $dpo, 1) : null,
+        ];
     }
 
     /** The equal-length window immediately before [from, to]. */
     private function previousPeriod(Carbon $from, Carbon $to): array
     {
-        $days = $from->diffInDays($to);
-        $prevTo = $from->copy()->subDay();
+        $days = (int) $from->copy()->startOfDay()->diffInDays($to->copy()->startOfDay());
+        $prevTo = $from->copy()->startOfDay()->subDay();
         $prevFrom = $prevTo->copy()->subDays($days);
 
         return [$prevFrom, $prevTo];
@@ -129,10 +157,8 @@ class DashboardService
     }
 
     /** Receivables aging buckets for the donut — straight from the Outstanding report totals. */
-    private function aging(): array
+    private function aging(array $totals): array
     {
-        $totals = $this->reports->build('outstanding', [])['totals'];
-
         return [
             ['label' => '0–30', 'value' => (float) $totals['current']],
             ['label' => '31–60', 'value' => (float) $totals['d31_60']],
@@ -142,9 +168,9 @@ class DashboardService
     }
 
     /** Top 5 customers by outstanding balance, from the Outstanding report rows. */
-    private function topDebtors(): array
+    private function topDebtors(array $rows): array
     {
-        return collect($this->reports->build('outstanding', [])['rows'])
+        return collect($rows)
             ->take(5)
             ->map(fn ($row) => [
                 'customer' => $row['customer'],
@@ -156,48 +182,30 @@ class DashboardService
     }
 
     /** Top 8 products by net revenue in the period (Product Sales report). */
-    private function topProducts(Carbon $from, Carbon $to): array
+    private function topProducts(Collection $rows): array
     {
-        return collect($this->productSalesRows($from, $to))
+        return $rows
             ->take(8)
-            ->map(fn ($row) => ['label' => $row['product'], 'value' => (float) $row['net_revenue']])
+            ->map(fn ($row) => ['label' => $row['product'] ?? '—', 'value' => (float) $row['net_revenue']])
             ->values()->all();
     }
 
     /** Net revenue grouped by supplier in the period, top 8 (same Product Sales rows). */
-    private function salesBySupplier(Carbon $from, Carbon $to): array
+    private function salesBySupplier(Collection $rows): Collection
     {
-        return collect($this->productSalesRows($from, $to))
+        return $rows
             ->groupBy(fn ($row) => $row['supplier'] ?? '—')
             ->map(fn ($group, $supplier) => [
                 'label' => $supplier,
                 'value' => round((float) $group->sum('net_revenue'), 2),
             ])
-            ->sortByDesc('value')
-            ->take(8)
-            ->values()->all();
-    }
-
-    /** Cached Product Sales rows for the period (shared by two widgets). */
-    private array $productSalesCache = [];
-
-    private function productSalesRows(Carbon $from, Carbon $to): array
-    {
-        $key = $from->toDateString().'|'.$to->toDateString();
-
-        return $this->productSalesCache[$key] ??= $this->reports->build('product-sales', [
-            'from' => $from->toDateString(),
-            'to' => $to->toDateString(),
-        ])['rows'];
+            ->sortByDesc('value');
     }
 
     /** Top 5 customers by net revenue in the period. */
-    private function topCustomers(Carbon $from, Carbon $to): array
+    private function topCustomers(Collection $rows): array
     {
-        return collect($this->reports->build('customer-sales', [
-            'from' => $from->toDateString(),
-            'to' => $to->toDateString(),
-        ])['rows'])
+        return $rows
             ->take(5)
             ->map(fn ($row) => [
                 'customer_id' => $row['customer_id'],
@@ -226,16 +234,20 @@ class DashboardService
     }
 
     /** Cheap "needs attention" counters. */
-    private function attention(): array
+    private function attention(array $outstanding, Carbon $asOf): array
     {
+        $drafts = SalesInvoice::where('status', 'draft')
+            ->selectRaw('COUNT(*) AS count, COALESCE(SUM(total_amount), 0) AS total')->first();
+        $overdue = collect($outstanding)->where('over_90', '>', 0);
+
         return [
-            'draft_sales' => SalesInvoice::where('status', 'draft')->count(),
+            'draft_sales' => (int) $drafts->count,
+            'draft_sales_total' => (float) $drafts->total,
             'draft_purchases' => PurchaseInvoice::where('status', 'draft')->count(),
             'pending_bookings' => Booking::where('status', 'pending')->count(),
-            'expiring_90' => Batch::inStock()->normal()
-                ->whereNotNull('expiry_date')
-                ->whereDate('expiry_date', '<=', now()->addDays(90))
-                ->count(),
+            'expiring_90' => $this->expiringBatches($asOf)->count(),
+            'overdue_accounts' => $overdue->count(),
+            'overdue_amount' => round((float) $overdue->sum('over_90'), 2),
         ];
     }
 
@@ -247,13 +259,18 @@ class DashboardService
             ->get(['id', 'invoice_number', 'customer_id', 'invoice_date', 'status', 'total_amount']);
     }
 
-    private function expiringSoon(): array
+    private function expiringBatches(Carbon $asOf): Builder
     {
-        return Batch::with('product:id,name')
-            ->inStock()->normal()
-            ->whereNotNull('expiry_date')
-            ->whereDate('expiry_date', '<=', now()->addDays(90))
+        return Batch::inStock()->normal()
+            ->whereDate('expiry_date', '>=', $asOf)
+            ->whereDate('expiry_date', '<=', $asOf->copy()->addDays(90));
+    }
+
+    private function expiringSoon(Carbon $asOf): array
+    {
+        return $this->expiringBatches($asOf)->with('product:id,name')
             ->orderBy('expiry_date')
+            ->orderBy('id')
             ->limit(8)
             ->get()
             ->map(fn ($batch) => [

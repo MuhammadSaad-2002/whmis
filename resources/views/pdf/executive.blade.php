@@ -40,7 +40,7 @@
         <tr>
             <td><div class="label">Net Sales</div><div class="value">{{ $rs($kpis['sales']) }}</div><div class="delta">{{ $sign($kpis['sales_delta']) }}</div></td>
             <td><div class="label">Net Profit</div><div class="value">{{ $rs($kpis['profit']) }}</div><div class="delta">{{ $sign($kpis['profit_delta']) }}</div></td>
-            <td><div class="label">Net Margin</div><div class="value">{{ $kpis['margin_pct'] }}%</div><div class="delta">prev {{ $kpis['prev_margin_pct'] }}%</div></td>
+            <td><div class="label">Net Margin</div><div class="value">{{ $kpis['margin_pct'] }}%</div><div class="delta">prev {{ $kpis['prev_margin_pct'] === null ? '—' : $kpis['prev_margin_pct'].'%' }}</div></td>
             <td><div class="label">Net Purchases</div><div class="value">{{ $rs($kpis['purchases']) }}</div><div class="delta">{{ $sign($kpis['purchases_delta']) }}</div></td>
         </tr>
     </table>

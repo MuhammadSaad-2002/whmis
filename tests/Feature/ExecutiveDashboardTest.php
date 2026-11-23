@@ -3,16 +3,20 @@
 namespace Tests\Feature;
 
 use App\Models\Booking;
+use App\Models\Batch;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\LedgerEntry;
 use App\Models\Product;
+use App\Models\PurchaseInvoice;
+use App\Models\PurchaseReturn;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -147,6 +151,79 @@ class ExecutiveDashboardTest extends TestCase
 
         $this->actingAs($this->booker);
         $this->get(route('dashboard.executive.pdf'))->assertForbidden();
+    }
+
+    public function test_default_and_ytd_windows_report_real_invoice_and_stock_activity(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-23 12:00:00'));
+        $sale = $this->postedSale('2026-08-22', 1000, 300);
+        $sale->update(['total_cost' => 700]);
+        $this->postedSale('2025-12-08', 200, 100);
+        PurchaseInvoice::create([
+            'invoice_number' => 'PI-DASH-1', 'company_id' => $this->company->id, 'warehouse_id' => 1,
+            'invoice_date' => '2026-08-22', 'status' => 'posted', 'total_amount' => 800,
+        ]);
+        PurchaseReturn::create([
+            'return_number' => 'PR-DASH-1', 'company_id' => $this->company->id, 'warehouse_id' => 1,
+            'return_date' => '2026-08-25', 'total_amount' => 100,
+        ]);
+        SalesReturn::create([
+            'return_number' => 'SR-DASH-TREND', 'sales_invoice_id' => $sale->id, 'customer_id' => $this->customer->id,
+            'warehouse_id' => 1, 'return_date' => '2026-09-02', 'status' => 'posted', 'total_amount' => 100, 'total_cost' => 70,
+        ]);
+
+        $this->actingAs($this->admin);
+        $this->get('/dashboard')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('filterValues.period', 'last_12')
+            ->where('filterValues.from', '2025-11-24')
+            ->where('kpis.invoice_count', 2));
+        $this->get('/dashboard?period=ytd')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('filterValues.period', 'ytd')
+            ->where('filterValues.from', '2026-01-01')
+            ->where('filterValues.to', '2026-11-23')
+            ->where('kpis.invoice_count', 1)
+            ->where('kpis.average_invoice', 1000)
+            ->where('kpis.sales', 900)
+            ->where('kpis.purchases', 700)
+            ->where('kpis.cogs', 630)
+            ->where('monthlyTrend', function ($rows) {
+                $aug = collect($rows)->firstWhere('label', 'Aug 2026');
+                $sep = collect($rows)->firstWhere('label', 'Sep 2026');
+
+                return $aug['purchases'] === 700 && $aug['invoice_count'] === 1
+                    && $aug['cogs'] === 700 && $sep['cogs'] === -70 && $sep['sales'] === -100;
+            }));
+    }
+
+    public function test_operations_snapshot_ignores_period_and_separates_expiring_from_expired(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-23 12:00:00'));
+        $draft = $this->postedSale('2026-11-23', 420);
+        $draft->update(['status' => 'draft']);
+        LedgerEntry::create([
+            'party_type' => 'customer', 'party_id' => $this->customer->id, 'entry_date' => '2026-05-02',
+            'entry_type' => 'sale', 'debit' => 150, 'credit' => 0,
+        ]);
+        $product = Product::create(['name' => 'Expiry test', 'company_id' => $this->company->id]);
+        foreach (['2026-11-22', '2026-11-23', '2027-01-02', '2027-04-02'] as $index => $expiry) {
+            Batch::create([
+                'batch_number' => 'EXP-'.$index, 'warehouse_id' => 1, 'product_id' => $product->id,
+                'expiry_date' => $expiry, 'qty_available' => 1,
+            ]);
+        }
+
+        $this->actingAs($this->admin);
+        foreach (['last_3', 'ytd'] as $period) {
+            $this->get('/dashboard?period='.$period)->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->where('attention.draft_sales', 1)
+                ->where('attention.draft_sales_total', 420)
+                ->where('attention.overdue_accounts', 1)
+                ->where('attention.overdue_amount', 150)
+                ->where('attention.expiring_90', 2)
+                ->has('expiringSoon', 2)
+                ->where('expiringSoon.0.batch_number', 'EXP-1')
+                ->where('workingCapital.cash_cycle', null));
+        }
     }
 
     public function test_net_position_is_receivable_minus_payable(): void

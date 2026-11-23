@@ -11,8 +11,9 @@ likely to matter when changing each module.
 
 ## Overview and workspace
 
-- Dashboard: `/dashboard`; Booker users receive own-data dashboard, while users with `dashboard.executive` receive the executive dashboard. Executive period KPIs use net sales/profit after posted customer credit notes and net purchases after supplier debit notes. Its sales/profit trend and revenue-ranking charts follow the selected period; short ranges use daily trend points and longer ranges use monthly points. Receivables aging remains an explicitly current snapshot.
-- Executive PDF: `/dashboard/executive/pdf`.
+- Dashboard: `/dashboard`; Booker users receive their own-data dashboard, while users with `dashboard.executive` receive Executive Overview. It defaults to 12 months and also offers 3M, 6M and year-to-date controls. Period KPIs and the sales/profit/margin and stock build-up charts use posted sales net of credit notes and purchases net of debit notes. Rankings use their underlying product and customer profitability reports; percentage shares use the total positive net revenue for that report's population. Top Products switches between revenue and share; chart legends toggle series. Recent Sales filters, searches and sorts the latest eight invoices.
+- Receivables aging, loan quantities, expiring in-stock batches, invoice pipeline and staff balances are current snapshots. Working-capital days are estimates using current balances and the selected period's sales, COGS and purchases; missing activity yields no estimate.
+- Executive Overview's Export PDF opens the browser's print-to-PDF view with charts. The server-generated summary remains at `/dashboard/executive/pdf`.
 - Workspace: `/workspace`; tabbed shell that hosts the app navigation experience.
   Open tabs refresh within the same login and browser tab. Each new login starts
   at that user's home page. Changes to permissions invalidate saved tab state.
