@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\{Permission, Role};
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class DistributionOperationsTest extends TestCase
@@ -213,6 +214,31 @@ class DistributionOperationsTest extends TestCase
         $this->action($sale, 'picking')->assertForbidden();
         $this->actingAs($this->admin)->get(route('dispatch.index'))->assertOk();
         $this->get(route('system.health'))->assertOk();
+    }
+
+    public function test_dispatch_repairs_stale_permission_cache_after_manual_grant_import(): void
+    {
+        $registrar = app(PermissionRegistrar::class);
+        $grant = [
+            'permission_id' => Permission::findByName('dispatch.view', 'web')->id,
+            'role_id' => Role::findByName('Super Admin', 'web')->id,
+        ];
+
+        DB::table('role_has_permissions')->where($grant)->delete();
+        $registrar->forgetCachedPermissions();
+        $this->get(route('dispatch.index'))->assertForbidden();
+
+        // Raw SQL has the same effect as a phpMyAdmin import. It skips the
+        // permission model's cache invalidation events.
+        DB::table('role_has_permissions')->insert($grant);
+        $admin = $this->admin->fresh();
+        $this->assertTrue($admin->getAllPermissions()->contains('name', 'dispatch.view'));
+        $this->assertFalse($admin->can('dispatch.view'));
+
+        $this->actingAs($this->booker)->get(route('dispatch.index'))->assertForbidden();
+        $this->assertFalse($admin->can('dispatch.view'), 'A denial without a database grant must leave the cache alone.');
+        $this->actingAs($admin)->get(route('dispatch.index'))->assertOk();
+        $this->assertTrue($admin->can('dispatch.view'));
     }
 
     public function test_provisioning_preserves_custom_roles_and_doctor_reports_missing_permission(): void

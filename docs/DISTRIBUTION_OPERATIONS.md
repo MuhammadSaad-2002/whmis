@@ -103,6 +103,11 @@ Do not run the schema SQL and the same migration twice. The SQL registers the
 migration. Clear permissions with `php artisan permission:cache-reset` and clear
 application caches with `php artisan optimize:clear`.
 
+On Dispatch, Collections and System Readiness, a denied request with a matching
+web permission in the database refreshes the Spatie cache and retries Laravel
+authorization once. This also handles grants imported through phpMyAdmin while
+the application was running.
+
 `php artisan whmis:doctor` checks connection, migration registration, essential
 columns, new permissions/Super Admin grants, compiled assets, and writable paths.
 `--json` is available for deployment automation. System Readiness shows the same
