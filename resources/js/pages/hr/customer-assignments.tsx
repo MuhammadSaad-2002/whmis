@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { SearchField } from '@/components/ui/search-field';
 import { useForm } from '@inertiajs/react';
 import { useState } from 'react';
 import type { Option } from './shared';
@@ -38,7 +38,7 @@ function AssignmentDialog({ employeeId, customers, options, onClose }: {
             <DialogHeader><DialogTitle>Assign Customers</DialogTitle><DialogDescription>Select the customers this Booker can book for, then save.</DialogDescription></DialogHeader>
             <form onSubmit={e => { e.preventDefault(); form.put(`/hr/employees/${employeeId}/customers`, { preserveScroll: true, onSuccess: onClose }); }}>
                 <DialogBody className="space-y-3">
-                <Input aria-label="Search customers" placeholder="Search by customer or city…" value={search} onChange={e => setSearch(e.target.value)}/>
+                <SearchField className="max-w-none" aria-label="Search customers" placeholder="Search by customer or city…" value={search} onChange={e => setSearch(e.target.value)}/>
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                     <Button type="button" size="sm" variant="outline" onClick={() => form.setData('customer_ids', [...new Set([...selected, ...visible.filter(c => c.status === 'active').map(c => c.id)])])}>Select all shown</Button>
                     <Button type="button" size="sm" variant="ghost" onClick={() => form.setData('customer_ids', [...selected].filter(id => !visible.some(c => c.id === id && !c.primary)))}>Clear shown</Button>

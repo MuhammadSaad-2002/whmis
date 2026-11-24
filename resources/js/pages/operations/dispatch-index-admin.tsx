@@ -1,10 +1,11 @@
 import { Paginator, type PaginatedData } from '@/components/paginator';
 import { Button } from '@/components/ui/button';
+import { SearchField } from '@/components/ui/search-field';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import AppLayout from '@/layouts/app-layout';
 import { shortDate, totalMoney } from '@/lib/format';
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowRight, ArrowUpDown, CalendarDays, Columns3, GripVertical, Info, List, Printer, Search, Truck } from 'lucide-react';
+import { ArrowRight, ArrowUpDown, CalendarDays, Columns3, GripVertical, Info, List, Printer, Truck } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { BoardMove, type BoardMoveRequest } from './dispatch-board-move';
 import { actions, label } from './dispatch-detail';
@@ -147,7 +148,7 @@ export function AdminDispatchIndex({ invoices, filters, staff, canPlan, canManag
             <section className="dispatch-list" aria-label="Posted sales invoices">
                 <div className="toolbar">
                     <form className="search-box" role="search" onSubmit={event => { event.preventDefault(); updateFilters({}); }}>
-                        <Search aria-hidden="true" /><input value={search} onChange={event => setSearch(event.target.value)} maxLength={100} aria-label="Invoice or customer" placeholder="Invoice or customer…" />
+                        <SearchField className="max-w-none" value={search} onChange={event => setSearch(event.target.value)} maxLength={100} aria-label="Invoice or customer" placeholder="Invoice or customer…" />
                     </form>
                     <select className="filter-field" aria-label="Delivery stage" value={stageKey} onChange={event => updateFilters({ stage: event.target.value as StageKey || undefined, status: undefined })}>
                         <option value="">All stages</option>{stages.map(stage => <option key={stage.key} value={stage.key}>{stage.label}</option>)}

@@ -1,9 +1,10 @@
 import { Paginator, type PaginatedData } from '@/components/paginator';
+import { SearchField } from '@/components/ui/search-field';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { shortDate, totalPaisaMoney } from '@/lib/format';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { ArrowLeft, Banknote, Lock, Plus, Search, ShieldCheck, UsersRound } from 'lucide-react';
+import { ArrowLeft, Banknote, Lock, Plus, ShieldCheck, UsersRound } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ApprovalBadge, ApprovalDetail, ApprovalIcon } from './finance-approval-detail';
 import { RequestDialog, type DraftSeed } from './finance-approval-request';
@@ -108,9 +109,7 @@ export default function FinanceApprovals({ items, accounts, kinds, today, actorI
                         </button>)}
                     </nav>
                     <form className="approval-tools" onSubmit={event => { event.preventDefault(); apply({}); }}>
-                        <label className="approval-search"><Search aria-hidden="true" />
-                            <input aria-label="Search requests" placeholder="Search requests…" maxLength={120} value={search} onChange={event => setSearch(event.target.value)} />
-                        </label>
+                        <SearchField className="approval-search" aria-label="Search requests" placeholder="Search requests…" maxLength={120} value={search} onChange={event => setSearch(event.target.value)} />
                         <select className="approval-type-filter" aria-label="Filter by request type" value={filters.type} onChange={event => apply({ type: event.target.value })}>
                             <option value="">All types</option>{kinds.map(kind => <option key={kind} value={kind}>{kindName(kind)}</option>)}
                         </select>

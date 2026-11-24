@@ -48,12 +48,13 @@ const sheetVariants = cva(
 
 interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>, VariantProps<typeof sheetVariants> {
     appearance?: 'form';
+    overlayClassName?: string;
 }
 
 const SheetContent = React.forwardRef<React.ElementRef<typeof SheetPrimitive.Content>, SheetContentProps>(
-    ({ appearance, side = 'right', className, children, ...props }, ref) => (
+    ({ appearance, side = 'right', className, overlayClassName, children, ...props }, ref) => (
         <SheetPortal>
-            <SheetOverlay data-popup-overlay={appearance === 'form' ? '' : undefined} />
+            <SheetOverlay className={overlayClassName} data-popup-overlay={appearance === 'form' ? '' : undefined} />
             <SheetPrimitive.Content ref={ref} data-popup-form={appearance === 'form' ? 'sheet' : undefined} data-popup-side={appearance === 'form' ? side : undefined} className={cn(sheetVariants({ side }), className)} {...props}>
                 {children}
                 <SheetPrimitive.Close data-popup-close className="absolute right-6 top-6 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">

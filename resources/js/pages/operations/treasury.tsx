@@ -1,7 +1,7 @@
 import { Paginator, type PaginatedData } from '@/components/paginator';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { SearchField } from '@/components/ui/search-field';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -9,7 +9,7 @@ import AppLayout from '@/layouts/app-layout';
 import { shortDate, totalPaisaMoney as cashTotal } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowDown, ArrowLeftRight, ArrowUp, CheckSquare, Download, Info, Plus, Search, Wallet } from 'lucide-react';
+import { ArrowDown, ArrowLeftRight, ArrowUp, CheckSquare, Download, Info, Plus, Wallet } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { selectClass, type Staff } from './shared';
 import { TreasuryAccountForm } from './treasury-account-form';
@@ -241,7 +241,7 @@ function Ledger({ accountId, entries, filters, onlyOpening }: { accountId: numbe
 
     return <div className="grid min-w-0 gap-3">
         <div className="flex flex-wrap items-center gap-2">
-            <label className="relative min-w-40 flex-1 sm:max-w-[300px]"><span className="sr-only">Search reference</span><Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" /><Input type="search" className="h-10 pl-9 text-base placeholder:text-muted-foreground sm:text-sm" placeholder="Search reference…" maxLength={120} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+            <SearchField aria-label="Search reference" className="sm:min-w-40 sm:max-w-[300px]" placeholder="Search reference…" maxLength={120} value={search} onChange={(event) => setSearch(event.target.value)} />
             <select aria-label="Filter ledger movements" className={cn(selectClass, 'w-auto max-w-full')} value={movement} onChange={(event) => setMovement(event.target.value)}>
                 <option value="">All movements</option><option value="opening">Opening</option><option value="receipt">Receipt</option><option value="payout">Payout</option><option value="transfer">Transfer</option><option value="other">Adjustment</option>
             </select>

@@ -63,6 +63,8 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     Route::get('dispatch/{sale}', [\App\Http\Controllers\OperationsController::class, 'dispatch'])->middleware(AuthorizeOperations::class.':dispatch.view,dispatch.assigned')->name('dispatch.show');
     Route::post('dispatch/{sale}/events', [\App\Http\Controllers\OperationsController::class, 'dispatchAction'])->middleware(AuthorizeOperations::class.':dispatch.manage,dispatch.assigned')->name('dispatch.record');
     Route::get('collections', [\App\Http\Controllers\OperationsController::class, 'collections'])->middleware(AuthorizeOperations::class.':collections.view')->name('collections.index');
+    Route::get('collections/export.csv', [\App\Http\Controllers\OperationsController::class, 'collectionsCsv'])->middleware(AuthorizeOperations::class.':collections.view')->name('collections.csv');
+    Route::get('collections/print.pdf', [\App\Http\Controllers\OperationsController::class, 'collectionsPdf'])->middleware(AuthorizeOperations::class.':collections.view')->name('collections.pdf');
     Route::controller(DistributionFinanceController::class)->group(function () {
         Route::middleware(AuthorizeOperations::class.':distribution.reconcile')->group(function () {
             Route::get('daily-reconciliation', 'daily')->name('distribution.reconcile');

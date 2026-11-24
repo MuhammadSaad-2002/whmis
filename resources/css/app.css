@@ -24,45 +24,67 @@
     font-display: swap;
 }
 
-.app-search-field {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    flex: 1 1 18rem;
-    width: 100%;
-    min-width: 0;
-    max-width: 24rem;
-    min-height: 44px;
-    padding: 0 12px;
-    border: 1px solid var(--input);
-    border-radius: 9px;
-    background: var(--card);
-    color: var(--ink3, var(--muted-foreground));
+@layer components {
+    .app-search-field {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        flex: 1 1 18rem;
+        width: 100%;
+        min-width: 0;
+        max-width: 24rem;
+        min-height: 44px;
+        padding: 0 12px;
+        border: 1px solid var(--input);
+        border-radius: 9px;
+        background: var(--card);
+        color: var(--ink3, var(--muted-foreground));
+    }
+
+    @media (max-width: 760px) {
+        .app-search-field { flex-basis: 100%; max-width: none; }
+    }
 }
 
-.app-search-field:focus-within {
-    border-color: var(--teal, var(--ring));
-    outline: 2px solid var(--teal, var(--ring));
-    outline-offset: 1px;
+/* The shell owns focus for icon fields and picker search bars. Keep the ring
+   inside so it remains visible in popovers and other clipped containers. */
+[data-search-field]:focus-within {
+    outline: 2px solid var(--popup-focus, var(--teal, var(--ring)));
+    outline-offset: -2px;
 }
 
-.app-search-field > svg { flex: none; }
-.app-search-field > input[type='search'] {
+[data-search-field] > svg { flex: none; }
+[data-search-field] > input {
     flex: 1;
     width: 100%;
     min-width: 0;
-    align-self: stretch;
     border: 0;
+    border-radius: 0;
     background: transparent;
+    box-shadow: none;
+    outline: none;
+}
+
+/* Page-level keyboard styles still apply to ordinary inputs, not this inner one. */
+[data-search-field]:focus-within > input:focus {
+    box-shadow: none;
+    outline: none;
+}
+
+.app-search-field > input {
+    align-self: stretch;
     color: var(--ink, var(--foreground));
     font-size: 1rem;
-    outline: none;
 }
 
 .app-search-field > input::placeholder { color: var(--ink3, var(--muted-foreground)); opacity: 1; }
 
 @media (max-width: 760px) {
-    .app-search-field { flex-basis: 100%; max-width: none; }
+    [data-search-field] > input { font-size: 1rem; }
+}
+
+@media (forced-colors: active) {
+    [data-search-field]:focus-within { outline-color: Highlight; }
 }
 
 @theme {

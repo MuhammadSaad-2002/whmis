@@ -8,7 +8,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { ArrowDown, ArrowUp, X } from 'lucide-react';
 import { type FormEvent, useMemo, useRef, useState } from 'react';
 
-export type PaymentSelection = { type: PartyType; id?: number };
+export type PaymentSelection = { type: PartyType; id?: number; invoiceId?: number };
 
 interface Props {
     selection: PaymentSelection;
@@ -44,8 +44,11 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
     const receipt = data.party_type === 'customer';
     const partyLabel = receipt ? 'Customer' : 'Supplier';
     const docLabel = receipt ? 'invoices' : 'bills';
+    const specificInvoice = selection.invoiceId !== undefined;
     const lookup = useOpenInvoices(data.party_type, data.party_id, revision);
-    const invoices = lookup.status === 'ready' ? lookup.invoices : noInvoices;
+    const invoices = useMemo(() => lookup.status === 'ready'
+        ? specificInvoice ? lookup.invoices.filter((invoice) => invoice.id === selection.invoiceId) : lookup.invoices
+        : noInvoices, [lookup, selection.invoiceId, specificInvoice]);
     const tendered = cents(data.amount);
     const total = data.method === 'adjustment' ? tendered : roundPaisaToRupee(tendered);
     const due = invoices.reduce((sum, row) => sum + cents(row.outstanding), 0);
@@ -59,7 +62,8 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
     const oldestDue = oldest ? cents(oldest.outstanding) : 0;
     const settledBalance = lookup.status === 'ready' ? cents(lookup.balance) - Math.max(allocated, Math.min(tendered, total)) : null;
     const canSubmit = !!parties?.[data.party_type].some((party) => String(party.id) === data.party_id)
-        && lookup.status === 'ready' && !form.processing && allocated <= Math.max(tendered, total);
+        && lookup.status === 'ready' && !form.processing && allocated <= Math.max(tendered, total)
+        && (!specificInvoice || allocated > 0);
     const errors = [...new Set(Object.values(form.errors))];
 
     function chooseParty(type: PartyType, id = '') {
@@ -147,18 +151,18 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
                             <Dialog.Close id="payment-close" type="button" data-popup-close aria-label="Close" disabled={form.processing}><X className="i" /></Dialog.Close>
                         </div>
                         <div data-popup-section="body" aria-busy={form.processing}>
-                            <div className="ptype" aria-label="Payment type">
+                            {!specificInvoice && <div className="ptype" aria-label="Payment type">
                                 <button type="button" data-k="ar" className={receipt ? 'on' : ''} aria-pressed={receipt} onClick={() => { if (!receipt) chooseParty('customer'); }} disabled={form.processing}>
                                     <ArrowDown className="i" />Customer receipt<small>Money in</small>
                                 </button>
                                 <button type="button" data-k="ap" className={!receipt ? 'on' : ''} aria-pressed={!receipt} onClick={() => { if (receipt) chooseParty('company'); }} disabled={form.processing}>
                                     <ArrowUp className="i" />Supplier payment<small>Money out</small>
                                 </button>
-                            </div>
+                            </div>}
                             <div className="fg">
                                 <div className="f full">
                                     <label htmlFor="payment-party">{partyLabel} *</label>
-                                    <select id="payment-party" ref={partyField} required disabled={!parties || form.processing} value={data.party_id} onChange={(event) => chooseParty(data.party_type, event.target.value)}>
+                                    <select id="payment-party" ref={partyField} required disabled={specificInvoice || !parties || form.processing} value={data.party_id} onChange={(event) => chooseParty(data.party_type, event.target.value)}>
                                         <option value="">{parties ? `Select ${partyLabel.toLowerCase()}…` : 'Loading parties…'}</option>
                                         {data.party_id && !parties?.[data.party_type].some((party) => String(party.id) === data.party_id) &&
                                             <option value={data.party_id}>{parties ? 'Party not available' : 'Loading…'}</option>}
@@ -166,8 +170,8 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
                                     </select>
                                     {lookup.status === 'ready' && <div className="psum">
                                         <span>Balance<b className={lookup.balance < 0 ? 'credit' : ''}>{money(lookup.balance)}</b></span>
-                                        <span>Open {docLabel}<b>{invoices.length}</b></span>
-                                        {oldest && <span>Oldest<b>{oldest.invoice_number} · {invoiceAge(oldest.invoice_date, today)} days</b></span>}
+                                        <span>Open {docLabel}<b>{lookup.invoices.length}</b></span>
+                                        {oldest && <span>{specificInvoice ? 'Selected invoice' : 'Oldest'}<b>{oldest.invoice_number} · {invoiceAge(oldest.invoice_date, today)} days</b></span>}
                                     </div>}
                                 </div>
                                 <div className="f">
@@ -205,7 +209,7 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
                                     <b>Allocate to open {docLabel}</b>
                                     <span className="allocation-meta">Allocated <b className="num">{totalAmount(allocated / 100)}</b> / {totalAmount(total / 100)}</span>
                                     <div className="sp" />
-                                    <span className={manual ? 'mode man' : 'mode'}>{manual ? 'Manual' : 'Auto · oldest first'}</span>
+                                    <span className={manual ? 'mode man' : 'mode'}>{manual ? 'Manual' : specificInvoice ? 'Selected invoice' : 'Auto · oldest first'}</span>
                                     <button className="lnk" type="button" disabled={!oldest} onClick={() => setManual(null)}>Auto-allocate</button>
                                     <button className="lnk" type="button" disabled={!oldest} onClick={() => setManual({})}>Clear</button>
                                 </div>
@@ -213,7 +217,7 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
                                     {lookup.status === 'idle' && <div className="aempty">Select a {partyLabel.toLowerCase()} to see their unpaid {docLabel}.</div>}
                                     {lookup.status === 'loading' && <div role="status" className="aempty">Loading unpaid {docLabel}…</div>}
                                     {lookup.status === 'error' && <div role="alert" className="aempty">Unable to load unpaid {docLabel}. <button type="button" className="lnk" onClick={refreshInvoices}>Retry</button></div>}
-                                    {lookup.status === 'ready' && !oldest && <div className="aempty">No unpaid {docLabel}. The full amount will be recorded as on-account credit.</div>}
+                                    {lookup.status === 'ready' && !oldest && <div className="aempty">{specificInvoice ? 'This invoice no longer has a collectible balance.' : `No unpaid ${docLabel}. The full amount will be recorded as on-account credit.`}</div>}
                                     {invoices.map((invoice, index) => {
                                         const key = invoiceKey(invoice);
                                         const allocated = cents(allocations[key] ?? 0);

@@ -2,10 +2,11 @@ import { SearchableSelect, type SelectOption } from '@/components/searchable-sel
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { SearchField } from '@/components/ui/search-field';
 import { Textarea } from '@/components/ui/textarea';
 import { shortDate } from '@/lib/format';
 import { useForm } from '@inertiajs/react';
-import { CircleHelp, FileSpreadsheet, Search, ShieldCheck, Upload, UsersRound, X } from 'lucide-react';
+import { CircleHelp, FileSpreadsheet, ShieldCheck, Upload, UsersRound, X } from 'lucide-react';
 import { createContext, useContext, useEffect, useId, useState } from 'react';
 import { amountText, expenseCategories, kindIcon, kindName, requestGroups, requestGuidance, requiredEvidence, type ApprovalOptions, type ApprovalPayload, type AwardProjection, type FinanceAccount, type PickOption } from './finance-approval-types';
 import { Errors, Field, selectClass } from './shared';
@@ -204,7 +205,7 @@ function RequestForm({ seed, accounts, kinds, today, close, created }: {
     }}>
         <div className="finance-request-layout">
             <aside className="request-type-side" aria-label="Request types">
-                <label className="request-type-search"><Search aria-hidden="true" /><input aria-label="Find a request type" placeholder="Find a request type…" value={search} onChange={event => setSearch(event.target.value)} /></label>
+                <SearchField className="request-type-search" aria-label="Find a request type" placeholder="Find a request type…" value={search} onChange={event => setSearch(event.target.value)} />
                 <nav className="request-type-nav" aria-label="Request type groups">
                     {eachGroup.map(([group, choices]) => <section key={group}><h3>{group}</h3>
                         {choices.map(type => {

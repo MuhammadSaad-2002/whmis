@@ -1,24 +1,19 @@
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { usePermissions } from '@/hooks/use-permissions';
-import { money, shortDate } from '@/lib/format';
-import { Link, useForm } from '@inertiajs/react';
-import { Errors, Field, Layout, selectClass, StaffSelect, stamp, Status, todayPK, type Staff } from './shared';
+import AppLayout from '@/layouts/app-layout';
+import { Head, Link } from '@inertiajs/react';
+import { ArrowLeft } from 'lucide-react';
+import { CollectionTitle, FollowUpPanel, type CollectionDetail } from './collection-follow-up';
+import './collections.css';
 
-type FollowUp = { id: number; created_at: string; outcome: string; next_follow_up: string; notes: string; assigned_to: number | null; promised_amount: string | null; promised_date: string | null; assignee: Staff | null; creator: Staff | null };
-type Invoice = { id: number; invoice_number: string; status: string; total_amount: string; outstanding: number; paid_amount: number; return_credit: number; customer: string | null; customer_id: number };
-export default function Collection({ invoice, history, staff }: { invoice: Invoice; history: FollowUp[]; staff: Staff[] }) {
-    const { can } = usePermissions();
-    const form = useForm({ outcome: 'contacted', assigned_to: history[0]?.assigned_to ? String(history[0].assigned_to) : '', promised_date: todayPK(), promised_amount: '', next_follow_up: todayPK(), notes: '' });
-    return <Layout title={`Collection · ${invoice.invoice_number}`} description={invoice.customer ?? ''} actions={<Button variant="outline" asChild><Link href="/collections">Worklist</Link></Button>}>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[['Original invoice', invoice.total_amount], ['Paid / allocated', invoice.paid_amount], ['Posted return credits', invoice.return_credit], ['Remaining invoice balance', invoice.outstanding]].map(([label, value]) => <div key={label} className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-lg font-semibold tabular-nums">{money(value)}</p></div>)}</div>
-        <div className="flex flex-wrap gap-2">{can('ledger.view') && <Button variant="outline" asChild><Link href={`/ledger/customers/${invoice.customer_id}`}>Customer statement</Link></Button>}{can('payments.manage') && <Button asChild><Link href="/payments">Record actual receipt</Link></Button>}</div>
-        <p className="text-sm text-muted-foreground">Follow-ups do not record money or settle invoices. Actual completed payments and posted returns update this balance automatically. Review any unallocated customer credit in the statement.</p>
-        {can('collections.manage') && invoice.status === 'posted' && invoice.outstanding > 0 && <form className="space-y-3 rounded-xl border p-4" onSubmit={e => { e.preventDefault(); form.post(`/collections/${invoice.id}/follow-ups`, { preserveScroll: true, onSuccess: () => form.reset('notes') }); }}>
-            <h2 className="font-semibold">Add follow-up</h2><div className="grid gap-3 sm:grid-cols-2"><Field label="Outcome"><select className={selectClass} value={form.data.outcome} onChange={e => form.setData('outcome', e.target.value)}>{['contacted', 'promised', 'unreachable', 'disputed'].map(v => <option key={v} value={v}>{v}</option>)}</select></Field><Field label="Responsible staff"><StaffSelect staff={staff} value={form.data.assigned_to} onChange={v => form.setData('assigned_to', v)}/></Field><Field label="Next follow-up *"><Input type="date" required min={todayPK()} value={form.data.next_follow_up} onChange={e => form.setData('next_follow_up', e.target.value)}/></Field>
-            {form.data.outcome === 'promised' && <><Field label="Promised payment date *"><Input type="date" required min={todayPK()} value={form.data.promised_date} onChange={e => form.setData('promised_date', e.target.value)}/></Field><Field label="Promised amount *"><Input type="number" required min="0.01" step="0.01" max={invoice.outstanding} value={form.data.promised_amount} onChange={e => form.setData('promised_amount', e.target.value)}/></Field></>}</div>
-            <Field label="Notes *"><textarea required maxLength={1000} className="min-h-20 w-full rounded-md border p-2 text-base" value={form.data.notes} onChange={e => form.setData('notes', e.target.value)}/></Field><Errors errors={form.errors}/><Button disabled={form.processing}>Save follow-up</Button>
-        </form>}
-        <section className="space-y-3"><h2 className="text-lg font-semibold">Follow-up history</h2>{!history.length && <p className="text-sm text-muted-foreground">No follow-ups recorded.</p>}{history.map(f => <article key={f.id} className="space-y-2 rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><Status value={f.outcome}/><span className="text-xs text-muted-foreground">{stamp(f.created_at)} · {f.creator?.name}</span></div><p>Responsible: {f.assignee?.name ?? 'Unassigned'} · Follow up {shortDate(f.next_follow_up)}</p>{f.promised_date && <p>Promised: {money(f.promised_amount)} on {shortDate(f.promised_date)}</p>}<p className="whitespace-pre-wrap break-words">{f.notes}</p></article>)}</section>
-    </Layout>;
+export default function Collection(props: CollectionDetail) {
+    const { invoice, today } = props;
+    return <AppLayout>
+        <Head title={`Collection · ${invoice.invoice_number}`} />
+        <main className="collections-theme collections-page">
+            <Link className="btn" href={route('collections.index', {}, false)}><ArrowLeft className="i" aria-hidden="true" />Worklist</Link>
+            <article className="flat collection-detail">
+                <CollectionTitle number={invoice.invoice_number} customer={invoice.customer} due={invoice.due_on} today={today} />
+                <FollowUpPanel {...props} />
+            </article>
+        </main>
+    </AppLayout>;
 }

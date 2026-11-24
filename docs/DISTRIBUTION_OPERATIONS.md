@@ -117,19 +117,26 @@ Open **Finance → Collections & Recovery** (`/collections`). The positive balan
 worklist uses the same `InvoiceBalanceService` as the customer payment allocation
 lookup:
 
-`invoice balance = invoice amount − completed allocated receipts − posted return credits`
+`invoice balance = invoice amount − completed allocations − posted return credits − applied customer credit`
 
 Cancelled payments/returns do not reduce the balance. Fully settled invoices
 disappear automatically; history remains accessible from the invoice URL.
-Original amount, paid allocations and return credits explain each balance.
+The aging summary covers the full worklist. Search, aging and promise filters apply
+to the grouped customer or flat invoice views and their CSV/PDF exports. Customer
+pagination keeps each customer’s matching invoices together. Call and WhatsApp
+shortcuts use the saved phone number and never send automatically. Statements
+and payment recording retain their existing permission checks.
 Overdue uses due date, falling back to invoice date when none was supplied.
 The follow-up filter uses only the most recent follow-up for each invoice.
 
-Follow-ups record responsible staff, contacted/promised/unreachable/disputed,
-next follow-up date and notes. Promises require a date and positive amount no
+The follow-up drawer shows balance, actions and the audit history. Outcomes
+include no answer, promise, dispute, statement requested, customer reports
+payment, and visit needed. Keep responsible staff, next follow-up date and notes.
+Promises require a date and positive amount no
 greater than the current invoice balance. They never count as payments or profit.
-Only actual payments and returns change the live balance. Customer statements
-must be checked for unallocated credit before requesting payment.
+Completed allocations, posted returns and applied customer credit change the
+live balance. Check the customer statement for unallocated credit before
+requesting payment.
 
 This first release does not implement physical cash handover, cash reconciliation,
 automatic customer reminders, or a payment-promise settlement engine.

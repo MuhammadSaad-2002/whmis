@@ -3,7 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\{CollectionFollowUp, Dispatch, SalesInvoice, User};
-use App\Services\{AdminDispatchOverview, CollectionService, DeliveryCollectionService, DeliveryPlanningService, DispatchService, FieldDeliveryOverview, InvoiceBalanceService, OperationsAccess, ReportPdfRenderer};
+use App\Services\{AdminDispatchOverview, CollectionService, CollectionWorklist, DeliveryCollectionService, DeliveryPlanningService, DispatchService, FieldDeliveryOverview, InvoiceBalanceService, OperationsAccess, ReportPdfRenderer};
+use App\Support\ReportCsv;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -290,45 +291,92 @@ class OperationsController extends Controller
         return back()->with('success', $partial ? 'Partial delivery recorded. The remaining units are still out for delivery.' : 'Delivery activity recorded.');
     }
 
-    public function collections(Request $request, InvoiceBalanceService $balances)
+    private function collectionFilters(Request $request): array
     {
-        $today = now('Asia/Karachi')->toDateString();
-        $filters = $request->validate(['search' => 'nullable|string|max:100', 'bucket' => 'nullable|in:all,overdue,follow_up']);
-        $query = $balances->openSales()->with('customer:id,name,city')
-            ->addSelect(['last_follow_up_id' => CollectionFollowUp::select('id')->whereColumn('sales_invoice_id', 'sales_invoices.id')->latest('id')->limit(1)])
-            ->when($filters['search'] ?? null, fn ($q, $s) => $q->where(fn ($q) => $q->where('invoice_number', 'like', "%{$s}%")
-                ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))))
-            ->when(($filters['bucket'] ?? 'all') === 'overdue', fn ($q) => $q->whereRaw('COALESCE(due_date, invoice_date) < ?', [$today]))
-            ->when(($filters['bucket'] ?? 'all') === 'follow_up', fn ($q) => $q->whereExists(fn ($s) => $s->selectRaw('1')->from('collection_follow_ups as f')
-                ->whereColumn('f.sales_invoice_id', 'sales_invoices.id')->whereDate('f.next_follow_up', '<=', $today)
-                ->whereRaw('f.id = (SELECT MAX(f2.id) FROM collection_follow_ups f2 WHERE f2.sales_invoice_id = sales_invoices.id)')));
-        $invoices = $query->orderByRaw('COALESCE(due_date, invoice_date)')->orderBy('sales_invoices.id')->paginate(20)->withQueryString();
-        $followUps = CollectionFollowUp::with('assignee:id,name')->whereIn('id', $invoices->pluck('last_follow_up_id')->filter())->get()->keyBy('id');
-        $invoices->through(fn ($invoice) => $invoice->only(['id', 'invoice_number', 'invoice_date', 'due_date', 'total_amount', 'paid_amount', 'return_credit', 'outstanding'])
-            + ['customer' => $invoice->customer, 'follow_up' => $followUps->get($invoice->last_follow_up_id)]);
-        return Inertia::render('operations/collections', ['invoices' => $invoices, 'filters' => $filters]);
+        return $request->validate([
+            'search' => 'nullable|string|max:100',
+            'bucket' => ['nullable', Rule::in(['all', 'overdue', 'follow_up', ...CollectionWorklist::AGING])],
+            'flag' => ['nullable', Rule::in(CollectionWorklist::FLAGS)],
+            'view' => 'nullable|in:customer,invoice', 'sort' => 'nullable|in:overdue,balance,due',
+        ]);
+    }
+
+    public function collections(Request $request, CollectionWorklist $worklist)
+    {
+        $today = now('Asia/Karachi')->startOfDay();
+        $filters = $this->collectionFilters($request);
+        $open = $worklist->base($today);
+        $page = $worklist->page($open, $worklist->filtered($open, $filters, $today), $filters);
+
+        return Inertia::render('operations/collections', $page + [
+            'filters' => $filters, 'today' => $today->toDateString(),
+            'summary' => fn () => $worklist->summary($open),
+        ]);
+    }
+
+    public function collectionsCsv(Request $request, CollectionWorklist $worklist)
+    {
+        $today = now('Asia/Karachi')->startOfDay();
+        $filters = $this->collectionFilters($request);
+        $rows = $worklist->filtered($worklist->base($today), $filters, $today);
+
+        return ReportCsv::download('collections-'.$today->toDateString().'.csv',
+            ['Invoice #', 'Customer', 'Due date', 'Days overdue', 'Invoice amount', 'Paid', 'Returns', 'Applied credit', 'Outstanding'],
+            $worklist->exportRows($rows, $filters, $today));
+    }
+
+    public function collectionsPdf(Request $request, CollectionWorklist $worklist, ReportPdfRenderer $pdf)
+    {
+        $today = now('Asia/Karachi')->startOfDay();
+        $filters = $this->collectionFilters($request);
+        $query = $worklist->filtered($worklist->base($today), $filters, $today);
+        $rows = iterator_to_array($worklist->exportRows($query, $filters, $today), false);
+        $money = ['format' => 'money', 'align' => 'right'];
+        $totals = [];
+        foreach (['total', 'paid', 'returns', 'credit', 'outstanding'] as $key) $totals[$key] = array_sum(array_column($rows, $key));
+
+        return $pdf->render([
+            'title' => 'Collections & Recovery', 'filters' => [], 'context' => 'Outstanding invoices as of '.$today->format('d M Y').' (PKT)',
+            'columns' => [
+                ['key' => 'invoice', 'label' => 'Invoice #'], ['key' => 'customer', 'label' => 'Customer'],
+                ['key' => 'due', 'label' => 'Due date', 'format' => 'date'], ['key' => 'days_overdue', 'label' => 'Days overdue', 'align' => 'right'],
+                ['key' => 'total', 'label' => 'Invoice amount'] + $money, ['key' => 'paid', 'label' => 'Paid'] + $money,
+                ['key' => 'returns', 'label' => 'Returns'] + $money, ['key' => 'credit', 'label' => 'Applied credit'] + $money,
+                ['key' => 'outstanding', 'label' => 'Outstanding'] + $money,
+            ],
+            'rows' => $rows, 'totals' => $totals,
+            'notes' => ['Unallocated customer credit and promises to pay do not reduce these invoice balances.'],
+        ], 'landscape')->stream('collections-'.$today->toDateString().'.pdf');
     }
 
     public function collection(Request $request, SalesInvoice $sale, InvoiceBalanceService $balances)
     {
         abort_if($sale->status === 'draft', 404);
         $balance = $balances->sales()->where('sales_invoices.id', $sale->id)->first();
-        return Inertia::render('operations/collection', [
+        $customer = $sale->customer()->withTrashed()->first(['id', 'name', 'phone', 'deleted_at']);
+        $props = [
             'invoice' => $sale->only(['id', 'invoice_number', 'status', 'total_amount']) + [
-                'customer' => $sale->customer?->name, 'customer_id' => $sale->customer_id,
+                'customer' => $customer?->name, 'customer_id' => $sale->customer_id,
+                'phone' => $customer?->phone, 'customer_archived' => ! $customer || $customer->trashed(),
+                'due_on' => ($sale->due_date ?? $sale->invoice_date)?->toDateString(),
                 'outstanding' => (float) ($balance?->outstanding ?? 0),
                 'paid_amount' => (float) ($balance?->paid_amount ?? 0), 'return_credit' => (float) ($balance?->return_credit ?? 0),
+                'applied_credit' => (float) ($balance?->applied_credit ?? 0),
             ],
             'history' => CollectionFollowUp::where('sales_invoice_id', $sale->id)->with(['assignee:id,name', 'creator:id,name'])->latest('id')->get(),
-            'staff' => app(OperationsAccess::class)->staff('collections.view', $request->user())->orderBy('name')->get(['id', 'name']),
-        ]);
+            'staff' => $request->user()->can('collections.manage')
+                ? app(OperationsAccess::class)->staff('collections.view', $request->user())->orderBy('name')->get(['id', 'name']) : [],
+            'today' => now('Asia/Karachi')->toDateString(),
+        ];
+
+        return $request->expectsJson() ? response()->json($props)->header('Cache-Control', 'private, no-store') : Inertia::render('operations/collection', $props);
     }
 
     public function followUp(Request $request, SalesInvoice $sale, CollectionService $service)
     {
         $today = now('Asia/Karachi')->toDateString();
         $data = $request->validate([
-            'assigned_to' => 'nullable|integer', 'outcome' => 'required|in:contacted,promised,unreachable,disputed',
+            'assigned_to' => 'nullable|integer', 'outcome' => 'required|in:contacted,promised,unreachable,disputed,statement_requested,reported_paid,visit_needed',
             'promised_date' => 'nullable|required_if:outcome,promised|date_format:Y-m-d|after_or_equal:'.$today,
             'promised_amount' => 'nullable|required_if:outcome,promised|numeric|decimal:0,2|gt:0|max:999999999999',
             'next_follow_up' => 'required|date_format:Y-m-d|after_or_equal:'.$today, 'notes' => 'required|string|max:1000',

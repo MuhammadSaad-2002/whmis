@@ -515,6 +515,51 @@ class DistributionOperationsTest extends TestCase
         $this->get(route('collections.index', ['bucket' => 'overdue']))->assertInertia(fn (Assert $p) => $p->has('invoices.data', 1));
     }
 
+    public function test_collection_worklist_groups_whole_customers_and_filters_live_promises(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-24 12:00:00', 'Asia/Karachi'));
+        $old = $this->sale(['invoice_number' => 'SI-OLDEST', 'due_date' => '2026-08-26']);
+        CollectionFollowUp::create([
+            'sales_invoice_id' => $old->id, 'outcome' => 'promised', 'promised_date' => '2026-11-23', 'promised_amount' => 125.50,
+            'next_follow_up' => '2026-11-23', 'notes' => 'Broken promise', 'created_by' => $this->admin->id,
+        ]);
+        foreach (range(1, 21) as $i) $this->sale(['invoice_number' => "SI-CURRENT-{$i}", 'due_date' => '2026-11-24']);
+        foreach (range(1, 10) as $i) {
+            $customer = Customer::create(['name' => "Other customer {$i}"]);
+            $this->sale(['invoice_number' => "SI-OTHER-{$i}", 'customer_id' => $customer->id, 'due_date' => '2026-09-23']);
+        }
+
+        $this->get(route('collections.index'))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->has('customers', 10)->where('customers.0.invoices', 22)->has('invoices.data', 31)->where('invoices.last_page', 2)
+            ->where('summary.invoices', 32)->where('summary.customers', 11)->where('summary.flags.broken', 1)
+            ->where('summary.aging.not_due.count', 21)->where('summary.aging.days_61_90.count', 11)->where('summary.aging.days_90_plus.count', 0));
+        $this->get(route('collections.index', ['flag' => 'broken', 'bucket' => 'days_61_90']))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->has('invoices.data', 1)->where('invoices.data.0.id', $old->id)->where('invoices.data.0.promise.amount', 125.5)
+            ->where('customers.0.invoices', 22)->where('summary.invoices', 32));
+        $this->get(route('collections.index', ['view' => 'invoice']))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->has('customers', 0)->has('invoices.data', 20)->where('invoices.total', 32));
+    }
+
+    public function test_collection_exports_and_drawer_obey_filters_and_existing_permissions(): void
+    {
+        $this->customer->update(['phone' => '+92 300 0000000']);
+        $sale = $this->sale(['invoice_number' => 'SI-MATCH']);
+        $this->sale(['invoice_number' => 'SI-OTHER']);
+        $this->post(route('collections.follow-up', $sale), ['outcome' => 'reported_paid',
+            'next_follow_up' => now('Asia/Karachi')->toDateString(), 'notes' => 'Check the transfer reference.'])->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('payments', 0);
+        $this->getJson(route('collections.show', $sale))->assertOk()->assertJsonPath('invoice.phone', '+92 300 0000000')
+            ->assertJsonPath('history.0.outcome', 'reported_paid');
+        $csv = $this->get(route('collections.csv', ['search' => 'SI-MATCH']))->assertOk()->assertDownload();
+        $this->assertStringContainsString('SI-MATCH', $csv->streamedContent());
+        $this->assertStringNotContainsString('SI-OTHER', $csv->streamedContent());
+        $pdf = $this->get(route('collections.pdf', ['search' => 'SI-MATCH']))->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF', $pdf->getContent());
+
+        $this->actingAs($this->booker)->getJson(route('collections.show', $sale))->assertForbidden();
+        foreach (['collections.csv', 'collections.pdf'] as $route) $this->get(route($route))->assertForbidden();
+    }
+
     public function test_follow_up_dates_use_pakistan_day_across_utc_midnight(): void
     {
         $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-15 20:00:00', 'UTC'));

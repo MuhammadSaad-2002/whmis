@@ -6,6 +6,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SearchField } from '@/components/ui/search-field';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -15,7 +16,7 @@ import AppLayout from '@/layouts/app-layout';
 import { amount, qty, shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, useForm } from '@inertiajs/react';
-import { Search, SlidersHorizontal } from 'lucide-react';
+import { SlidersHorizontal } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
 
 interface BatchRow {
@@ -104,10 +105,7 @@ export default function InventoryBatches({ batches, filters }: Props) {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                    <div className="relative w-full sm:w-72">
-                        <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                        <Input placeholder="Search batch or product…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
-                    </div>
+                    <SearchField aria-label="Search batch or product" placeholder="Search batch or product…" className="sm:max-w-72" value={search} onChange={(e) => setSearch(e.target.value)} />
                     <Select
                         value={filters.expiry ?? 'all'}
                         onValueChange={(v) =>

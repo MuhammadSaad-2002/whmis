@@ -130,7 +130,7 @@
 [data-popup-form] :is(
     input:not([type='hidden'], [type='checkbox'], [type='radio'], [type='range'], [type='file']),
     select, textarea, button[role='combobox'], [data-popup-composite]
-):not([data-popup-composite] input) {
+):not([data-popup-composite] input, :where([data-search-field] > input)) {
     min-height: 42px;
     max-width: 100%;
     min-width: 0;
@@ -142,14 +142,15 @@
 }
 
 [data-popup-form] :is(input, select, textarea, button[role='combobox'], [data-popup-composite]):not(
-    [type='hidden'], [type='checkbox'], [type='radio'], [type='range'], [data-popup-composite] input
+    [type='hidden'], [type='checkbox'], [type='radio'], [type='range'], [data-popup-composite] input,
+    :where([data-search-field] > input)
 ):is(:focus, [data-popup-composite]:focus-within) {
     border-color: var(--popup-focus);
     outline: none;
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--popup-focus) 22%, transparent);
 }
 
-[data-popup-form] :is(input, select, textarea, button[role='combobox'])[aria-invalid='true']:not([data-popup-composite] input),
+[data-popup-form] :is(input, select, textarea, button[role='combobox'])[aria-invalid='true']:not([data-popup-composite] input, :where([data-search-field] > input)),
 [data-popup-form] [data-popup-composite]:has([aria-invalid='true']) {
     border-color: var(--destructive);
 }
