@@ -31,9 +31,9 @@ export function VisitEditor({ customer, visit, date, today, compact = false }: {
                 <CalendarDays />{!compact && title}
             </Button>
         </SheetTrigger>
-        <SheetContent side="bottom" className={sheetClass}>
+        <SheetContent appearance="form" side="bottom" className={sheetClass}>
             <Heading title={title} description={customer.name} />
-            <div className={bodyClass}>{open && <VisitForm customer={customer} visit={visit} date={date} today={today} close={() => setOpen(false)} />}</div>
+            {open && <VisitForm customer={customer} visit={visit} date={date} today={today} close={() => setOpen(false)} />}
         </SheetContent>
     </Sheet>;
 }
@@ -43,10 +43,11 @@ function VisitForm({ customer, visit, date, today, close }: { customer: Customer
     const future = form.data.visit_date > today;
     const changeDate = (next: string) => form.setData({ ...form.data, visit_date: next, outcome: next > today ? 'planned' : form.data.outcome });
     const quick = [[today, 'Today'], [shiftDate(today, 1), 'Tomorrow'], [shiftDate(today, 2), weekdayDate(shiftDate(today, 2))]];
-    return <form className="space-y-4" onSubmit={event => {
+    return <form onSubmit={event => {
         event.preventDefault();
         form.put('/booker/customers/' + customer.id + '/visit', { preserveScroll: true, onSuccess: close });
     }}>
+        <div className="space-y-4" data-popup-section="body">
         {!visit ? <div className="space-y-2">
             <div className="flex flex-wrap gap-1.5" role="group" aria-label="Quick visit dates">{quick.map(([day, label]) => <Choice key={day} picked={day === form.data.visit_date} onClick={() => changeDate(day)}>{label}</Choice>)}</div>
             <Field label="Visit date"><Input type="date" required value={form.data.visit_date} onChange={event => changeDate(event.target.value)} /></Field>
@@ -62,9 +63,10 @@ function VisitForm({ customer, visit, date, today, close }: { customer: Customer
         </fieldset>
         <Field label="Note (optional)"><Textarea rows={2} maxLength={1000} placeholder="e.g. Meet the owner after 4 pm" value={form.data.notes} onChange={event => form.setData('notes', event.target.value)} /></Field>
         <Errors errors={form.errors} />
-        <div className="flex gap-2 border-t pt-3">
-            <Button type="button" variant="outline" className="min-h-11" onClick={close}>Cancel</Button>
-            <Button className="min-h-11 flex-1" disabled={form.processing}><CalendarDays />{form.processing ? 'Saving…' : visit ? 'Save visit' : 'Add to route'}</Button>
+        </div>
+        <div data-popup-section="footer">
+            <Button type="button" variant="outline" onClick={close}>Cancel</Button>
+            <Button disabled={form.processing}><CalendarDays />{form.processing ? 'Saving…' : visit ? 'Save visit' : 'Add to route'}</Button>
         </div>
     </form>;
 }
@@ -73,9 +75,9 @@ export function CollectionEditor({ task }: { task: Delivery }) {
     const [open, setOpen] = useState(false);
     return <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger asChild><Button variant="outline" type="button" className="min-h-11 px-2.5" aria-label={'Collect for ' + task.invoice_number}><Banknote />Collect</Button></SheetTrigger>
-        <SheetContent side="bottom" className={sheetClass}>
+        <SheetContent appearance="form" side="bottom" className={sheetClass}>
             <Heading title="Collect payment" description={(task.customer?.name ?? 'Customer') + ' · ' + task.invoice_number} />
-            <div className={bodyClass}>{open && <CollectionForm task={task} close={() => setOpen(false)} />}</div>
+            {open && <CollectionForm task={task} close={() => setOpen(false)} />}
         </SheetContent>
     </Sheet>;
 }
@@ -83,11 +85,12 @@ export function CollectionEditor({ task }: { task: Delivery }) {
 function CollectionForm({ task, close }: { task: Delivery; close: () => void }) {
     const form = useForm({ amount: '', method: 'cash', reference: '', request_key: crypto.randomUUID() });
     const remaining = task.collectible_paisa / 100;
-    return <form className="space-y-4" onSubmit={event => {
+    return <form onSubmit={event => {
         event.preventDefault();
         form.post('/dispatch/' + task.id + '/collection', { preserveScroll: true, onSuccess: close });
     }}>
-        <Field label="Amount (PKR) *"><Input type="number" inputMode="decimal" required min=".01" max={remaining} step=".01" placeholder="0.00" className="h-12 text-lg"
+        <div className="space-y-4" data-popup-section="body">
+        <Field label="Amount (PKR) *"><Input type="number" inputMode="decimal" required min=".01" max={remaining} step=".01" placeholder="0.00"
             value={form.data.amount} onChange={event => form.setData('amount', event.target.value)} /></Field>
         <div className="flex flex-wrap gap-2"><Choice picked={false} onClick={() => form.setData('amount', remaining.toFixed(2))}>Full {money(remaining)}</Choice>
             <Choice picked={false} onClick={() => form.setData('amount', (Math.ceil(task.collectible_paisa / 2) / 100).toFixed(2))}>Half</Choice></div>
@@ -96,8 +99,10 @@ function CollectionForm({ task, close }: { task: Delivery; close: () => void }) 
             <Choice picked={form.data.method === 'online'} onClick={() => form.setData('method', 'online')}><CreditCard />Bank transfer</Choice>
         </div></fieldset>
         {form.data.method === 'online' && <Field label="Bank transaction reference *"><Input required maxLength={200} value={form.data.reference} onChange={event => form.setData('reference', event.target.value)} /></Field>}
-        <p className="flex items-start gap-2 rounded-lg border bg-muted/60 p-3 text-sm text-muted-foreground"><Info className="mt-0.5 size-4 shrink-0" />Record only what you collected. Finance must verify it before it reduces the invoice balance.</p>
-        <Errors errors={form.errors} /><Button className="min-h-11 w-full" disabled={form.processing}><Check />{form.processing ? 'Saving…' : 'Record collection'}</Button>
+        <p className="flex items-start gap-2" data-popup-note><Info className="mt-0.5 size-4 shrink-0" />Record only what you collected. Finance must verify it before it reduces the invoice balance.</p>
+        <Errors errors={form.errors} />
+        </div>
+        <div data-popup-section="footer"><Button type="button" variant="outline" onClick={close}>Cancel</Button><Button disabled={form.processing}><Check />{form.processing ? 'Saving…' : 'Record collection'}</Button></div>
     </form>;
 }
 

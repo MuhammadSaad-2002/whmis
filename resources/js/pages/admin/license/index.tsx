@@ -1,6 +1,7 @@
+import { MasterStatus, RegisterLayout, RegisterList } from '@/components/master-register';
 import { Button } from '@/components/ui/button';
 import {
-    Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+    Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -66,32 +67,20 @@ export default function LicenseIndex({ keys, status }: Props) {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="License" />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
-                    <div>
-                        <h1 className="text-4xl font-bold">License</h1>
-                        <p className="text-sm text-muted-foreground">Activation keys that unlock the system</p>
-                    </div>
-                    <Button onClick={openActivate}>
-                        <KeyRound className="mr-1 size-4" /> Activate License
-                    </Button>
-                </div>
-
-                {/* Current status */}
-                <div className="flex items-center gap-3 rounded-xl border p-4">
-                    <div className={`flex size-11 shrink-0 items-center justify-center rounded-full ${status.valid ? 'bg-emerald-500/10 text-emerald-600' : 'bg-destructive/10 text-destructive'}`}>
-                        {status.valid ? <ShieldCheck className="size-6" /> : <ShieldX className="size-6" />}
+            <RegisterLayout title="License" description="Activation keys that unlock the system"
+                actions={<button type="button" className="hbtn pri" onClick={openActivate}><KeyRound className="i" aria-hidden="true" />Activate License</button>}>
+                <section className="card register-panel flex items-center gap-3" aria-label="Current license">
+                    <div className={`flex size-11 shrink-0 items-center justify-center rounded-full ${status.valid ? 'bg-emerald-500/10 text-emerald-700' : 'bg-destructive/10 text-destructive'}`}>
+                        {status.valid ? <ShieldCheck className="size-6" aria-hidden="true" /> : <ShieldX className="size-6" aria-hidden="true" />}
                     </div>
                     <div>
-                        <div className="font-semibold">{statusLabel}</div>
-                        <div className="text-sm text-muted-foreground">
-                            {status.expires_at ? `Valid until ${shortDate(status.expires_at)}` : 'No license has been activated yet.'}
-                        </div>
+                        <h2>Current license</h2>
+                        <p className="muted">{status.expires_at ? `Valid until ${shortDate(status.expires_at)}` : 'No license has been activated yet.'}</p>
                     </div>
-                </div>
-
-                <div className="rounded-xl border">
-                    <Table>
+                    <div className="ml-auto"><MasterStatus status={statusLabel} tone={!status.valid ? 'negative' : days !== null && days <= 5 ? 'attention' : 'positive'} /></div>
+                </section>
+                <RegisterList title="License activation history" controls={<h2 className="font-bold">Activation history</h2>}>
+                    {dense => <Table className={dense ? 'dense' : undefined}>
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Key</TableHead>
@@ -104,7 +93,7 @@ export default function LicenseIndex({ keys, status }: Props) {
                         <TableBody>
                             {keys.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                                    <TableCell colSpan={5} className="empty">
                                         No keys issued yet.
                                     </TableCell>
                                 </TableRow>
@@ -115,20 +104,21 @@ export default function LicenseIndex({ keys, status }: Props) {
                                     <TableCell>{shortDate(k.expires_at)}</TableCell>
                                     <TableCell>{shortDate(k.activated_at)}</TableCell>
                                     <TableCell>{k.activated_by ?? '—'}</TableCell>
-                                    <TableCell className="text-muted-foreground">{k.notes ?? '—'}</TableCell>
+                                    <TableCell className="wrap-cell muted">{k.notes ?? '—'}</TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
-                    </Table>
-                </div>
-            </div>
+                    </Table>}
+                </RegisterList>
+            </RegisterLayout>
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent>
+                <DialogContent appearance="form" aria-describedby={undefined}>
                     <DialogHeader>
                         <DialogTitle>Activate License</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submit} className="grid gap-4">
+                    <form onSubmit={submit}>
+                        <DialogBody className="grid gap-4">
                         <div>
                             <Label htmlFor="expires_at">Expiry date *</Label>
                             <Input
@@ -151,6 +141,7 @@ export default function LicenseIndex({ keys, status }: Props) {
                             />
                             {form.errors.notes && <p className="text-xs text-destructive">{form.errors.notes}</p>}
                         </div>
+                        </DialogBody>
                         <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
                             <Button type="submit" disabled={form.processing}>Activate</Button>

@@ -19,7 +19,7 @@ export type BoardMoveRequest = { row: DispatchRow; target?: string; targetLabel?
 
 export function BoardMove({ request, close, restoreFocus }: { request: BoardMoveRequest | null; close: () => void; restoreFocus: () => void }) {
     return <Sheet open={request !== null} onOpenChange={open => { if (!open) close(); }}>
-        <SheetContent side="right" className="dispatch-preview w-full gap-0 p-0 sm:max-w-[500px]"
+        <SheetContent appearance="form" side="right" className="dispatch-preview w-full sm:max-w-[500px]"
             onCloseAutoFocus={event => { event.preventDefault(); restoreFocus(); }}>
             {request && <BoardMoveContents key={request.row.id + ':' + request.target} request={request} close={close} />}
         </SheetContent>
@@ -40,12 +40,12 @@ function BoardMoveContents({ request, close }: { request: BoardMoveRequest; clos
     }, [id]);
 
     return <>
-        <SheetHeader className="drawer-header text-left">
+        <SheetHeader>
             <SheetTitle>Move {request.row.invoice_number}</SheetTitle>
             <SheetDescription>{request.row.customer?.name ?? 'Customer'}{request.targetLabel ? ' · To ' + request.targetLabel : ''}</SheetDescription>
         </SheetHeader>
-        {failed ? <div className="drawer-body" role="alert">Could not load the available moves. Close this panel and try again.</div>
-            : !data ? <div className="drawer-body" role="status">Checking available moves…</div>
+        {failed ? <div data-popup-section="body" role="alert">Could not load the available moves. Close this panel and try again.</div>
+            : !data ? <div data-popup-section="body" role="status">Checking available moves…</div>
                 : <MoveForm request={request} data={data} close={close} />}
     </>;
 }
@@ -81,7 +81,7 @@ function MoveForm({ request, data, close }: { request: BoardMoveRequest; data: M
         }));
         form.post(route('dispatch.record', request.row.id, false), { preserveScroll: true, onSuccess: close });
     }}>
-        <div className="drawer-body space-y-4">
+        <div className="flex-1 space-y-4" data-popup-section="body">
             {stale ? <p className="drawer-note" role="alert">This delivery has already changed. Close this form and refresh the board.</p> : <>
                 {droppedOnBlockedStage && <p className="drawer-note" role="alert">{data.hint}</p>}
                 {!data.moves.length && !droppedOnBlockedStage && <p className="drawer-note">{data.hint}</p>}
@@ -135,10 +135,10 @@ function MoveForm({ request, data, close }: { request: BoardMoveRequest; data: M
                 <Errors errors={form.errors} />
             </>}
         </div>
-        <footer className="drawer-footer">
+        <footer data-popup-section="footer">
             <Button type="button" variant="outline" disabled={form.processing} onClick={close}>Cancel</Button>
             {!stale && data.moves.length > 0 && <Button disabled={blocked}>{form.processing ? 'Saving…' : 'Save delivery action'}</Button>}
-            <Link className="outline-button ml-auto" href={route('dispatch.show', request.row.id, false)}>Open delivery</Link>
+            <Button variant="outline" asChild><Link href={route('dispatch.show', request.row.id, false)}>Open delivery</Link></Button>
         </footer>
     </form>;
 }

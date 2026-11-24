@@ -80,10 +80,10 @@ class PurchaseInvoiceController extends Controller
         ]);
     }
 
-    public function create()
+    public function create(Request $request)
     {
         return Inertia::render('purchases/form', [
-            'companies' => Company::active()->orderBy('name')->get(['id', 'name']),
+            'companies' => $this->formSuppliers($request),
             'warehouse' => Warehouse::default()->only(['id', 'name']),
             'invoice' => null,
         ]);
@@ -116,15 +116,34 @@ class PurchaseInvoiceController extends Controller
             ->with('success', "Draft {$invoice->invoice_number} saved.");
     }
 
-    public function edit(PurchaseInvoice $purchase)
+    public function edit(Request $request, PurchaseInvoice $purchase)
     {
         $purchase->load(['items.product:id,name,generic_name', 'company:id,name']);
 
         return Inertia::render('purchases/form', [
-            'companies' => Company::active()->orderBy('name')->get(['id', 'name']),
+            'companies' => $this->formSuppliers($request, $purchase),
             'warehouse' => $purchase->warehouse->only(['id', 'name']),
             'invoice' => $purchase,
         ]);
+    }
+
+    private function formSuppliers(Request $request, ?PurchaseInvoice $invoice = null)
+    {
+        $query = Company::query()->select(['id', 'name', 'payment_terms']);
+        if ($invoice && ! $invoice->isDraft()) {
+            $query->withTrashed()->whereKey($invoice->company_id);
+        } else {
+            $query->where(fn ($suppliers) => $suppliers->active()
+                ->when($invoice, fn ($suppliers) => $suppliers->orWhere('id', $invoice->company_id)));
+        }
+
+        // The invoice total is visible to purchase viewers; the wider supplier
+        // ledger balance remains restricted to users who can view the ledger.
+        if ($request->user()->can('ledger.view')) {
+            $query->withSum('ledgerEntries as payable_balance', DB::raw('credit - debit'));
+        }
+
+        return $query->orderBy('name')->get();
     }
 
     public function update(Request $request, PurchaseInvoice $purchase)

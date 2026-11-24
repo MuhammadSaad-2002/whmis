@@ -126,9 +126,9 @@ export default function Treasury({ accounts, account, entries, accountStats, fil
             {approvalLimits && <TreasuryApprovalLimits key={JSON.stringify(approvalLimits)} limits={approvalLimits} />}
 
             {canManage && <Dialog open={addOpen} onOpenChange={setAddOpen}>
-                <DialogContent className="flex max-h-[90dvh] w-[calc(100%_-_1.5rem)] max-w-[640px] flex-col gap-0 overflow-hidden rounded-xl bg-card p-0" onCloseAutoFocus={(event) => { event.preventDefault(); addTrigger.current?.focus(); }}>
-                    <DialogHeader className="border-b px-4 py-4 pr-11 text-left sm:px-6 sm:pr-12">
-                        <DialogTitle className="leading-snug">Add cash, bank or custody account</DialogTitle>
+                <DialogContent appearance="form" className="max-w-[640px]" onCloseAutoFocus={(event) => { event.preventDefault(); addTrigger.current?.focus(); }}>
+                    <DialogHeader>
+                        <DialogTitle>Add cash, bank or custody account</DialogTitle>
                         <DialogDescription>{locked ? 'New accounts start at zero after the opening is locked.' : 'The opening balance becomes the first ledger entry when the opening is approved and posted.'}</DialogDescription>
                     </DialogHeader>
                     <TreasuryAccountForm staff={staff} salesmen={salesmen} locked={locked} onCancel={() => setAddOpen(false)} onSaved={() => setAddOpen(false)} modal />

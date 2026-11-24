@@ -1,0 +1,239 @@
+/* Shared form chrome. Opt in so that search, navigation and previews keep their own layout. */
+[data-popup-overlay] {
+    background: rgb(13 36 54 / 48%);
+}
+
+[data-popup-form] {
+    --popup-card: #fff;
+    --popup-ink: #0f1f2c;
+    --popup-label: #405168;
+    --popup-line: #e4e9ef;
+    --popup-field: #dce4ec;
+    --popup-soft: #f4f7f9;
+    --popup-focus: #0b806e;
+    --popup-primary: #0d2436;
+    --popup-primary-text: #fff;
+    --popup-mint: #e3f4f1;
+    --popup-note: #08675e;
+    --popup-padding: 22px;
+    --popup-control-text: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow: hidden;
+    padding: 0;
+    border-color: var(--popup-line);
+    background: var(--popup-card);
+    color: var(--popup-ink);
+    box-shadow: 0 20px 60px rgb(13 36 54 / 23%);
+}
+
+.dark [data-popup-form] {
+    --popup-card: var(--card);
+    --popup-ink: var(--foreground);
+    --popup-label: var(--muted-foreground);
+    --popup-line: var(--border);
+    --popup-field: var(--input);
+    --popup-soft: var(--muted);
+    --popup-focus: var(--ring);
+    --popup-primary: var(--primary);
+    --popup-primary-text: var(--primary-foreground);
+    --popup-mint: var(--accent);
+    --popup-note: var(--accent-foreground);
+}
+
+[data-popup-form='dialog'] {
+    width: calc(100% - 24px);
+    max-height: calc(100dvh - 24px);
+    border: 1px solid var(--popup-line);
+    border-radius: 16px;
+}
+
+[data-popup-side='bottom'] {
+    max-height: calc(100dvh - 16px);
+    border-radius: 16px 16px 0 0;
+}
+
+[data-popup-form] > form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+[data-popup-form] [data-popup-section='header'] {
+    flex: none;
+    margin: 0;
+    padding: 18px 48px 14px var(--popup-padding);
+    border-bottom: 1px solid var(--popup-line);
+    background: var(--popup-card);
+    text-align: left;
+}
+
+[data-popup-form] [data-popup-title] {
+    margin: 0;
+    color: var(--popup-ink);
+    font-size: 19px;
+    line-height: 1.25;
+    letter-spacing: -.025em;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+[data-popup-form] [data-popup-description] {
+    margin: 4px 0 0;
+    color: var(--popup-label);
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+[data-popup-form] [data-popup-close] {
+    position: absolute;
+    z-index: 1;
+    inset: 8px 8px auto auto;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--popup-label);
+    opacity: 1;
+}
+
+[data-popup-form] [data-popup-close]:hover {
+    background: var(--popup-soft);
+    color: var(--popup-ink);
+}
+
+[data-popup-form] [data-popup-section='body'] {
+    min-height: 0;
+    min-width: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 18px var(--popup-padding);
+}
+
+/* Two-column grids keep natural field heights when one field has a help/error message. */
+[data-popup-form] [data-popup-section='body'] > :where(div, label, fieldset) {
+    min-width: 0;
+}
+
+[data-popup-form] :is(label:not(:has(input:is([type='checkbox'], [type='radio']))), legend, [data-popup-label]) {
+    color: var(--popup-label);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+[data-popup-form] :is(
+    input:not([type='hidden'], [type='checkbox'], [type='radio'], [type='range'], [type='file']),
+    select, textarea, button[role='combobox'], [data-popup-composite]
+):not([data-popup-composite] input) {
+    min-height: 42px;
+    max-width: 100%;
+    min-width: 0;
+    border: 1px solid var(--popup-field);
+    border-radius: 10px;
+    background: var(--popup-card);
+    color: var(--popup-ink);
+    font-size: var(--popup-control-text);
+}
+
+[data-popup-form] :is(input, select, textarea, button[role='combobox'], [data-popup-composite]):not(
+    [type='hidden'], [type='checkbox'], [type='radio'], [type='range'], [data-popup-composite] input
+):is(:focus, [data-popup-composite]:focus-within) {
+    border-color: var(--popup-focus);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--popup-focus) 22%, transparent);
+}
+
+[data-popup-form] :is(input, select, textarea, button[role='combobox'])[aria-invalid='true']:not([data-popup-composite] input),
+[data-popup-form] [data-popup-composite]:has([aria-invalid='true']) {
+    border-color: var(--destructive);
+}
+
+[data-popup-form] input[type='file'] {
+    height: auto;
+    min-height: 42px;
+    padding: 8px 10px;
+    border-color: var(--popup-field);
+    border-radius: 10px;
+}
+
+[data-popup-form] [data-popup-note] {
+    border: 0;
+    border-radius: 12px;
+    background: var(--popup-mint);
+    color: var(--popup-note);
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+[data-popup-form] [data-popup-section='footer'] {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 14px var(--popup-padding);
+    border-top: 1px solid var(--popup-line);
+    background: var(--popup-card);
+}
+
+[data-popup-form] [data-popup-section='footer'] > * {
+    margin-inline: 0;
+}
+
+[data-popup-form] [data-popup-section='footer'] :is(button, [role='button'], a[data-button-variant]) {
+    min-height: 40px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+[data-popup-form] [data-popup-section='footer'] :is([data-button-variant='default'], [data-popup-action='primary']) {
+    border: 1px solid transparent;
+    background: var(--popup-primary);
+    color: var(--popup-primary-text);
+}
+
+[data-popup-form] [data-popup-section='footer'] :is([data-button-variant='outline'], [data-popup-action='secondary']) {
+    border: 1px solid var(--popup-field);
+    background: var(--popup-card);
+    color: var(--popup-ink);
+}
+
+[data-popup-form] [data-popup-section='footer'] :is([data-button-variant='default'], [data-popup-action='primary']):hover:not(:disabled) {
+    background: color-mix(in srgb, var(--popup-primary) 88%, var(--popup-card));
+}
+
+[data-popup-form] [data-popup-section='footer'] :is([data-button-variant='outline'], [data-popup-action='secondary']):hover:not(:disabled) {
+    background: var(--popup-soft);
+}
+
+[data-popup-form] :is([data-popup-close], [data-popup-section='footer'] button):focus-visible {
+    outline: 2px solid var(--popup-focus);
+    outline-offset: 2px;
+}
+
+@media (max-width: 639px) {
+    /* A 16px field prevents iOS from zooming when the keyboard opens. */
+    [data-popup-form] { --popup-padding: 14px; --popup-control-text: 16px; }
+    [data-popup-form] [data-popup-section='header'] { padding-block: 14px 12px; }
+    [data-popup-form] [data-popup-close] { width: 44px; height: 44px; inset: 2px 4px auto auto; }
+    [data-popup-form] [data-popup-section='body'] { padding-block: 14px; }
+    [data-popup-form] [data-popup-section='footer'] {
+        padding-block: 12px max(12px, env(safe-area-inset-bottom));
+    }
+    [data-popup-form] [data-popup-section='footer'] :is(button, [role='button'], a[data-button-variant]) { min-height: 44px; }
+    [data-popup-form] :is([data-popup-composite] input, input[type='file']) { font-size: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-popup-form], [data-popup-overlay] { animation: none; transition: none; }
+}

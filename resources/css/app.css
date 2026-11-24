@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* Shared chrome for the app's form dialogs and drawers. */
+@import './popup-form.css';
 
 @plugin 'tailwindcss-animate';
 

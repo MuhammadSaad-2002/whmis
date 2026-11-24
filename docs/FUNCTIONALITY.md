@@ -42,6 +42,10 @@ likely to matter when changing each module.
 
 ## Master data
 
+The Products, Customers, Suppliers, and Product Categories lists share the Sales
+Invoices register styling, including a compact-row toggle and filter-aware
+search, pagination, and empty states.
+
 - Suppliers: `/suppliers`; implemented by `CompanyController` and `Company`.
 - Categories: `/categories`; implemented by `ProductCategoryController`.
 - Products: `/products`, product import, and product template download.
@@ -59,6 +63,19 @@ verification, Cash & Bank, refunds, and employee commissions.
 
 - Booker Workday (`/booker/workday`): assigned-customer visit planning, account
   balances, customer-preselected bookings and repeat quantities at current prices.
+- Daily Staff Activity (`/staff-activity`): Super Admin report under People & Payroll.
+  Only Bookers and Salesmen with active logins appear in the report and its staff filter.
+  A Pakistan business date shows bookings made, posted sales, recorded delivery
+  units (including bonuses), reported/submitted/verified collections, calculated
+  and earned commissions, payouts, and commission payable through that date.
+  The summary cards follow the role and staff filters. A shared invoice can appear
+  under more than one employee, but is counted once in the sales and delivery summaries.
+  Use Employee Commissions and Finance Approvals to review or request an actual payout.
+- Employee Commissions (`/commissions`): the selected employee's all-time payout,
+  earnings, and recovery balances, with invoice earnings and history tabs and
+  the live rate register. New rate versions default to verified collections.
+  Once due, commission can be requested for an individual invoice award; payout
+  and recovery requests still go through Finance Approvals.
 - Dispatch (`/dispatch`): posted invoice picking/packing, staff assignment, dated
   partial delivery attempts, corrections, return-settled closure and basic picking
   list printing. Tracking does not move stock or create payments.
@@ -82,6 +99,10 @@ verification, Cash & Bank, refunds, and employee commissions.
   The register shares the Sales Invoices layout, with status counts, supplier
   and invoice search, purchase type, date presets, sorting, and row density.
   Returns in the summary keep their existing supplier/date scope.
+  The purchase document has a compact header, scrollable item grid, and pinned
+  totals. Posting from New saves a draft before using the standard posting
+  checks; posted invoices use stored totals and show a stock and margin summary.
+  Supplier balances on the document require ledger access.
 - Sales: list/create/edit/post/cancel/print/summary/net-position under `/sales`.
   The list includes status counts, date presets, sortable net-of-return figures,
   an invoice preview, CSV export, a PDF for the current filtered page or selected

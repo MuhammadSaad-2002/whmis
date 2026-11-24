@@ -165,6 +165,28 @@ class HttpSmokeTest extends TestCase
         $this->get(route('ledger.customer.pdf', $customer))->assertOk()->assertHeader('content-type', 'application/pdf');
     }
 
+    public function test_purchase_form_supplier_balance_requires_ledger_access(): void
+    {
+        $supplier = Company::create(['name' => 'Test Supplier', 'payment_terms' => '30 days', 'status' => 'active']);
+        $purchase = PurchaseInvoice::create([
+            'company_id' => $supplier->id, 'warehouse_id' => 1, 'invoice_number' => 'PI-FORM-001',
+            'invoice_date' => now()->toDateString(), 'status' => 'posted',
+        ]);
+        $ledger = app(\App\Services\LedgerService::class);
+        $ledger->post($supplier, 'purchase', now(), 0, 1200, $purchase);
+        $ledger->post($supplier, 'payment', now(), 200, 0);
+
+        $this->actingAs($this->admin)->get(route('purchases.create'))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->component('purchases/form')->where('invoice', null)
+                ->where('companies.0.payment_terms', '30 days')->where('companies.0.payable_balance', fn ($value) => (float) $value === 1000.0));
+
+        $supplier->update(['status' => 'inactive']);
+        $staff = User::factory()->create()->assignRole('Warehouse Staff');
+        $this->actingAs($staff)->get(route('purchases.edit', $purchase))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->component('purchases/form')->where('invoice.status', 'posted')
+                ->where('companies.0.name', 'Test Supplier')->missing('companies.0.payable_balance'));
+    }
+
     public function test_selecting_a_specific_batch_consumes_from_that_batch(): void
     {
         $this->actingAs($this->admin);

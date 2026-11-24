@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 
 import HeadingSmall from '@/components/heading-small';
 
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 export default function DeleteUser() {
     const passwordInput = useRef<HTMLInputElement>(null);
@@ -44,13 +44,16 @@ export default function DeleteUser() {
                     <DialogTrigger asChild>
                         <Button variant="destructive">Delete account</Button>
                     </DialogTrigger>
-                    <DialogContent>
-                        <DialogTitle>Are you sure you want to delete your account?</DialogTitle>
-                        <DialogDescription>
-                            Once your account is deleted, all of its resources and data will also be permanently deleted. Please enter your password
-                            to confirm you would like to permanently delete your account.
-                        </DialogDescription>
-                        <form className="space-y-6" onSubmit={deleteUser}>
+                    <DialogContent appearance="form">
+                        <DialogHeader>
+                            <DialogTitle>Are you sure you want to delete your account?</DialogTitle>
+                            <DialogDescription>
+                                Once your account is deleted, all of its resources and data will also be permanently deleted. Please enter your password
+                                to confirm you would like to permanently delete your account.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <form onSubmit={deleteUser}>
+                            <DialogBody className="space-y-6">
                             <div className="grid gap-2">
                                 <Label htmlFor="password" className="sr-only">
                                     Password
@@ -70,6 +73,7 @@ export default function DeleteUser() {
                                 <InputError message={errors.password} />
                             </div>
 
+                            </DialogBody>
                             <DialogFooter>
                                 <DialogClose asChild>
                                     <Button variant="secondary" onClick={closeModal}>

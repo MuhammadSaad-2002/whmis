@@ -113,6 +113,13 @@
   value of the same goods. Salesman attribution uses actual retained deliveries;
   a snapshot or independently approved split can give the original assignee a
   defined share. An employee can earn both roles on the same invoice.
+- For new rule versions, select **Verified collections** for either role to base
+  commission on money verified through Daily Payment Reconciliation and backed by
+  a completed receipt. The same verified invoice amount can accrue for a separate
+  Booker and Salesman at their own rates. Pending reports, shortages, credits and
+  other settlements do not enlarge this base. Verified money is capped at the
+  remaining invoice value after returns; fixed rates accrue proportionally up to
+  their existing caps. Already snapshotted rules keep their original basis.
 - One fixed booking cap per role is snapshotted on first conversion. Fixed
   Salesman precedence is booking-specific, then original Salesman, then default.
   **Proportional** releases eligible slices up to the cap. **Full fixed** waits
@@ -126,6 +133,9 @@
   Dashboard **Accrued** is an estimate, not a payable. Payouts use Treasury and
   record cash out; corrections preserve historical payouts. Reductions below
   paid amounts create a recoverable; future commissions offset it unless held.
+  From **Invoice earnings**, request a payout for a specific employee, invoice
+  and role. Finance Approvals checks the award at request and again at posting;
+  the payout only pays that award. The employee-level action remains available.
   Repayments and waivers require authorization. Offsets and waivers are not
   cash movements and never modify base salary. Do not enter the same automatic
   commission manually in payroll. The monthly profitability and executive

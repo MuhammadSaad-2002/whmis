@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import {
-    Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+    Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,13 +36,14 @@ export function ImportDialog({ open, onOpenChange, title, importUrl, templateUrl
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-md">
+            <DialogContent appearance="form" className="max-w-md">
                 <DialogHeader>
                     <DialogTitle>{title}</DialogTitle>
+                    <DialogDescription>Upload an Excel or CSV file using the template below.</DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-3">
+                <DialogBody className="grid gap-3">
                     <p className="text-sm text-muted-foreground">
-                        Upload an .xlsx/.csv file using the template columns. Existing records
+                        Existing records
                         (matched by name) are updated; new ones are created. Rows with errors
                         are skipped and reported.
                     </p>
@@ -55,7 +56,7 @@ export function ImportDialog({ open, onOpenChange, title, importUrl, templateUrl
                         <Label htmlFor="import-file">File</Label>
                         <Input id="import-file" ref={fileInput} type="file" accept=".xlsx,.xls,.csv" />
                     </div>
-                </div>
+                </DialogBody>
                 <DialogFooter>
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
                     <Button onClick={submit} disabled={uploading}>

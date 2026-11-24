@@ -71,9 +71,9 @@ class PaymentService
     }
 
     /** Recheck form allocations against live dues before recording any money. */
-    public function recordManual(Customer|Company $party, array $data, array $allocations): Payment
+    public function recordManual(Customer|Company $party, array $data, array $allocations, bool $recalculateCommissions = true): Payment
     {
-        return DB::transaction(function () use ($party, $data, $allocations) {
+        return DB::transaction(function () use ($party, $data, $allocations, $recalculateCommissions) {
             $allocations = array_filter($allocations, fn ($row) => (float) $row['amount'] > 0);
             if ($allocations !== []) {
                 $isCustomer = $party instanceof Customer;
@@ -104,7 +104,7 @@ class PaymentService
                 }
             }
 
-            return $this->record($party, $data, $allocations);
+            return $this->record($party, $data, $allocations, $recalculateCommissions);
         }, 3);
     }
 
@@ -112,9 +112,9 @@ class PaymentService
      * Manual receipt (customer) or payment (supplier) with optional
      * invoice allocations: [['invoice_type' => ..., 'invoice_id' => ..., 'amount' => ...]].
      */
-    public function record(Customer|Company $party, array $data, array $allocations = []): Payment
+    public function record(Customer|Company $party, array $data, array $allocations = [], bool $recalculateCommissions = true): Payment
     {
-        return DB::transaction(function () use ($party, $data, $allocations) {
+        return DB::transaction(function () use ($party, $data, $allocations, $recalculateCommissions) {
             $direction = $party instanceof Customer ? Payment::DIRECTION_IN : Payment::DIRECTION_OUT;
             $treasury = app(TreasuryService::class);
             $account = null;
@@ -168,7 +168,7 @@ class PaymentService
                 if ($physical > 0) $treasury->entry($account, $direction === 'in' ? 'receipt' : 'supplier_payment', 'payment', $payment->id,
                     $physical * ($direction === 'in' ? 1 : -1), $data['payment_date'], Auth::user(), $data['reference_no'] ?? null);
             }
-            if ($direction === 'in') {
+            if ($direction === 'in' && $recalculateCommissions) {
                 $ids = collect($allocations)->where('invoice_type', (new SalesInvoice)->getMorphClass())->pluck('invoice_id')->unique()->all();
                 foreach (SalesInvoice::whereKey($ids)->orderBy('id')->get() as $sale) app(CommissionService::class)->recalculate($sale);
             }

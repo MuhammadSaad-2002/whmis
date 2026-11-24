@@ -130,6 +130,11 @@ class FinanceApprovalService
                 $employee = \App\Models\Employee::findOrFail($data['employee_id'] ?? 0);
                 $beneficiary = $employee->user_id;
                 if (! in_array($kind, ['recovery_hold','recovery_resume'], true) && $amount <= 0) $this->treasury->fail('Enter a positive amount.');
+                if ($kind === 'commission_payout' && isset($data['award_id'])) {
+                    $award = app(CommissionService::class)->payoutAward($employee->id, (int) $data['award_id'], $amount);
+                    $data['award_invoice_number'] = $award->invoice_number;
+                    $data['commission_role'] = $award->role;
+                }
             } else {
                 if (! $evidence && in_array($kind, ['statement', 'adjustment'], true)) $this->treasury->fail('Attach the count, statement, or adjustment evidence.');
                 if ($kind !== 'statement' && $amount <= 0) $this->treasury->fail('Enter a positive amount.');

@@ -1,14 +1,10 @@
-import { Paginator, type PaginatedData } from '@/components/paginator';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-    Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
+import { MasterFilterDate, MasterFilterSelect, MasterStatus, RegisterLayout, RegisterList } from '@/components/master-register';
+import { type PaginatedData } from '@/components/paginator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
+import { Building2, ListFilter, UserRound } from 'lucide-react';
 
 interface LogRow {
     id: number;
@@ -39,44 +35,26 @@ export default function BookerAssignmentsIndex({ logs, filters, customers, booke
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Booker Assignments" />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="border-b pb-4">
-                    <h1 className="text-4xl font-bold">Booker Assignments</h1>
-                    <p className="text-sm text-muted-foreground">Every customer↔booker assignment change, oldest kept for audit</p>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                    <Select value={filters.customer_id ?? 'all'} onValueChange={(v) => apply({ customer_id: v === 'all' ? undefined : v })}>
-                        <SelectTrigger className="w-56"><SelectValue placeholder="Customer" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All customers</SelectItem>
-                            {customers.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                    <Select value={filters.booker_id ?? 'all'} onValueChange={(v) => apply({ booker_id: v === 'all' ? undefined : v })}>
-                        <SelectTrigger className="w-48"><SelectValue placeholder="Booker" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All bookers</SelectItem>
-                            {bookers.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                    <Select value={filters.action ?? 'all'} onValueChange={(v) => apply({ action: v === 'all' ? undefined : v })}>
-                        <SelectTrigger className="w-40"><SelectValue placeholder="Action" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All actions</SelectItem>
-                            <SelectItem value="assigned">Assigned</SelectItem>
-                            <SelectItem value="unassigned">Unassigned</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    <Input type="date" className="w-40" value={filters.from ?? ''} onChange={(e) => apply({ from: e.target.value || undefined })} />
-                    <Input type="date" className="w-40" value={filters.to ?? ''} onChange={(e) => apply({ to: e.target.value || undefined })} />
-                    {hasFilters && (
-                        <Button variant="ghost" onClick={() => router.get('/booker-assignments')}>Clear filters</Button>
-                    )}
-                </div>
-
-                <div className="rounded-xl border">
-                    <Table>
+            <RegisterLayout title="Booker Assignments" description={<>History of customer assignments to bookers · {logs.total.toLocaleString()} {logs.total === 1 ? 'entry' : 'entries'}</>}>
+                <RegisterList title="Booker Assignments" page={logs}
+                    controls={<>
+                        <MasterFilterSelect label="Customer" icon={Building2} value={filters.customer_id ?? ''} onChange={value => apply({ customer_id: value || undefined })}>
+                            <option value="">All customers</option>
+                            {customers.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+                        </MasterFilterSelect>
+                        <MasterFilterSelect label="Booker" icon={UserRound} value={filters.booker_id ?? ''} onChange={value => apply({ booker_id: value || undefined })}>
+                            <option value="">All bookers</option>
+                            {bookers.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+                        </MasterFilterSelect>
+                        <MasterFilterSelect label="Action" icon={ListFilter} value={filters.action ?? ''} onChange={value => apply({ action: value || undefined })}>
+                            <option value="">All actions</option>
+                            <option value="assigned">Assigned</option><option value="unassigned">Unassigned</option>
+                        </MasterFilterSelect>
+                        <MasterFilterDate label="From" value={filters.from} onChange={value => apply({ from: value })} />
+                        <MasterFilterDate label="To" value={filters.to} onChange={value => apply({ to: value })} />
+                        {hasFilters && <button type="button" className="clear" onClick={() => router.get('/booker-assignments', {}, { preserveScroll: true, preserveState: true, replace: true })}>Clear filters</button>}
+                    </>}>
+                    {dense => <Table className={dense ? 'dense' : undefined}>
                         <TableHeader>
                             <TableRow>
                                 <TableHead className="w-44">When</TableHead>
@@ -90,7 +68,7 @@ export default function BookerAssignmentsIndex({ logs, filters, customers, booke
                         <TableBody>
                             {logs.data.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                                    <TableCell colSpan={6} className="empty">
                                         No assignment changes match these filters.
                                     </TableCell>
                                 </TableRow>
@@ -101,17 +79,16 @@ export default function BookerAssignmentsIndex({ logs, filters, customers, booke
                                     <TableCell className="font-medium">{row.customer ?? '—'}</TableCell>
                                     <TableCell>{row.booker ?? '—'}</TableCell>
                                     <TableCell>
-                                        <Badge variant={row.action === 'assigned' ? 'default' : 'destructive'}>{row.action}</Badge>
+                                        <MasterStatus status={row.action} tone={row.action === 'assigned' ? 'positive' : 'neutral'} />
                                     </TableCell>
                                     <TableCell className="text-sm text-muted-foreground">{row.changed_by ?? 'System'}</TableCell>
-                                    <TableCell className="text-sm text-muted-foreground">{row.note ?? '—'}</TableCell>
+                                    <TableCell className="wrap-cell muted">{row.note ?? '—'}</TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
-                    </Table>
-                    <Paginator meta={logs} />
-                </div>
-            </div>
+                    </Table>}
+                </RegisterList>
+            </RegisterLayout>
         </AppLayout>
     );
 }

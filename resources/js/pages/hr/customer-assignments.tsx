@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useForm } from '@inertiajs/react';
 import { useState } from 'react';
@@ -34,9 +34,10 @@ function AssignmentDialog({ employeeId, customers, options, onClose }: {
     const selected = new Set(form.data.customer_ids);
     const toggle = (id: number, checked: boolean) => form.setData('customer_ids', checked ? [...new Set([...selected, id])] : [...selected].filter(v => v !== id));
     return <Dialog open onOpenChange={value => { if (!value && !form.processing) onClose(); }}>
-        <DialogContent className="max-h-[85vh] overflow-auto sm:max-w-xl">
+        <DialogContent appearance="form" className="sm:max-w-xl">
             <DialogHeader><DialogTitle>Assign Customers</DialogTitle><DialogDescription>Select the customers this Booker can book for, then save.</DialogDescription></DialogHeader>
-            <form className="space-y-3" onSubmit={e => { e.preventDefault(); form.put(`/hr/employees/${employeeId}/customers`, { preserveScroll: true, onSuccess: onClose }); }}>
+            <form onSubmit={e => { e.preventDefault(); form.put(`/hr/employees/${employeeId}/customers`, { preserveScroll: true, onSuccess: onClose }); }}>
+                <DialogBody className="space-y-3">
                 <Input aria-label="Search customers" placeholder="Search by customer or city…" value={search} onChange={e => setSearch(e.target.value)}/>
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                     <Button type="button" size="sm" variant="outline" onClick={() => form.setData('customer_ids', [...new Set([...selected, ...visible.filter(c => c.status === 'active').map(c => c.id)])])}>Select all shown</Button>
@@ -52,7 +53,8 @@ function AssignmentDialog({ employeeId, customers, options, onClose }: {
                 </div>
                 {options.some(c => c.primary) && <p className="text-xs text-muted-foreground">Primary assignments are kept selected. Change the primary Booker in Customers to remove that assignment.</p>}
                 {Object.values(form.errors).map((error, i) => <p key={i} className="text-sm text-destructive">{error}</p>)}
-                <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={form.processing} onClick={onClose}>Cancel</Button><Button disabled={form.processing}>{form.processing ? 'Saving…' : 'Save Assignments'}</Button></div>
+                </DialogBody>
+                <DialogFooter><Button type="button" variant="outline" disabled={form.processing} onClick={onClose}>Cancel</Button><Button disabled={form.processing}>{form.processing ? 'Saving…' : 'Save Assignments'}</Button></DialogFooter>
             </form>
         </DialogContent>
     </Dialog>;

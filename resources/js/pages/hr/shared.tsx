@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
 import { Head, useForm } from '@inertiajs/react';
 import { type ReactNode } from 'react';
@@ -32,9 +32,9 @@ export function HrLayout({title,children,actions}:{title:string;children:ReactNo
 
 export function Editor({title,url,method='post',fields,initial,onClose,description}:{title:string;url:string;method?:'post'|'put';fields:Field[];initial:Values;onClose:()=>void;description?:string}) {
     const f=useForm<Values>(initial);
-    return <Dialog open onOpenChange={open=>{if(!open&&!f.processing)onClose();}}><DialogContent className="max-h-[85vh] overflow-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
-        {description&&<p className="text-sm text-muted-foreground">{description}</p>}
-        <form className="space-y-4" onSubmit={e=>{e.preventDefault();f.transform(d=>Object.fromEntries(Object.entries(d).map(([k,v])=>[k,v===''?null:v])) as Values);f[method](url,{preserveScroll:true,onSuccess:onClose});}}>
+    return <Dialog open onOpenChange={open=>{if(!open&&!f.processing)onClose();}}><DialogContent appearance="form" className="sm:max-w-2xl" {...(!description && {'aria-describedby': undefined})}><DialogHeader><DialogTitle>{title}</DialogTitle>{description&&<DialogDescription>{description}</DialogDescription>}</DialogHeader>
+        <form onSubmit={e=>{e.preventDefault();f.transform(d=>Object.fromEntries(Object.entries(d).map(([k,v])=>[k,v===''?null:v])) as Values);f[method](url,{preserveScroll:true,onSuccess:onClose});}}>
+            <DialogBody className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">{fields.map(field=><div key={field.key} className={field.type==='weekdays'?'sm:col-span-2':''}>
                 <Label htmlFor={`hr-${field.key}`}>{fieldLabel(field.label)}{field.required?' *':''}</Label>
                 {field.type==='checkbox'?<input id={`hr-${field.key}`} type="checkbox" className="ml-3" checked={!!f.data[field.key]} onChange={e=>f.setData(field.key,e.target.checked)}/>
@@ -45,7 +45,8 @@ export function Editor({title,url,method='post',fields,initial,onClose,descripti
                 {f.errors[field.key]&&<p className="text-xs text-destructive">{f.errors[field.key]}</p>}
             </div>)}</div>
             {Object.entries(f.errors).filter(([k])=>!fields.some(field=>field.key===k)).map(([k,v])=><p key={k} className="text-sm text-destructive">{v}</p>)}
-            <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={onClose} disabled={f.processing}>Cancel</Button><Button disabled={f.processing}>{f.processing?'Saving…':'Save'}</Button></div>
+            </DialogBody>
+            <DialogFooter><Button type="button" variant="outline" onClick={onClose} disabled={f.processing}>Cancel</Button><Button disabled={f.processing}>{f.processing?'Saving…':'Save'}</Button></DialogFooter>
         </form>
     </DialogContent></Dialog>;
 }

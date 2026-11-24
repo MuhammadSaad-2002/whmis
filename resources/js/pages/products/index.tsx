@@ -1,10 +1,10 @@
 import { ImportDialog } from '@/components/import-dialog';
-import { Paginator, type PaginatedData } from '@/components/paginator';
-import { Badge } from '@/components/ui/badge';
+import { MasterFilterSelect, MasterRegister, MasterStatus, useMasterFilters } from '@/components/master-register';
+import { type PaginatedData } from '@/components/paginator';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-    Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+    Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,8 +19,8 @@ import { type BreadcrumbItem } from '@/types';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { ALERT_FIX, positive, required, useClientValidation } from '@/lib/form-validation';
 import { Head, router, useForm } from '@inertiajs/react';
-import { Pencil, Plus, Search, Trash2, Upload } from 'lucide-react';
-import { FormEvent, useEffect, useState } from 'react';
+import { Building2, Pencil, Plus, Tags, Trash2, Upload } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 import { toast } from 'sonner';
 
 interface Product {
@@ -71,7 +71,7 @@ const emptyForm = {
     min_stock: 0, reorder_level: 0, status: 'active', visible_to_bookers: true, notes: '',
 };
 
-const DECIMAL_FIELDS = ['purchase_price', 'trade_price', 'retail_price', 'mrp', 'tax_percent', 'default_discount_percent'] as const;
+type PriceField = 'purchase_price' | 'trade_price' | 'retail_price' | 'mrp';
 
 export default function ProductsIndex({ products, companies = [], categories, filters }: Props) {
     const { can, canViewSupplierDetails: showSupplier } = usePermissions();
@@ -80,7 +80,7 @@ export default function ProductsIndex({ products, companies = [], categories, fi
     const [dialogOpen, setDialogOpen] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
     const [editing, setEditing] = useState<Product | null>(null);
-    const [search, setSearch] = useState(filters.search ?? '');
+    const filterState = useMasterFilters('/products', filters);
     const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
         rowCount: products.data.length,
         onActivate: (i) => openEdit(products.data[i]),
@@ -95,15 +95,6 @@ export default function ProductsIndex({ products, companies = [], categories, fi
         retail_price: positive('Retail price'),
         mrp: positive('MRP'),
     });
-
-    useEffect(() => {
-        const timeout = setTimeout(() => {
-            if ((filters.search ?? '') !== search) {
-                router.get('/products', { ...filters, search: search || undefined }, { preserveState: true, replace: true });
-            }
-        }, 350);
-        return () => clearTimeout(timeout);
-    }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const openCreate = () => {
         setEditing(null);
@@ -164,7 +155,7 @@ export default function ProductsIndex({ products, companies = [], categories, fi
     const err = (key: string) => (form.errors as Record<string, string>)[key];
 
     // Live margins from the current (string) price fields.
-    const priceNum = (key: (typeof DECIMAL_FIELDS)[number]) => Number(form.data[key]) || 0;
+    const priceNum = (key: PriceField) => Number(form.data[key]) || 0;
     const pPurchase = priceNum('purchase_price');
     const pTrade = priceNum('trade_price');
     const pRetail = priceNum('retail_price');
@@ -206,85 +197,40 @@ export default function ProductsIndex({ products, companies = [], categories, fi
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Products" />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
-                    <div>
-                        <h1 className="text-4xl font-bold">Products</h1>
-                        <p className="text-sm text-muted-foreground">Medicine and product master</p>
-                    </div>
-                    {canManage && (
-                        <div className="flex gap-2">
-                            <Button variant="outline" onClick={() => setImportOpen(true)}>
-                                <Upload className="mr-1 size-4" /> Import
-                            </Button>
-                            <Button onClick={openCreate}>
-                                <Plus className="mr-1 size-4" /> Add Product
-                            </Button>
-                        </div>
-                    )}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                    <div className="relative w-full sm:w-72">
-                        <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                        <Input
-                            ref={searchRef}
-                            onKeyDown={onSearchKeyDown}
-                            placeholder="Search name, generic, barcode…"
-                            className="pl-8"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                        />
-                    </div>
-                    {showSupplier && <Select
-                        value={filters.company_id ?? 'all'}
-                        onValueChange={(v) =>
-                            router.get('/products', { ...filters, company_id: v === 'all' ? undefined : v }, { preserveState: true })
-                        }
-                    >
-                        <SelectTrigger className="w-48"><SelectValue placeholder="Supplier" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All suppliers</SelectItem>
-                            {companies.map((company) => (
-                                <SelectItem key={company.id} value={String(company.id)}>{company.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>}
-                    <Select
-                        value={filters.status ?? 'all'}
-                        onValueChange={(v) =>
-                            router.get('/products', { ...filters, status: v === 'all' ? undefined : v }, { preserveState: true })
-                        }
-                    >
-                        <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All statuses</SelectItem>
-                            <SelectItem value="active">Active</SelectItem>
-                            <SelectItem value="inactive">Inactive</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-
-                <div className="rounded-xl border">
-                    <Table>
+            <MasterRegister title="Products" description="Medicine and product catalogue" label="product" page={products}
+                state={filterState} searchRef={searchRef} onSearchKeyDown={onSearchKeyDown} placeholder="Product name, generic or barcode"
+                status={{ value: filters.status, onChange: status => filterState.change({ status }) }}
+                actions={canManage && <>
+                    <button type="button" className="hbtn" onClick={() => setImportOpen(true)}><Upload className="i" aria-hidden="true" />Import</button>
+                    <button type="button" className="hbtn pri" onClick={openCreate}><Plus className="i" aria-hidden="true" />Add Product</button>
+                </>}
+                filters={<>
+                    {showSupplier && <MasterFilterSelect label="Supplier" icon={Building2} value={filters.company_id ?? ''} onChange={value => filterState.change({ company_id: value || undefined })}>
+                        <option value="">All suppliers</option>{companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}
+                    </MasterFilterSelect>}
+                    <MasterFilterSelect label="Category" icon={Tags} value={filters.category_id ?? ''} onChange={value => filterState.change({ category_id: value || undefined })}>
+                        <option value="">All categories</option>{categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+                    </MasterFilterSelect>
+                </>}>
+                    {dense => <Table className={`product-table${dense ? ' dense' : ''}`}>
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Product</TableHead>
                                 {showSupplier && <TableHead>Supplier</TableHead>}
-                                {showCost && <TableHead className="text-right">Purchase</TableHead>}
-                                <TableHead className="text-right">Trade</TableHead>
-                                <TableHead className="text-right">Retail</TableHead>
-                                <TableHead className="text-right">GST %</TableHead>
-                                <TableHead className="text-right">Stock</TableHead>
+                                {showCost && <TableHead className="r">Purchase</TableHead>}
+                                <TableHead className="r">Trade</TableHead>
+                                <TableHead className="r">Retail</TableHead>
+                                <TableHead className="r">GST %</TableHead>
+                                <TableHead className="r">Stock</TableHead>
                                 <TableHead>Status</TableHead>
-                                {canManage && <TableHead className="w-24" />}
+                                {canManage && <TableHead className="r acts-head">Actions</TableHead>}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {products.data.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={6 + Number(showSupplier) + Number(showCost) + Number(canManage)} className="py-10 text-center text-muted-foreground">
-                                        No products found.
+                                    <TableCell colSpan={6 + Number(showSupplier) + Number(showCost) + Number(canManage)} className="empty">
+                                        {filterState.applied ? 'No products match these filters.' : 'No products found.'}
                                     </TableCell>
                                 </TableRow>
                             )}
@@ -293,46 +239,35 @@ export default function ProductsIndex({ products, companies = [], categories, fi
                                 const low = Number(product.reorder_level) > 0 && stock <= Number(product.reorder_level);
                                 return (
                                     <TableRow key={product.id} {...rowProps(index)}>
-                                        <TableCell>
-                                            <div className="font-medium">{product.name}</div>
-                                            <div className="text-xs text-muted-foreground">
-                                                {product.generic_name}{product.pack_size ? ` · ${product.pack_size}` : ''}
-                                            </div>
+                                        <TableCell className="entity-name">
+                                            <strong>{product.name}</strong>
+                                            {(product.generic_name || product.pack_size) && <small>{[product.generic_name, product.pack_size].filter(Boolean).join(' · ')}</small>}
                                         </TableCell>
-                                        {showSupplier && <TableCell>{product.company?.name}</TableCell>}
-                                        {showCost && <TableCell className="text-right tabular-nums">{amount(product.purchase_price)}</TableCell>}
-                                        <TableCell className="text-right tabular-nums">{amount(product.trade_price)}</TableCell>
-                                        <TableCell className="text-right tabular-nums">{amount(product.retail_price)}</TableCell>
-                                        <TableCell className="text-right tabular-nums">{Number(product.tax_percent)}</TableCell>
-                                        <TableCell className="text-right tabular-nums">
-                                            <span className={low ? 'font-semibold text-destructive' : ''}>{qty(stock)}</span>
+                                        {showSupplier && <TableCell className="wrap-cell">{product.company?.name || '—'}</TableCell>}
+                                        {showCost && <TableCell className="r num">{amount(product.purchase_price)}</TableCell>}
+                                        <TableCell className="r num">{amount(product.trade_price)}</TableCell>
+                                        <TableCell className="r num">{amount(product.retail_price)}</TableCell>
+                                        <TableCell className="r num">{Number(product.tax_percent)}</TableCell>
+                                        <TableCell className="r num">
+                                            <span className={low ? 'font-semibold neg' : ''}>{qty(stock)}</span>
                                         </TableCell>
                                         <TableCell>
-                                            <div className="flex flex-wrap items-center gap-1.5">
-                                                <Badge variant={product.status === 'active' ? 'default' : 'secondary'}>
-                                                    {product.status}
-                                                </Badge>
-                                                {canManage && product.visible_to_bookers === false && (
-                                                    <Badge variant="outline">Hidden from Bookers</Badge>
-                                                )}
-                                            </div>
+                                            <MasterStatus status={product.status} />
+                                            {canManage && product.visible_to_bookers === false && <span className="st master-tag">Hidden from Bookers</span>}
                                         </TableCell>
                                         {canManage && (
                                             <TableCell>
-                                                <div className="flex justify-end gap-1">
-                                                    <Button variant="ghost" size="icon" onClick={() => openEdit(product)}>
-                                                        <Pencil className="size-4" />
-                                                    </Button>
-                                                    <Button
-                                                        variant="ghost" size="icon"
+                                                <div className="acts">
+                                                    <button type="button" className="ib" title="Edit product" aria-label={`Edit ${product.name}`} onClick={() => openEdit(product)}><Pencil className="i" aria-hidden="true" /></button>
+                                                    <button type="button" className="ib master-delete" title="Delete product" aria-label={`Delete ${product.name}`}
                                                         onClick={() => {
                                                             if (confirm(`Delete product "${product.name}"?`)) {
                                                                 router.delete(route('products.destroy', product.id), { preserveScroll: true });
                                                             }
                                                         }}
                                                     >
-                                                        <Trash2 className="size-4 text-destructive" />
-                                                    </Button>
+                                                        <Trash2 className="i" aria-hidden="true" />
+                                                    </button>
                                                 </div>
                                             </TableCell>
                                         )}
@@ -340,10 +275,8 @@ export default function ProductsIndex({ products, companies = [], categories, fi
                                 );
                             })}
                         </TableBody>
-                    </Table>
-                    <Paginator meta={products} />
-                </div>
-            </div>
+                    </Table>}
+            </MasterRegister>
 
             <ImportDialog
                 open={importOpen}
@@ -354,12 +287,13 @@ export default function ProductsIndex({ products, companies = [], categories, fi
             />
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+                <DialogContent appearance="form" className="max-w-3xl" aria-describedby={undefined}>
                     <DialogHeader>
                         <DialogTitle>{editing ? `Edit ${editing.name}` : 'Add Product'}</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-                        <div className="col-span-2">
+                    <form onSubmit={submit}>
+                        <DialogBody className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+                        <div className="sm:col-span-2">
                             <Label htmlFor="name">Product Name *</Label>
                             <Input
                                 id="name"
@@ -450,7 +384,7 @@ export default function ProductsIndex({ products, companies = [], categories, fi
                         {numberField('min_stock', 'Minimum Stock', { step: '1' })}
                         {numberField('reorder_level', 'Reorder Level', { step: '1' })}
 
-                        <div className="col-span-3 rounded-lg border bg-muted/30 p-3 text-sm">
+                        <div className="col-span-full rounded-lg border bg-muted/30 p-3 text-sm">
                             <div className="grid gap-1 sm:grid-cols-2">
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="text-muted-foreground">Your margin (Trade − Purchase)</span>
@@ -472,7 +406,8 @@ export default function ProductsIndex({ products, companies = [], categories, fi
                             )}
                         </div>
 
-                        <DialogFooter className="col-span-3">
+                        </DialogBody>
+                        <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
                             <Button type="submit" disabled={form.processing}>
                                 {editing ? 'Save Changes' : 'Create Product'}

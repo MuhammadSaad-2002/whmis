@@ -81,34 +81,42 @@ export function DeliveryFields({ p, form }: { p: DeliveryProps; form: DeliveryFo
     </div>;
 }
 
-export function FollowUpCollection({ invoiceId, collectiblePaisa, inline = false, onSaved }: { invoiceId: number; collectiblePaisa: number; inline?: boolean; onSaved?: () => void }) {
+export function FollowUpCollection({ invoiceId, collectiblePaisa, onCancel, onSaved }: { invoiceId: number; collectiblePaisa: number; onCancel?: () => void; onSaved?: () => void }) {
     const form = useForm({ amount: '', method: 'cash', reference: '', request_key: crypto.randomUUID() });
-    return <form className={cn('space-y-3 print:hidden', !inline && card + ' p-4')} onSubmit={event => {
+    return <form className={cn('print:hidden', !onCancel && card + ' p-4')} onSubmit={event => {
         event.preventDefault();
         form.post('/dispatch/' + invoiceId + '/collection', { preserveScroll: true, onSuccess: () => {
             form.setData({ amount: '', method: 'cash', reference: '', request_key: crypto.randomUUID() });
             onSaved?.();
         } });
     }}>
-        {!inline && <h2 className="text-base font-bold">Report a follow-up collection</h2>}
+        <div className="space-y-3" data-popup-section={onCancel ? 'body' : undefined}>
+        {!onCancel && <h2 className="text-base font-bold">Report a follow-up collection</h2>}
         <Field label="Amount (PKR)"><Input required type="number" inputMode="decimal" min=".01" max={collectiblePaisa / 100} step=".01" value={form.data.amount} onChange={event => form.setData('amount', event.target.value)} /></Field>
         <Field label="Method"><select className={selectClass} value={form.data.method} onChange={event => form.setData('method', event.target.value)}><option value="cash">Cash</option><option value="online">Online bank transfer</option></select></Field>
         {form.data.method === 'online' && <Field label="Bank transaction reference *"><Input required maxLength={200} value={form.data.reference} onChange={event => form.setData('reference', event.target.value)} /></Field>}
         <p className="text-sm text-muted-foreground">Remaining to collect: {money(collectiblePaisa / 100)}. Finance verifies this before posting the payment.</p>
-        <Errors errors={form.errors} /><Button className="w-full" disabled={form.processing}>Report collection</Button>
+        <Errors errors={form.errors} />
+        </div>
+        <div className={!onCancel ? 'mt-3' : undefined} data-popup-section={onCancel ? 'footer' : undefined}>
+            {onCancel && <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>}
+            <Button className={!onCancel ? 'w-full' : undefined} disabled={form.processing}>Report collection</Button>
+        </div>
     </form>;
 }
 
 const failureReasons = ['Shop closed', 'Customer not available', 'Refused delivery', 'Wrong address', 'Payment issue', 'Other'];
-export function FailureForm({ form, submit }: { form: DeliveryForm; submit: (note: string) => void }) {
+export function FailureForm({ form, submit, onCancel }: { form: DeliveryForm; submit: (note: string) => void; onCancel: () => void }) {
     const [reason, setReason] = useState('');
     const [detail, setDetail] = useState('');
-    return <form className="space-y-3" onSubmit={event => { event.preventDefault(); if (reason) submit([reason, detail.trim()].filter(Boolean).join(' — ')); }}>
+    return <form onSubmit={event => { event.preventDefault(); if (reason) submit([reason, detail.trim()].filter(Boolean).join(' — ')); }}>
+        <div className="space-y-3" data-popup-section="body">
         <fieldset className="space-y-2"><legend className="text-sm font-semibold">What happened? *</legend><div className="grid grid-cols-2 gap-2">
             {failureReasons.map(item => <Button type="button" key={item} variant={reason === item ? 'secondary' : 'outline'} aria-pressed={reason === item} className="min-h-11 whitespace-normal" onClick={() => setReason(item)}>{item}</Button>)}
         </div></fieldset>
         <Notes label="Details" required={reason === 'Other'} value={detail} change={value => setDetail(value.slice(0, 950))} placeholder="e.g. The pharmacy opens at 4 pm." />
         <Errors errors={form.errors} />
-        <Button variant="destructive" className="h-11 w-full" disabled={!reason || form.processing}>Record failed attempt</Button>
+        </div>
+        <footer data-popup-section="footer"><Button type="button" variant="outline" onClick={onCancel}>Cancel</Button><Button variant="destructive" disabled={!reason || form.processing}>Record failed attempt</Button></footer>
     </form>;
 }

@@ -22,7 +22,7 @@ export function Layout({ title, description, children, actions }: { title: strin
 export function Field({ label, children }: { label: string; children: ReactNode }) {
     const id = useId();
     const control = isValidElement<{ 'aria-labelledby'?: string }>(children) ? cloneElement(children, { 'aria-labelledby': id }) : children;
-    return <div className="block min-w-0 space-y-1 text-sm"><span id={id} className="font-medium">{label}</span>{control}</div>;
+    return <div className="block min-w-0 space-y-1 text-sm"><span id={id} className="font-medium" data-popup-label>{label}</span>{control}</div>;
 }
 export function Errors({ errors }: { errors: Record<string, string> }) {
     return <>{Object.entries(errors).map(([key, message]) => <p role="alert" key={key} className="text-sm text-destructive">{message}</p>)}</>;

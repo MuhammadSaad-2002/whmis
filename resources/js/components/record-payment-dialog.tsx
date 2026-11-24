@@ -115,9 +115,9 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
     return (
         <Dialog.Root open onOpenChange={(open) => { if (!open && !form.processing) close(); }}>
             <Dialog.Portal>
-                <Dialog.Overlay className="finance-overlay" />
+                <Dialog.Overlay className="finance-overlay" data-popup-overlay />
                 <Dialog.Content
-                    className="finance-dialog"
+                    className="finance-dialog" data-popup-form="dialog"
                     onOpenAutoFocus={(event) => {
                         event.preventDefault();
                         if (selection.id) amountField.current?.focus();
@@ -138,14 +138,12 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
                             event.currentTarget.requestSubmit();
                         }
                     }}>
-                        <div className="mh">
-                            <div>
-                                <Dialog.Title>Record Payment / Receipt</Dialog.Title>
-                                <Dialog.Description className="msub">{receipt ? 'Money received from a customer' : 'Money paid to a supplier'}</Dialog.Description>
-                            </div>
-                            <Dialog.Close id="payment-close" type="button" className="ib" aria-label="Close" disabled={form.processing}><X className="i" /></Dialog.Close>
+                        <div data-popup-section="header">
+                            <Dialog.Title data-popup-title>Record Payment / Receipt</Dialog.Title>
+                            <Dialog.Description data-popup-description>{receipt ? 'Money received from a customer' : 'Money paid to a supplier'}</Dialog.Description>
+                            <Dialog.Close id="payment-close" type="button" data-popup-close aria-label="Close" disabled={form.processing}><X className="i" /></Dialog.Close>
                         </div>
-                        <div className="mb" aria-busy={form.processing}>
+                        <div data-popup-section="body" aria-busy={form.processing}>
                             <div className="ptype" aria-label="Payment type">
                                 <button type="button" data-k="ar" className={receipt ? 'on' : ''} aria-pressed={receipt} onClick={() => { if (!receipt) chooseParty('customer'); }} disabled={form.processing}>
                                     <ArrowDown className="i" />Customer receipt<small>Money in</small>
@@ -178,7 +176,7 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
                                 {treasury.required && <div className="f"><label htmlFor="payment-account">Cash or bank account *</label><select id="payment-account" required value={data.financial_account_id} onChange={event => form.setData('financial_account_id', event.target.value)}><option value="">Select an account</option>{treasury.accounts.filter(a => data.method === 'cash' ? a.kind !== 'bank' && a.kind !== 'custody' : a.kind === 'bank').map(a => <option value={a.id} key={a.id}>{a.name}</option>)}</select></div>}
                                 <div className="f">
                                     <label htmlFor="payment-amount">Amount (Rs) *</label>
-                                    <div className="amt"><span aria-hidden="true">Rs</span>
+                                    <div className="amt" data-popup-composite><span aria-hidden="true">Rs</span>
                                         <input ref={amountField} id="payment-amount" type="number" min="0.01" max="9999999999999.99" step="0.01" inputMode="decimal" placeholder="0.00" required value={data.amount}
                                             onChange={(event) => changeTotal(event.target.value)} />
                                     </div>
@@ -241,10 +239,10 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
                             {lookup.status === 'ready' && unapplied > 0 && <p className="merr unapplied">{money(unapplied / 100)} will be kept as on-account credit, not allocated to a document.</p>}
                             {errors.length > 0 && <div className="merr" role="alert">{errors.map((error) => <p key={error}>{error}</p>)}</div>}
                         </div>
-                        <div className="mf">
+                        <div className="mf" data-popup-section="footer">
                             <span className="muted keyboard-hint">Esc to close · Ctrl+Enter to record</span><div className="sp" />
-                            <Dialog.Close type="button" className="btn" disabled={form.processing}>Cancel</Dialog.Close>
-                            <button className="btn pri" type="submit" disabled={!canSubmit || total <= 0}>{form.processing ? 'Recording…' : receipt ? 'Record receipt' : 'Record payment'}</button>
+                            <Dialog.Close type="button" className="btn" data-popup-action="secondary" disabled={form.processing}>Cancel</Dialog.Close>
+                            <button className="btn pri" data-popup-action="primary" type="submit" disabled={!canSubmit || total <= 0}>{form.processing ? 'Recording…' : receipt ? 'Record receipt' : 'Record payment'}</button>
                         </div>
                     </form>
                 </Dialog.Content>

@@ -2,7 +2,7 @@ import { Paginator, type PaginatedData } from '@/components/paginator';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-    Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+    Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -179,13 +179,14 @@ export default function InventoryBatches({ batches, filters }: Props) {
             </div>
 
             <Dialog open={!!adjusting} onOpenChange={(open) => !open && setAdjusting(null)}>
-                <DialogContent className="max-w-md">
+                <DialogContent appearance="form" className="max-w-md">
                     <DialogHeader>
                         <DialogTitle>
                             Adjust Stock — {adjusting?.product?.name} ({adjusting?.batch_number})
                         </DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submit} className="grid gap-3">
+                    <form onSubmit={submit}>
+                        <DialogBody className="grid gap-3">
                         <p className="text-sm text-muted-foreground">
                             Available: <span className="font-medium tabular-nums">{qty(adjusting?.qty_available)}</span>
                         </p>
@@ -221,6 +222,7 @@ export default function InventoryBatches({ batches, filters }: Props) {
                             <Label>Reason</Label>
                             <Input value={form.data.reason} onChange={(e) => form.setData('reason', e.target.value)} />
                         </div>
+                        </DialogBody>
                         <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setAdjusting(null)}>Cancel</Button>
                             <Button type="submit" disabled={form.processing}>Apply Adjustment</Button>

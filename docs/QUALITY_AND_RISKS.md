@@ -48,6 +48,8 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
   is verified against a disposable MariaDB schema, not the working database.
   It also covers combined Booker/Salesman access, assignment isolation, weekly
   generation without duplicate tasks, and daily PDF pagination.
+- Integrated distribution tests cover verified-collection commission for separate
+  Booker/Salesman employees, partial verification, and payouts scoped to an invoice award.
 
 - Money math: `MarginCalculator` and `resources/js/lib/invoice-math.ts` must stay aligned.
 - Stock mutation: `InventoryService` should remain the single mutation path.

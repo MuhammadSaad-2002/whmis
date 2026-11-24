@@ -91,6 +91,7 @@ export const navGroups: PermittedNavGroup[] = [
             { title: 'Employee Finance', url: '/hr/finance', icon: BookUser, permission: 'hr.payroll.view' },
             { title: 'HR Settings', url: '/hr/settings', icon: UserCog, permission: 'hr.settings.manage' },
             { title: 'My HR', url: '/hr/my-profile', icon: Users, permission: 'hr.self.view' },
+            { title: 'Daily Staff Activity', url: '/staff-activity', icon: ClipboardList, permission: 'view-staff-daily-activity', keywords: ['booker', 'salesman', 'daily performance', 'payout dues'] },
             { title: 'Employee Commissions', url: '/commissions', icon: Banknote, permission: 'commission.manage' },
         ],
     },
@@ -152,7 +153,7 @@ export const workspaceNavGroups: PermittedNavGroup[] = [
     {
         label: 'People & Payroll',
         icon: Users,
-        items: itemsFor('/hr/employees', '/hr/attendance', '/hr/leave', '/hr/payroll', '/hr/finance', '/hr/settings', '/hr/my-profile', '/commissions'),
+        items: itemsFor('/staff-activity', '/hr/employees', '/hr/attendance', '/hr/leave', '/hr/payroll', '/hr/finance', '/hr/settings', '/hr/my-profile', '/commissions'),
     },
     {
         label: 'Administration',

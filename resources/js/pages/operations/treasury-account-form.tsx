@@ -35,7 +35,7 @@ export function TreasuryAccountForm({ account, staff, salesmen, locked, onCancel
             },
         });
     }}>
-        <div className={cn('grid gap-x-4 gap-y-3.5 sm:grid-cols-2', modal && 'overflow-y-auto px-4 py-4 sm:px-6')}>
+        <div className="grid gap-x-4 gap-y-3.5 sm:grid-cols-2" data-popup-section={modal ? 'body' : undefined}>
             <div className="sm:col-span-2"><Field label="Account name *"><Input required maxLength={120} placeholder="e.g. Meezan Bank – Current Account" value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} /></Field></div>
             <fieldset className="min-w-0 space-y-1.5 sm:col-span-2">
                 <legend className="text-sm font-semibold">Type</legend>
@@ -74,10 +74,10 @@ export function TreasuryAccountForm({ account, staff, salesmen, locked, onCancel
                     {!allOperators.length && <p className="text-sm text-muted-foreground">No staff available.</p>}
                 </div>
             </fieldset>
-            {modal && locked && <p className="flex items-start gap-2 rounded-lg border bg-muted/50 px-3 py-2 text-sm text-muted-foreground sm:col-span-2"><Info className="mt-0.5 size-4 shrink-0" />A new account starts at zero. Its balance changes only through posted transactions.</p>}
+            {modal && locked && <p className="flex items-start gap-2 sm:col-span-2" data-popup-note><Info className="mt-0.5 size-4 shrink-0" />A new account starts at zero. Its balance changes only through posted transactions.</p>}
             <div className="empty:hidden sm:col-span-2"><Errors errors={form.errors} /></div>
         </div>
-        <div className={cn('flex shrink-0 flex-wrap items-center gap-2 border-t py-3', modal ? 'px-4 sm:px-6' : 'mt-4 pb-0')}>
+        <div className={modal ? undefined : 'mt-4 flex shrink-0 flex-wrap items-center gap-2 border-t pt-3'} data-popup-section={modal ? 'footer' : undefined}>
             <span aria-live="polite" className="flex-1 text-sm text-muted-foreground">{account ? (form.isDirty ? 'Unsaved changes' : 'No changes') : ''}</span>
             <Button type="button" variant="outline" disabled={form.processing || (!!account && !form.isDirty)} onClick={account ? () => { form.reset(); form.clearErrors(); } : onCancel}>{account ? 'Reset' : 'Cancel'}</Button>
             <Button disabled={form.processing || !form.data.name.trim() || (!!account && !form.isDirty)}>{form.processing ? 'Saving…' : 'Save account'}</Button>

@@ -4,13 +4,23 @@ namespace App\Services;
 
 use App\Models\{Booking, Dispatch, Employee, FinanceWorkItem, SalesInvoice, User};
 use App\Support\Paisa;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class CommissionService
 {
+    public const VERIFIED_BASIS = 'collected';
+
     public function __construct(private InvoiceBalanceService $balances, private TreasuryService $treasury) {}
+
+    public function verifiedCollections(): Builder
+    {
+        return DB::table('delivery_collections as c')->join('payments as p', 'p.id', '=', 'c.payment_id')
+            ->whereNotNull('c.recorded_at')->where('p.status', 'completed')
+            ->selectRaw('COALESCE(SUM(c.verified_paisa), 0) AS total');
+    }
 
     public function snapshot(SalesInvoice $invoice): void
     {
@@ -71,6 +81,8 @@ class CommissionService
         }
         $rules = json_decode($scope->rules, true, flags: JSON_THROW_ON_ERROR);
         $snapshots = json_decode($scope->snapshots, true, flags: JSON_THROW_ON_ERROR);
+        $usesCollections = collect($rules)->contains('basis', self::VERIFIED_BASIS)
+            || collect($snapshots['salesman_percent'] ?? [])->contains('basis', self::VERIFIED_BASIS);
         $booking = $scope->booking_id ? Booking::findOrFail($scope->booking_id) : null;
         $invoices = $booking ? $booking->salesInvoices()->orderBy('id')->get() : collect([$invoice->fresh()]);
         $candidates = [];
@@ -78,7 +90,7 @@ class CommissionService
         $origins = Employee::whereNotNull('user_id')->pluck('id', 'user_id');
         foreach ($invoices as $sale) {
             if ($sale->status === SalesInvoice::STATUS_CANCELLED) continue;
-            $facts = $this->facts($sale, $snapshots['approved_lines'] ?? []);
+            $facts = $this->facts($sale, $snapshots['approved_lines'] ?? [], $usesCollections);
             if (! $facts['ready'] && $facts['value'] > 0) $readyBooking = false;
             foreach ($rules as $role => $rule) {
                 if ($rule['mode'] === 'off') continue;
@@ -111,6 +123,7 @@ class CommissionService
                 $facts = $row['facts'];
                 $keyPrefix = $row['invoice'].':'.$role.':';
                 $cumulativeBase += $row['base'];
+                $usesVerified = [];
                 if ($fixed) {
                     $denominator = $rule['mode'] === 'full_fixed' ? $allValue : $original;
                     $totalThrough = $denominator > 0 ? min($fixedCap, $this->scaled($fixedCap, $cumulativeBase, $denominator)) : 0;
@@ -118,19 +131,23 @@ class CommissionService
                     $allocated = $totalThrough;
                 } else {
                     $parts = $this->allocate($row['base'], $row['weights']);
+                    $receiptParts = $this->allocate($facts['verified'], $row['weights']);
                     $amounts = [];
                     foreach ($parts as $employee => $part) {
                         $override = $role === 'salesman' ? ($snapshots['salesman_percent']['employee:'.$employee] ?? null) : null;
-                        $rate = $override && $override['mode'] === 'percent' && ! str_starts_with($rule['scope'], 'booking:') ? (int) $override['rate'] : (int) $rule['rate'];
-                        $amounts[$employee] = $this->scaled($part, $rate, 10000);
+                        $effective = $override && $override['mode'] === 'percent' && ! str_starts_with($rule['scope'], 'booking:') ? $override : $rule;
+                        $usesVerified[$employee] = $effective['basis'] === self::VERIFIED_BASIS;
+                        $amounts[$employee] = $this->scaled($usesVerified[$employee] ? ($receiptParts[$employee] ?? 0) : $part, (int) $effective['rate'], 10000);
                     }
                 }
                 foreach ($amounts as $employee => $amount) {
                     if (! $employee) continue;
+                    $collected = $fixed ? $rule['basis'] === self::VERIFIED_BASIS : $usesVerified[$employee];
+                    if ($fixed && $collected) $amount = $this->scaled($amount, $facts['verified'], $facts['due_total']);
                     $due = $facts['ready'] && ($rule['mode'] !== 'full_fixed' || $readyBooking);
                     $desired[$keyPrefix.$employee] = ['sales_invoice_id' => $row['invoice'], 'employee_id' => $employee,
                         'role' => $role, 'calculated_paisa' => $amount, 'earned_paisa' => $due ? $amount : 0,
-                        'accrued_paisa' => $facts['due_total'] > 0 ? $this->scaled($amount, min($facts['paid'], $facts['due_total']), $facts['due_total']) : 0,
+                        'accrued_paisa' => $collected ? $amount : $this->scaled($amount, min($facts['paid'], $facts['due_total']), $facts['due_total']),
                         'state' => $due ? 'due' : ($facts['settled'] ? 'pending_delivery' : 'pending')];
                 }
             }
@@ -219,7 +236,7 @@ class CommissionService
             'Recomputed from invoice settlement, fulfillment and retained sales');
     }
 
-    private function facts(SalesInvoice $invoice, array $approved): array
+    private function facts(SalesInvoice $invoice, array $approved, bool $usesCollections = false): array
     {
         $original = $this->invoiceValue($invoice);
         $dispatch = Dispatch::where('sales_invoice_id', $invoice->id)->first();
@@ -265,9 +282,11 @@ class CommissionService
         $balance = $invoice->isPosted() ? $this->balances->sales()->whereKey($invoice->id)->first() : null;
         $settled = $balance && Paisa::from($balance->outstanding) <= 0;
         $ready = $settled && $fulfilled && ($dispatch?->status === 'delivered' || $value === 0);
+        $due = max(0, Paisa::from($invoice->total_amount) - Paisa::from($balance?->return_credit));
+        $verified = $balance && $usesCollections ? (int) $this->verifiedCollections()->where('c.sales_invoice_id', $invoice->id)->first()->total : 0;
         return ['value' => $value, 'booking_base' => $bookingBase, 'weights' => $weights, 'settled' => $settled, 'ready' => $ready,
             'paid' => Paisa::from($balance?->paid_amount) + Paisa::from($balance?->applied_credit),
-            'due_total' => max(0, Paisa::from($invoice->total_amount) - Paisa::from($balance?->return_credit))];
+            'verified' => min($verified, $due), 'due_total' => $due];
     }
 
     private function salesmanWeights(array $facts, Collection $employees, int $original, int $dispatchShare, int $base): array
@@ -343,9 +362,21 @@ class CommissionService
             'actor_id' => Auth::id(), 'created_at' => now()]);
     }
 
-    private function balances(int $employee, string $column): Collection
+    public function payoutAward(int $employee, int $award, int $amount): object
+    {
+        $row = DB::table('commission_awards as a')->join('sales_invoices as i', 'i.id', '=', 'a.sales_invoice_id')
+            ->where('a.employee_id', $employee)->where('a.id', $award)->first(['i.invoice_number', 'a.role']);
+        if (! $row || $amount > (int) $this->balances($employee, 'payable_paisa', $award)->sum('balance')) {
+            $this->treasury->fail('The payout exceeds the live balance for this employee and invoice award.');
+        }
+
+        return $row;
+    }
+
+    private function balances(int $employee, string $column, ?int $award = null): Collection
     {
         return DB::table('commission_entries')->where('employee_id', $employee)->whereNotNull('commission_award_id')
+            ->when($award !== null, fn ($query) => $query->where('commission_award_id', $award))
             ->selectRaw("commission_award_id, SUM({$column}) AS balance")->groupBy('commission_award_id')
             ->havingRaw("SUM({$column}) > 0")->orderBy('commission_award_id')->get();
     }
@@ -380,7 +411,8 @@ class CommissionService
         }
         $this->offset($employee->id);
         $isPay = $kind === 'commission_payout';
-        $balances = $this->balances($employee->id, $isPay ? 'payable_paisa' : 'recovery_paisa');
+        $award = $isPay && isset($item->payload['award_id']) ? (int) $item->payload['award_id'] : null;
+        $balances = $this->balances($employee->id, $isPay ? 'payable_paisa' : 'recovery_paisa', $award);
         $amount = (int) $item->amount_paisa;
         if ($amount > $balances->sum('balance')) $this->treasury->fail('Amount exceeds the live employee balance.');
         if (in_array($kind, ['commission_payout','recovery_repayment'], true)) {

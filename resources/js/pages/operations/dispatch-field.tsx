@@ -153,22 +153,22 @@ export function FieldDelivery(p: DeliveryProps) {
             </div>
         </div>
         <Sheet open={sheet !== null} onOpenChange={open => { if (!open) setSheet(null); }}>
-            <SheetContent side="bottom" className="mx-auto flex max-h-[90dvh] w-full max-w-xl flex-col gap-0 overflow-hidden rounded-t-2xl bg-card p-0" onCloseAutoFocus={event => { event.preventDefault(); trigger.current?.focus(); }}>
+            <SheetContent appearance="form" side="bottom" className="mx-auto w-full max-w-xl" onCloseAutoFocus={event => { event.preventDefault(); trigger.current?.focus(); }}>
                 <div aria-hidden="true" className="mx-auto mt-2 h-1 w-9 rounded-full bg-border" />
                 <SheetHeader className="border-b px-4 py-4 pr-12 text-left">
                     <SheetTitle>{sheet === 'deliver' ? 'Complete delivery' : sheet === 'failed' ? 'Delivery attempt failed' : 'Report a collection'}</SheetTitle>
                     <SheetDescription>{sheet === 'deliver' ? 'Confirm what was handed over at ' + (p.invoice.customer ?? 'the customer') + '.' : sheet === 'failed' ? 'The undelivered units stay in custody.' : 'Send a reported collection to Finance for verification.'}</SheetDescription>
                 </SheetHeader>
-                <div className="min-h-0 overflow-y-auto px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
-                    {sheet === 'deliver' && <form className="space-y-3" onSubmit={event => { event.preventDefault(); submit('delivered', { onSuccess: () => setSheet(null) }); }}>
+                    {sheet === 'deliver' && <form onSubmit={event => { event.preventDefault(); submit('delivered', { onSuccess: () => setSheet(null) }); }}>
+                        <div className="space-y-3" data-popup-section="body">
                         <dl className="rounded-lg border bg-muted/50 px-3 text-sm"><div className="flex justify-between gap-3 py-2"><dt>Handed over</dt><dd className="font-semibold text-accent-foreground">{qty(handoverQty)} units</dd></div>
                             {handoverQty < deliveryRemaining && <div className="flex justify-between gap-3 border-t py-2"><dt>Remaining open</dt><dd className="font-semibold text-chart-4">{qty(deliveryRemaining - handoverQty)} units</dd></div>}</dl>
                         <DeliveryFields p={p} form={form} /><Errors errors={form.errors} />
-                        <Button className="h-11 w-full" disabled={form.processing || handoverQty <= 0}><Check />{form.processing ? 'Saving…' : 'Confirm delivery'}</Button>
+                        </div>
+                        <footer data-popup-section="footer"><Button type="button" variant="outline" onClick={() => setSheet(null)}>Cancel</Button><Button disabled={form.processing || handoverQty <= 0}><Check />{form.processing ? 'Saving…' : 'Confirm delivery'}</Button></footer>
                     </form>}
-                    {sheet === 'failed' && <FailureForm form={form} submit={notes => submit('failed', { notes, onSuccess: () => setSheet(null) })} />}
-                    {sheet === 'collection' && canCollect && <FollowUpCollection invoiceId={p.invoice.id} collectiblePaisa={p.collectiblePaisa} inline onSaved={() => setSheet(null)} />}
-                </div>
+                    {sheet === 'failed' && <FailureForm form={form} submit={notes => submit('failed', { notes, onSuccess: () => setSheet(null) })} onCancel={() => setSheet(null)} />}
+                    {sheet === 'collection' && canCollect && <FollowUpCollection invoiceId={p.invoice.id} collectiblePaisa={p.collectiblePaisa} onCancel={() => setSheet(null)} onSaved={() => setSheet(null)} />}
             </SheetContent>
         </Sheet>
     </>;

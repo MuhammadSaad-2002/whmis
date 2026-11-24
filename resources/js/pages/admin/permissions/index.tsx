@@ -1,8 +1,9 @@
-import { Badge } from '@/components/ui/badge';
+import { RegisterLayout, RegisterList } from '@/components/master-register';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
+import { ShieldCheck } from 'lucide-react';
 
 interface PermissionRow {
     name: string;
@@ -23,26 +24,15 @@ export default function PermissionsIndex({ groups }: Props) {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Permission Catalog" />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="border-b pb-4">
-                    <h1 className="text-4xl font-bold">Permission Catalog</h1>
-                    <p className="text-sm text-muted-foreground">
-                        The full set of permissions, by module, and which roles hold each. Grant them to roles on the Roles page.
-                    </p>
-                </div>
-
-                <div className="grid gap-4">
-                    {Object.entries(groups).map(([module, perms]) => (
-                        <div key={module} className="rounded-xl border">
-                            <div className="border-b bg-muted px-4 py-2 font-semibold capitalize">{module.replaceAll('-', ' ')}</div>
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead className="w-64">Permission</TableHead>
-                                        <TableHead>Held by roles</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
+            <RegisterLayout title="Permission Catalog" description="Permissions grouped by module, and the roles that hold them"
+                actions={<Link className="hbtn" href={route('roles.index')}><ShieldCheck className="i" aria-hidden="true" />Roles &amp; Permissions</Link>}>
+                <RegisterList title="Permission Catalog">
+                    {dense => <Table className={dense ? 'dense' : undefined}>
+                        <TableHeader>
+                            <TableRow><TableHead className="w-64">Permission</TableHead><TableHead>Held by roles</TableHead></TableRow>
+                        </TableHeader>
+                        {Object.entries(groups).map(([module, perms]) => <TableBody key={module}>
+                                    <TableRow><TableHead scope="rowgroup" colSpan={2} className="register-group">{module.replaceAll('-', ' ')}</TableHead></TableRow>
                                     {perms.map((perm) => (
                                         <TableRow key={perm.name}>
                                             <TableCell className="text-sm">{perm.name}</TableCell>
@@ -50,18 +40,16 @@ export default function PermissionsIndex({ groups }: Props) {
                                                 <div className="flex flex-wrap gap-1">
                                                     {perm.roles.length === 0 && <span className="text-muted-foreground">—</span>}
                                                     {perm.roles.map((r) => (
-                                                        <Badge key={r} variant="secondary">{r}</Badge>
+                                                        <span key={r} className="st master-tag">{r}</span>
                                                     ))}
                                                 </div>
                                             </TableCell>
                                         </TableRow>
                                     ))}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    ))}
-                </div>
-            </div>
+                        </TableBody>)}
+                    </Table>}
+                </RegisterList>
+            </RegisterLayout>
         </AppLayout>
     );
 }

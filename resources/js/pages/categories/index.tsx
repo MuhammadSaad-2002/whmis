@@ -1,7 +1,8 @@
-import { Paginator, type PaginatedData } from '@/components/paginator';
+import { MasterRegister, useMasterFilters } from '@/components/master-register';
+import { type PaginatedData } from '@/components/paginator';
 import { Button } from '@/components/ui/button';
 import {
-    Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+    Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,8 +13,8 @@ import { type BreadcrumbItem } from '@/types';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { ALERT_FIX, required, useClientValidation } from '@/lib/form-validation';
 import { Head, router, useForm } from '@inertiajs/react';
-import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
-import { FormEvent, useEffect, useState } from 'react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 import { toast } from 'sonner';
 
 interface Category {
@@ -32,27 +33,19 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Categories', href: '/categories
 
 export default function CategoriesIndex({ categories, filters }: Props) {
     const { can } = usePermissions();
+    const canManage = can('categories.manage');
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editing, setEditing] = useState<Category | null>(null);
-    const [search, setSearch] = useState(filters.search ?? '');
+    const filterState = useMasterFilters('/categories', filters);
     const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
         rowCount: categories.data.length,
-        onActivate: (i) => openEdit(categories.data[i]),
+        onActivate: (i) => { if (canManage) openEdit(categories.data[i]); },
     });
 
     const form = useForm({ name: '', description: '' });
     const { validateField, validateForm } = useClientValidation(form, {
         name: required('Name'),
     });
-
-    useEffect(() => {
-        const timeout = setTimeout(() => {
-            if ((filters.search ?? '') !== search) {
-                router.get('/categories', { search: search || undefined }, { preserveState: true, replace: true });
-            }
-        }, 350);
-        return () => clearTimeout(timeout);
-    }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const openCreate = () => {
         setEditing(null);
@@ -86,77 +79,58 @@ export default function CategoriesIndex({ categories, filters }: Props) {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Categories" />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex items-center justify-between border-b pb-4">
-                    <h1 className="text-4xl font-bold">Product Categories</h1>
-                    {can('categories.manage') && (
-                        <Button onClick={openCreate}>
-                            <Plus className="mr-1 size-4" /> Add Category
-                        </Button>
-                    )}
-                </div>
-
-                <div className="relative w-full sm:w-72">
-                    <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                    <Input ref={searchRef} onKeyDown={onSearchKeyDown} placeholder="Search…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
-                </div>
-
-                <div className="rounded-xl border">
-                    <Table>
+            <MasterRegister title="Product Categories" description="Group products in the catalogue" label="category" pluralLabel="categories" page={categories}
+                state={filterState} searchRef={searchRef} onSearchKeyDown={onSearchKeyDown} placeholder="Category name"
+                actions={canManage && <button type="button" className="hbtn pri" onClick={openCreate}><Plus className="i" aria-hidden="true" />Add Category</button>}>
+                    {dense => <Table className={`category-table${dense ? ' dense' : ''}`}>
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Name</TableHead>
                                 <TableHead>Description</TableHead>
-                                <TableHead className="text-right">Products</TableHead>
-                                <TableHead className="w-24" />
+                                <TableHead className="r">Products</TableHead>
+                                {canManage && <TableHead className="r acts-head">Actions</TableHead>}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {categories.data.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
-                                        No categories found.
+                                    <TableCell colSpan={canManage ? 4 : 3} className="empty">
+                                        {filterState.applied ? 'No categories match these filters.' : 'No categories found.'}
                                     </TableCell>
                                 </TableRow>
                             )}
                             {categories.data.map((category, index) => (
                                 <TableRow key={category.id} {...rowProps(index)}>
-                                    <TableCell className="font-medium">{category.name}</TableCell>
-                                    <TableCell>{category.description || '—'}</TableCell>
-                                    <TableCell className="text-right">{category.products_count}</TableCell>
-                                    <TableCell>
-                                        {can('categories.manage') && (
-                                            <div className="flex justify-end gap-1">
-                                                <Button variant="ghost" size="icon" onClick={() => openEdit(category)}>
-                                                    <Pencil className="size-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost" size="icon"
+                                    <TableCell className="entity-name"><strong>{category.name}</strong></TableCell>
+                                    <TableCell className="wrap-cell">{category.description || '—'}</TableCell>
+                                    <TableCell className="r num">{category.products_count}</TableCell>
+                                    {canManage && <TableCell>
+                                            <div className="acts">
+                                                <button type="button" className="ib" title="Edit category" aria-label={`Edit ${category.name}`} onClick={() => openEdit(category)}><Pencil className="i" aria-hidden="true" /></button>
+                                                <button type="button" className="ib master-delete" title="Delete category" aria-label={`Delete ${category.name}`}
                                                     onClick={() => {
                                                         if (confirm(`Delete category "${category.name}"?`)) {
                                                             router.delete(route('categories.destroy', category.id), { preserveScroll: true });
                                                         }
                                                     }}
                                                 >
-                                                    <Trash2 className="size-4 text-destructive" />
-                                                </Button>
+                                                    <Trash2 className="i" aria-hidden="true" />
+                                                </button>
                                             </div>
-                                        )}
-                                    </TableCell>
+                                    </TableCell>}
                                 </TableRow>
                             ))}
                         </TableBody>
-                    </Table>
-                    <Paginator meta={categories} />
-                </div>
-            </div>
+                    </Table>}
+            </MasterRegister>
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent className="max-w-md">
+                <DialogContent appearance="form" className="max-w-md" aria-describedby={undefined}>
                     <DialogHeader>
                         <DialogTitle>{editing ? `Edit ${editing.name}` : 'Add Category'}</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submit} className="grid gap-3">
+                    <form onSubmit={submit}>
+                        <DialogBody className="grid gap-3">
                         <div>
                             <Label htmlFor="name">Name *</Label>
                             <Input
@@ -174,6 +148,7 @@ export default function CategoriesIndex({ categories, filters }: Props) {
                             <Label htmlFor="description">Description</Label>
                             <Input id="description" value={form.data.description} onChange={(e) => form.setData('description', e.target.value)} />
                         </div>
+                        </DialogBody>
                         <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
                             <Button type="submit" disabled={form.processing}>{editing ? 'Save' : 'Create'}</Button>

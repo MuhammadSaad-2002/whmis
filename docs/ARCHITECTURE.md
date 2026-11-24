@@ -20,6 +20,11 @@ return Inertia pages for interactive screens and Blade views for PDFs.
   more frames. Booking, sale and purchase editors use `hooks/use-draft-leave.tsx`
   to prevent losing edits. Laravel still authorizes all requests.
 - Ziggy `route()` names are the frontend route contract.
+- Form dialogs and drawers opt into `appearance="form"` on the shared Dialog
+  and Sheet primitives. `resources/css/popup-form.css` styles their header,
+  scrollable form body and action footer; search and preview popups do not opt in.
+- Customers, stock loans, samples, and administration screens share the
+  register headers, filters and tables in `resources/js/components/master-register.tsx`.
 
 ## Backend layering
 

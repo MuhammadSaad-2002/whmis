@@ -421,6 +421,78 @@ class IntegratedDistributionTest extends TestCase
             ->where('rows.1.posted_on_date_paisa', 100000)->where('rows.3.posted_on_date_paisa', 50000));
     }
 
+    public function test_verified_collection_basis_credits_both_roles_and_pays_only_the_selected_invoice_award(): void
+    {
+        $account = $this->opening();
+        $booker = User::factory()->create()->assignRole('Booker');
+        $bookerEmployee = Employee::create(['employee_number' => 'EMP-BOOKER', 'name' => 'Separate Booker', 'user_id' => $booker->id,
+            'joining_date' => $this->date, 'employment_type' => 'permanent', 'weekly_off_days' => [0]]);
+        foreach (['booker' => 1, 'salesman' => .5] as $role => $rate) {
+            $this->post('/commissions/rules', ['source' => 'booking', 'role' => $role, 'basis' => 'collected',
+                'mode' => 'percent', 'rate' => $rate, 'effective_from' => $this->date])->assertSessionHas('success');
+        }
+        // Leave an older, payable award for the same Booker so a scoped payout
+        // cannot accidentally consume that award through the general FIFO path.
+        $priorBooking = $this->booking(5);
+        $priorBooking->update(['booker_id' => $booker->id]);
+        $prior = app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($priorBooking));
+        $this->deliver($prior);
+        $collections = app(DeliveryCollectionService::class);
+        $collections->report($prior, $this->salesman, ['method' => 'cash', 'amount' => 5000, 'request_key' => (string) Str::uuid()]);
+        $olderReport = DB::table('delivery_collections')->where('sales_invoice_id', $prior->id)->where('method', 'cash')->first();
+        $collections->submit($olderReport->collection_day_id, $this->salesman);
+        $this->actingAs($this->admin);
+        $collections->countCash($olderReport->collection_day_id, $this->admin, 500000);
+        $collections->record($olderReport->id, $this->admin, ['amount' => 5000, 'account_id' => $account]);
+        $priorAward = DB::table('commission_awards')->where('sales_invoice_id', $prior->id)->where('role', 'booker')->first();
+
+        $booking = $this->booking();
+        $booking->update(['booker_id' => $booker->id]);
+        $invoice = app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($booking));
+        $this->deliver($invoice);
+
+        foreach ([[40000, 39500], [60000, 60000]] as [$reported, $verified]) {
+            $collections->report($invoice, $this->salesman, ['method' => 'cash', 'amount' => $reported, 'request_key' => (string) Str::uuid()]);
+            $row = DB::table('delivery_collections')->where('method', 'cash')->latest('id')->first();
+            $collections->submit($row->collection_day_id, $this->salesman);
+            $this->actingAs($this->admin);
+            $collections->countCash($row->collection_day_id, $this->admin, $verified * 100);
+            if ($reported === 40000) $this->assertEquals(0, DB::table('commission_awards')->where('sales_invoice_id', $invoice->id)->sum('accrued_paisa'));
+            $collections->record($row->id, $this->admin, ['amount' => $verified, 'account_id' => $account, 'notes' => 'Verified at the till']);
+            if ($reported === 40000) {
+                $this->assertDatabaseHas('commission_awards', ['sales_invoice_id' => $invoice->id, 'employee_id' => $bookerEmployee->id, 'role' => 'booker', 'accrued_paisa' => 39500, 'earned_paisa' => 0]);
+                $this->assertDatabaseHas('commission_awards', ['sales_invoice_id' => $invoice->id, 'employee_id' => $this->employee->id, 'role' => 'salesman', 'accrued_paisa' => 19750, 'earned_paisa' => 0]);
+            }
+        }
+        $this->assertEquals(0, DB::table('commission_awards')->where('sales_invoice_id', $invoice->id)->sum('earned_paisa'));
+        $this->pay($invoice, $account, 500); // Settles the invoice, but is not a verified Salesman collection.
+
+        $awards = DB::table('commission_awards')->where('sales_invoice_id', $invoice->id)->get()->keyBy('role');
+        $this->assertEquals(99500, $awards['booker']->earned_paisa);
+        $this->assertEquals(49750, $awards['salesman']->earned_paisa);
+        $this->get(route('commissions.index', ['employee_id' => $bookerEmployee->id]))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('awards.data.0.invoice_number', $invoice->invoice_number)->where('awards.data.0.verified_paisa', 9950000)
+            ->where('awards.data.0.payable_paisa', 99500)->where('previewRules.booker.basis', 'collected'));
+
+        $finance = app(FinanceApprovalService::class);
+        $payload = ['request_key' => (string) Str::uuid(), 'date' => $this->date, 'award_id' => $awards['booker']->id,
+            'account_id' => $account, 'amount' => 995, 'notes' => 'Payout for '.$invoice->invoice_number];
+        $this->expectFinanceError(fn () => $finance->request($this->admin, 'commission_payout', $payload + ['employee_id' => $this->employee->id], null), 'employee and invoice award');
+        $this->post('/finance-approvals', $payload + ['kind' => 'commission_payout', 'employee_id' => $bookerEmployee->id])->assertSessionHas('success');
+        $ticket = \App\Models\FinanceWorkItem::where('request_key', $payload['request_key'])->firstOrFail();
+        $this->assertSame($invoice->invoice_number, $ticket->payload['award_invoice_number']);
+        $finance->approve($ticket->id, $this->reviewer, 'Verified award and amount', true);
+        $finance->post($ticket->id, $this->admin, 'Verified commission payout');
+        $this->assertDatabaseHas('commission_entries', ['commission_award_id' => $awards['booker']->id, 'finance_work_item_id' => $ticket->id, 'cash_out_paisa' => 99500]);
+        $this->assertEquals(49750, DB::table('commission_entries')->where('commission_award_id', $awards['salesman']->id)->sum('payable_paisa'));
+        $this->assertEquals(5000, DB::table('commission_entries')->where('commission_award_id', $priorAward->id)->sum('payable_paisa'));
+
+        app(ReturnService::class)->createSalesReturn($invoice, [['sales_invoice_item_id' => $invoice->items()->first()->id, 'quantity' => 10]], $this->date, 'Test return');
+        $this->assertDatabaseHas('commission_awards', ['id' => $awards['booker']->id, 'earned_paisa' => 90000]);
+        $this->assertDatabaseHas('commission_awards', ['id' => $awards['salesman']->id, 'earned_paisa' => 45000]);
+        $this->assertDatabaseHas('commission_entries', ['commission_award_id' => $awards['booker']->id, 'finance_work_item_id' => $ticket->id, 'cash_out_paisa' => 99500]);
+    }
+
     public function test_matching_cash_never_partially_posts_when_one_invoice_balance_changes(): void
     {
         $till = $this->opening();

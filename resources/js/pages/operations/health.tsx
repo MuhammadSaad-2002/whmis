@@ -1,9 +1,29 @@
-import { Button } from '@/components/ui/button';
-import { router } from '@inertiajs/react';
-import { Layout } from './shared';
+import { MasterStatus, RegisterLayout, RegisterList } from '@/components/master-register';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import AppLayout from '@/layouts/app-layout';
+import { Head, router } from '@inertiajs/react';
+import { RefreshCw } from 'lucide-react';
 
 export default function Health({ checks }: { checks: { name: string; ok: boolean; detail: string }[] }) {
-    return <Layout title="System Readiness" description="Read-only checks for deployment and workflow setup." actions={<Button variant="outline" onClick={() => router.reload()}>Recheck</Button>}>
-        <div className="space-y-3">{checks.map(check => <article className="rounded-xl border p-4" key={check.name}><div className="flex items-center justify-between gap-2"><h2 className="font-semibold">{check.name}</h2><span className={check.ok ? 'text-emerald-700' : 'text-destructive'}>{check.ok ? 'Ready' : 'Needs attention'}</span></div><p className="mt-2 break-words text-sm text-muted-foreground">{check.detail}</p></article>)}</div>
-    </Layout>;
+    const ready = checks.filter(check => check.ok).length;
+    return <AppLayout>
+        <Head title="System Readiness" />
+        <RegisterLayout title="System Readiness" description={<>Read-only deployment and workflow checks · {ready} of {checks.length} ready</>}
+            actions={<button type="button" className="hbtn pri" onClick={() => router.reload()}><RefreshCw className="i" aria-hidden="true" />Recheck</button>}>
+            <RegisterList title="Readiness checks" controls={<h2 className="font-bold">Readiness checks</h2>}>
+                {dense => <Table className={`register-short-table${dense ? ' dense' : ''}`}>
+                    <TableHeader><TableRow><TableHead>Check</TableHead><TableHead className="r">Status</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                        {checks.map(check => <TableRow key={check.name}>
+                            <TableCell className="wrap-cell">
+                                <strong>{check.name}</strong>
+                                <span className="row-secondary">{check.detail}</span>
+                            </TableCell>
+                            <TableCell className="r"><MasterStatus status={check.ok ? 'Ready' : 'Needs attention'} tone={check.ok ? 'positive' : 'attention'} /></TableCell>
+                        </TableRow>)}
+                    </TableBody>
+                </Table>}
+            </RegisterList>
+        </RegisterLayout>
+    </AppLayout>;
 }

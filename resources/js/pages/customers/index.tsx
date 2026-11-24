@@ -1,10 +1,10 @@
 import { ImportDialog } from '@/components/import-dialog';
-import { Paginator, type PaginatedData } from '@/components/paginator';
-import { Badge } from '@/components/ui/badge';
+import { MasterFilterSelect, MasterRegister, MasterStatus, useMasterFilters } from '@/components/master-register';
+import { type PaginatedData } from '@/components/paginator';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-    Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+    Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,8 +20,8 @@ import { type BreadcrumbItem } from '@/types';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { ALERT_FIX, positive, required, useClientValidation } from '@/lib/form-validation';
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { BookUser, Pencil, Plus, Search, Trash2, Upload } from 'lucide-react';
-import { FormEvent, useEffect, useState } from 'react';
+import { BookUser, MapPin, Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 import { toast } from 'sonner';
 
 interface Customer {
@@ -94,10 +94,10 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
     const [dialogOpen, setDialogOpen] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
     const [editing, setEditing] = useState<Customer | null>(null);
-    const [search, setSearch] = useState(filters.search ?? '');
+    const filterState = useMasterFilters('/customers', filters);
     const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
         rowCount: customers.data.length,
-        onActivate: (i) => openEdit(customers.data[i]),
+        onActivate: (i) => { if (canManageCustomers) openEdit(customers.data[i]); },
     });
 
     const form = useForm(emptyForm);
@@ -106,15 +106,6 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
         credit_limit: positive('Credit limit'),
         credit_days: positive('Credit days'),
     });
-
-    useEffect(() => {
-        const timeout = setTimeout(() => {
-            if ((filters.search ?? '') !== search) {
-                router.get('/customers', { ...filters, search: search || undefined }, { preserveState: true, replace: true });
-            }
-        }, 350);
-        return () => clearTimeout(timeout);
-    }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const openCreate = () => {
         setEditing(null);
@@ -175,84 +166,34 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Customers" />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
-                    <div>
-                        <h1 className="text-4xl font-bold">Customers</h1>
-                        <p className="text-sm text-muted-foreground">Pharmacies you sell to</p>
-                    </div>
-                    {canManageCustomers && (
-                        <div className="flex gap-2">
-                            <Button variant="outline" onClick={() => setImportOpen(true)}>
-                                <Upload className="mr-1 size-4" /> Import
-                            </Button>
-                            <Button onClick={openCreate}>
-                                <Plus className="mr-1 size-4" /> Add Customer
-                            </Button>
-                        </div>
-                    )}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                    <div className="relative w-full sm:w-72">
-                        <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                        <Input
-                            ref={searchRef}
-                            onKeyDown={onSearchKeyDown}
-                            placeholder="Search customer, owner, phone, city…"
-                            className="pl-8"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                        />
-                    </div>
-                    <Select
-                        value={filters.city ?? 'all'}
-                        onValueChange={(v) =>
-                            router.get('/customers', { ...filters, city: v === 'all' ? undefined : v }, { preserveState: true })
-                        }
-                    >
-                        <SelectTrigger className="w-40"><SelectValue placeholder="City" /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All cities</SelectItem>
-                            {cities.map((city) => (
-                                <SelectItem key={city} value={city}>{city}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                    <Select
-                        value={filters.status ?? 'all'}
-                        onValueChange={(v) =>
-                            router.get('/customers', { ...filters, status: v === 'all' ? undefined : v }, { preserveState: true })
-                        }
-                    >
-                        <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All statuses</SelectItem>
-                            <SelectItem value="active">Active</SelectItem>
-                            <SelectItem value="inactive">Inactive</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-
-                <div className="rounded-xl border">
-                    <Table>
+            <MasterRegister title="Customers" description="Pharmacies you sell to" label="customer" page={customers}
+                state={filterState} searchRef={searchRef} onSearchKeyDown={onSearchKeyDown} placeholder="Customer, owner, phone or city"
+                status={{ value: filters.status, onChange: status => filterState.change({ status }) }}
+                actions={canManageCustomers && <>
+                    <button type="button" className="hbtn" onClick={() => setImportOpen(true)}><Upload className="i" aria-hidden="true" />Import</button>
+                    <button type="button" className="hbtn pri" onClick={openCreate}><Plus className="i" aria-hidden="true" />Add Customer</button>
+                </>}
+                filters={<MasterFilterSelect label="City" icon={MapPin} value={filters.city ?? ''} onChange={value => filterState.change({ city: value || undefined })}>
+                    <option value="">All cities</option>{cities.map(city => <option key={city} value={city}>{city}</option>)}
+                </MasterFilterSelect>}>
+                    {dense => <Table className={`customer-table${dense ? ' dense' : ''}`}>
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Customer</TableHead>
                                 <TableHead>Owner / Contact</TableHead>
                                 <TableHead>City</TableHead>
                                 <TableHead>License</TableHead>
-                                <TableHead className="text-right">Balance</TableHead>
-                                <TableHead className="text-right">Credit Limit</TableHead>
+                                <TableHead className="r">Balance</TableHead>
+                                <TableHead className="r">Credit Limit</TableHead>
                                 <TableHead>Status</TableHead>
-                                {showActions && <TableHead className="w-32"><span className="sr-only">Actions</span></TableHead>}
+                                {showActions && <TableHead className="r acts-head">Actions</TableHead>}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {customers.data.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={showActions ? 8 : 7} className="py-10 text-center text-muted-foreground">
-                                        No customers found.
+                                    <TableCell colSpan={showActions ? 8 : 7} className="empty">
+                                        {filterState.applied ? 'No customers match these filters.' : 'No customers found.'}
                                     </TableCell>
                                 </TableRow>
                             )}
@@ -261,46 +202,35 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                                 const overLimit = Number(customer.credit_limit) > 0 && balance > Number(customer.credit_limit);
                                 return (
                                     <TableRow key={customer.id} {...rowProps(index)}>
-                                        <TableCell className="font-medium">{customer.name}</TableCell>
+                                        <TableCell className="entity-name"><strong>{customer.name}</strong></TableCell>
                                         <TableCell>
-                                            <div className="text-sm">{customer.owner_name || customer.contact_person || '—'}</div>
-                                            <div className="text-xs text-muted-foreground">{customer.phone}</div>
+                                            <span>{customer.owner_name || customer.contact_person || '—'}</span>
+                                            {customer.phone && <small className="row-secondary">{customer.phone}</small>}
                                         </TableCell>
                                         <TableCell>{customer.city || '—'}</TableCell>
                                         <TableCell>{customer.drug_license_no || '—'}</TableCell>
-                                        <TableCell className="text-right tabular-nums">
-                                            <span className={overLimit ? 'font-semibold text-destructive' : ''}>{money(balance)}</span>
+                                        <TableCell className="r num">
+                                            <span className={overLimit ? 'font-semibold neg' : ''}>{money(balance)}</span>
                                         </TableCell>
-                                        <TableCell className="text-right tabular-nums">{money(customer.credit_limit)}</TableCell>
-                                        <TableCell>
-                                            <Badge variant={customer.status === 'active' ? 'default' : 'secondary'}>
-                                                {customer.status}
-                                            </Badge>
-                                        </TableCell>
+                                        <TableCell className="r num">{money(customer.credit_limit)}</TableCell>
+                                        <TableCell><MasterStatus status={customer.status} /></TableCell>
                                         {showActions && <TableCell>
-                                            <div className="flex justify-end gap-1">
+                                            <div className="acts">
                                                 {canViewLedger && (
-                                                    <Button variant="ghost" size="icon" asChild>
-                                                        <Link href={route('ledger.customer', customer.id)} title="Ledger" aria-label={`Ledger for ${customer.name}`}>
-                                                            <BookUser aria-hidden="true" className="size-4" />
-                                                        </Link>
-                                                    </Button>
+                                                    <Link className="ib" href={route('ledger.customer', customer.id)} title="Ledger" aria-label={`Ledger for ${customer.name}`}><BookUser aria-hidden="true" className="i" /></Link>
                                                 )}
                                                 {canManageCustomers && (
                                                     <>
-                                                        <Button variant="ghost" size="icon" onClick={() => openEdit(customer)}>
-                                                            <Pencil className="size-4" />
-                                                        </Button>
-                                                        <Button
-                                                            variant="ghost" size="icon"
+                                                        <button type="button" className="ib" title="Edit customer" aria-label={`Edit ${customer.name}`} onClick={() => openEdit(customer)}><Pencil className="i" aria-hidden="true" /></button>
+                                                        <button type="button" className="ib master-delete" title="Delete customer" aria-label={`Delete ${customer.name}`}
                                                             onClick={() => {
                                                                 if (confirm(`Delete customer "${customer.name}"?`)) {
                                                                     router.delete(route('customers.destroy', customer.id), { preserveScroll: true });
                                                                 }
                                                             }}
                                                         >
-                                                            <Trash2 className="size-4 text-destructive" />
-                                                        </Button>
+                                                            <Trash2 className="i" aria-hidden="true" />
+                                                        </button>
                                                     </>
                                                 )}
                                             </div>
@@ -309,10 +239,8 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                                 );
                             })}
                         </TableBody>
-                    </Table>
-                    <Paginator meta={customers} />
-                </div>
-            </div>
+                    </Table>}
+            </MasterRegister>
 
             <ImportDialog
                 open={importOpen}
@@ -323,12 +251,13 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
             />
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+                <DialogContent appearance="form" className="max-w-3xl" aria-describedby={undefined}>
                     <DialogHeader>
                         <DialogTitle>{editing ? `Edit ${editing.name}` : 'Add Customer'}</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-                        <div className="col-span-3">
+                    <form onSubmit={submit}>
+                        <DialogBody className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+                        <div className="col-span-full">
                             <Label htmlFor="name">Customer Name *</Label>
                             <Input
                                 id="name"
@@ -352,7 +281,7 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                                 {err(key) && <p className="text-xs text-destructive">{err(key)}</p>}
                             </div>
                         ))}
-                        <div className="col-span-3">
+                        <div className="col-span-full">
                             <Label htmlFor="address">Address</Label>
                             <Input id="address" value={form.data.address} onChange={(e) => form.setData('address', e.target.value)} />
                         </div>
@@ -399,7 +328,7 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                             <p className="text-xs text-muted-foreground">Credited for this customer's sales</p>
                         </div>
                         {can('bookers.assign') && (
-                            <div className="col-span-3">
+                            <div className="col-span-full">
                                 <Label>Assigned Bookers (can book for this pharmacy)</Label>
                                 {bookers.length === 0 ? (
                                     <p className="text-sm text-muted-foreground">No bookers exist yet.</p>
@@ -442,11 +371,12 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                                 <p className="text-xs text-muted-foreground">Positive = they owe you</p>
                             </div>
                         )}
-                        <div className="col-span-3">
+                        <div className="col-span-full">
                             <Label htmlFor="notes">Notes</Label>
                             <Textarea id="notes" rows={2} value={form.data.notes} onChange={(e) => form.setData('notes', e.target.value)} />
                         </div>
-                        <DialogFooter className="col-span-3">
+                        </DialogBody>
+                        <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
                             <Button type="submit" disabled={form.processing}>
                                 {editing ? 'Save Changes' : 'Create Customer'}

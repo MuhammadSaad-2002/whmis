@@ -26,6 +26,7 @@ export function ApprovalDetail({ item, actorId, accounts, copy }: { item: Approv
     const related = [
         ['Sales invoice', item.payload.invoice_id], ['Target', item.payload.target_id], ['Related request', item.payload.credit_id],
         ['Booking', item.payload.booking_id], ['Collection', item.payload.collection_id], ['Employee', item.payload.employee_id],
+        ['Commission invoice', item.payload.award_invoice_number], ['Commission role', item.payload.award_id ? item.payload.commission_role : null],
     ].filter(([, value]) => value != null && value !== '');
     return <article className="finance-card approval-detail" aria-label="Request details">
         <header className="approval-detail-header">

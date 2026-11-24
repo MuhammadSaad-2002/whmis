@@ -46,15 +46,17 @@ const sheetVariants = cva(
     },
 );
 
-interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>, VariantProps<typeof sheetVariants> {}
+interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>, VariantProps<typeof sheetVariants> {
+    appearance?: 'form';
+}
 
 const SheetContent = React.forwardRef<React.ElementRef<typeof SheetPrimitive.Content>, SheetContentProps>(
-    ({ side = 'right', className, children, ...props }, ref) => (
+    ({ appearance, side = 'right', className, children, ...props }, ref) => (
         <SheetPortal>
-            <SheetOverlay />
-            <SheetPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
+            <SheetOverlay data-popup-overlay={appearance === 'form' ? '' : undefined} />
+            <SheetPrimitive.Content ref={ref} data-popup-form={appearance === 'form' ? 'sheet' : undefined} data-popup-side={appearance === 'form' ? side : undefined} className={cn(sheetVariants({ side }), className)} {...props}>
                 {children}
-                <SheetPrimitive.Close className="absolute right-6 top-6 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
+                <SheetPrimitive.Close data-popup-close className="absolute right-6 top-6 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
                     <X className="h-4 w-4" />
                     <span className="sr-only">Close</span>
                 </SheetPrimitive.Close>
@@ -65,7 +67,7 @@ const SheetContent = React.forwardRef<React.ElementRef<typeof SheetPrimitive.Con
 SheetContent.displayName = SheetPrimitive.Content.displayName;
 
 const SheetHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-    <div className={cn('flex flex-col space-y-2 text-center sm:text-left', className)} {...props} />
+    <div data-popup-section="header" className={cn('flex flex-col space-y-2 text-center sm:text-left', className)} {...props} />
 );
 SheetHeader.displayName = 'SheetHeader';
 
@@ -76,7 +78,7 @@ SheetFooter.displayName = 'SheetFooter';
 
 const SheetTitle = React.forwardRef<React.ElementRef<typeof SheetPrimitive.Title>, React.ComponentPropsWithoutRef<typeof SheetPrimitive.Title>>(
     ({ className, ...props }, ref) => (
-        <SheetPrimitive.Title ref={ref} className={cn('text-lg font-semibold text-foreground', className)} {...props} />
+        <SheetPrimitive.Title ref={ref} data-popup-title className={cn('text-lg font-semibold text-foreground', className)} {...props} />
     ),
 );
 SheetTitle.displayName = SheetPrimitive.Title.displayName;
@@ -84,7 +86,7 @@ SheetTitle.displayName = SheetPrimitive.Title.displayName;
 const SheetDescription = React.forwardRef<
     React.ElementRef<typeof SheetPrimitive.Description>,
     React.ComponentPropsWithoutRef<typeof SheetPrimitive.Description>
->(({ className, ...props }, ref) => <SheetPrimitive.Description ref={ref} className={cn('text-sm text-muted-foreground', className)} {...props} />);
+>(({ className, ...props }, ref) => <SheetPrimitive.Description ref={ref} data-popup-description className={cn('text-sm text-muted-foreground', className)} {...props} />);
 SheetDescription.displayName = SheetPrimitive.Description.displayName;
 
 export { Sheet, SheetClose, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetOverlay, SheetPortal, SheetTitle, SheetTrigger };

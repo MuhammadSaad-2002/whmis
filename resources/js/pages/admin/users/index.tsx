@@ -1,9 +1,9 @@
-import { Paginator, type PaginatedData } from '@/components/paginator';
-import { Badge } from '@/components/ui/badge';
+import { MasterRegister, MasterStatus, useMasterFilters } from '@/components/master-register';
+import { type PaginatedData } from '@/components/paginator';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-    Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+    Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,8 +12,8 @@ import { usePage, useForm, router, Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 import { ALERT_FIX } from '@/lib/form-validation';
 import { type BreadcrumbItem, type SharedData } from '@/types';
-import { KeyRound, Pencil, Plus, Power, Search, Trash2 } from 'lucide-react';
-import { FormEvent, useEffect, useState } from 'react';
+import { KeyRound, Pencil, Plus, Power, Trash2 } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 import { toast } from 'sonner';
 
 interface UserRow {
@@ -41,19 +41,10 @@ export default function UsersIndex({ users, roles, filters }: Props) {
     const [pwOpen, setPwOpen] = useState(false);
     const [editing, setEditing] = useState<UserRow | null>(null);
     const [pwUser, setPwUser] = useState<UserRow | null>(null);
-    const [search, setSearch] = useState(filters.search ?? '');
+    const state = useMasterFilters('/users', filters);
 
     const form = useForm(emptyForm);
     const pwForm = useForm({ password: '', password_confirmation: '' });
-
-    useEffect(() => {
-        const timeout = setTimeout(() => {
-            if ((filters.search ?? '') !== search) {
-                router.get('/users', { search: search || undefined }, { preserveState: true, replace: true });
-            }
-        }, 350);
-        return () => clearTimeout(timeout);
-    }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const openCreate = () => {
         setEditing(null);
@@ -106,114 +97,91 @@ export default function UsersIndex({ users, roles, filters }: Props) {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Users" />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
-                    <div>
-                        <h1 className="text-4xl font-bold">Users</h1>
-                        <p className="text-sm text-muted-foreground">Accounts, roles, and access</p>
-                    </div>
-                    <Button onClick={openCreate}>
-                        <Plus className="mr-1 size-4" /> Add User
-                    </Button>
-                </div>
-
-                <div className="relative w-full sm:w-72">
-                    <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                    <Input
-                        placeholder="Search name or email…"
-                        className="pl-8"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                    />
-                </div>
-
-                <div className="rounded-xl border">
-                    <Table>
-                        <TableHeader>
+            <MasterRegister title="Users" description="Accounts, roles, and access" label="user" page={users} state={state} placeholder="Name or email…"
+                actions={<button type="button" className="hbtn pri" onClick={openCreate}><Plus className="i" aria-hidden="true" />Add User</button>}>
+                {dense => <Table className={dense ? 'dense' : undefined}>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Email</TableHead>
+                            <TableHead>Roles</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="r"><span className="sr-only">Actions</span></TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {users.data.length === 0 && (
                             <TableRow>
-                                <TableHead>Name</TableHead>
-                                <TableHead>Email</TableHead>
-                                <TableHead>Roles</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead className="w-36" />
+                                <TableCell colSpan={5} className="empty">
+                                    No users found.
+                                </TableCell>
                             </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {users.data.length === 0 && (
-                                <TableRow>
-                                    <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                                        No users found.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                            {users.data.map((user) => (
-                                <TableRow key={user.id}>
-                                    <TableCell className="font-medium">{user.name}</TableCell>
-                                    <TableCell className="lowercase">{user.email}</TableCell>
-                                    <TableCell>
-                                        <div className="flex flex-wrap gap-1">
-                                            {user.roles.length === 0 && <span className="text-muted-foreground">—</span>}
-                                            {user.roles.map((r) => (
-                                                <Badge key={r.id} variant="secondary">{r.name}</Badge>
-                                            ))}
-                                        </div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Badge variant={user.is_active ? 'default' : 'destructive'}>
-                                            {user.is_active ? 'Active' : 'Inactive'}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex justify-end gap-1">
-                                            {(user.id !== currentUserId || auth.canManageOwnAccount) && (
-                                                <>
-                                                    <Button variant="ghost" size="icon" title="Edit" onClick={() => openEdit(user)}>
-                                                        <Pencil className="size-4" />
-                                                    </Button>
-                                                    <Button
-                                                        variant="ghost" size="icon" title="Reset password"
-                                                        onClick={() => { setPwUser(user); pwForm.reset(); pwForm.clearErrors(); setPwOpen(true); }}
-                                                    >
-                                                        <KeyRound className="size-4" />
-                                                    </Button>
-                                                </>
-                                            )}
-                                            {user.id !== currentUserId && (
-                                                <>
-                                                    <Button
-                                                        variant="ghost" size="icon" title={user.is_active ? 'Deactivate' : 'Activate'}
-                                                        onClick={() => router.post(route('users.toggle', user.id), {}, { preserveScroll: true })}
-                                                    >
-                                                        <Power className={`size-4 ${user.is_active ? 'text-destructive' : 'text-green-600'}`} />
-                                                    </Button>
-                                                    <Button
-                                                        variant="ghost" size="icon" title="Delete"
-                                                        onClick={() => {
-                                                            if (confirm(`Delete user "${user.name}"?`)) {
-                                                                router.delete(route('users.destroy', user.id), { preserveScroll: true });
-                                                            }
-                                                        }}
-                                                    >
-                                                        <Trash2 className="size-4 text-destructive" />
-                                                    </Button>
-                                                </>
-                                            )}
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                    <Paginator meta={users} />
-                </div>
-            </div>
+                        )}
+                        {users.data.map((user) => (
+                            <TableRow key={user.id}>
+                                <TableCell className="entity-name"><strong>{user.name}</strong></TableCell>
+                                <TableCell className="lowercase">{user.email}</TableCell>
+                                <TableCell>
+                                    <div className="flex flex-wrap gap-1">
+                                        {user.roles.length === 0 && <span className="text-muted-foreground">—</span>}
+                                        {user.roles.map((r) => (
+                                            <span key={r.id} className="st master-tag">{r.name}</span>
+                                        ))}
+                                    </div>
+                                </TableCell>
+                                <TableCell>
+                                    <MasterStatus status={user.is_active ? 'active' : 'inactive'} />
+                                </TableCell>
+                                <TableCell>
+                                    <div className="acts">
+                                        {(user.id !== currentUserId || auth.canManageOwnAccount) && (
+                                            <>
+                                                <button type="button" className="ib" title="Edit" aria-label="Edit" onClick={() => openEdit(user)}>
+                                                    <Pencil className="i" aria-hidden="true" />
+                                                </button>
+                                                <button
+                                                    type="button" className="ib" title="Reset password" aria-label="Reset password"
+                                                    onClick={() => { setPwUser(user); pwForm.reset(); pwForm.clearErrors(); setPwOpen(true); }}
+                                                >
+                                                    <KeyRound className="i" aria-hidden="true" />
+                                                </button>
+                                            </>
+                                        )}
+                                        {user.id !== currentUserId && (
+                                            <>
+                                                <button
+                                                    type="button" className="ib" title={user.is_active ? 'Deactivate' : 'Activate'} aria-label={user.is_active ? 'Deactivate' : 'Activate'}
+                                                    onClick={() => router.post(route('users.toggle', user.id), {}, { preserveScroll: true })}
+                                                >
+                                                    <Power className={`size-4 ${user.is_active ? 'text-destructive' : 'text-green-600'}`} />
+                                                </button>
+                                                <button
+                                                    type="button" className="ib" title="Delete" aria-label="Delete"
+                                                    onClick={() => {
+                                                        if (confirm(`Delete user "${user.name}"?`)) {
+                                                            router.delete(route('users.destroy', user.id), { preserveScroll: true });
+                                                        }
+                                                    }}
+                                                >
+                                                    <Trash2 className="i text-destructive" aria-hidden="true" />
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>}
+            </MasterRegister>
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+                <DialogContent appearance="form" className="max-w-lg" aria-describedby={undefined}>
                     <DialogHeader>
                         <DialogTitle>{editing ? `Edit ${editing.name}` : 'Add User'}</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submit} className="grid gap-3">
+                    <form onSubmit={submit}>
+                        <DialogBody className="grid gap-3">
                         <div>
                             <Label htmlFor="name">Name *</Label>
                             <Input id="name" value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} autoFocus />
@@ -252,6 +220,7 @@ export default function UsersIndex({ users, roles, filters }: Props) {
                             <Checkbox checked={form.data.is_active} onCheckedChange={(v) => form.setData('is_active', !!v)} />
                             Active (can sign in)
                         </label>
+                        </DialogBody>
                         <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
                             <Button type="submit" disabled={form.processing}>{editing ? 'Save Changes' : 'Create User'}</Button>
@@ -261,11 +230,12 @@ export default function UsersIndex({ users, roles, filters }: Props) {
             </Dialog>
 
             <Dialog open={pwOpen} onOpenChange={setPwOpen}>
-                <DialogContent className="max-w-sm">
+                <DialogContent appearance="form" className="max-w-sm" aria-describedby={undefined}>
                     <DialogHeader>
                         <DialogTitle>Reset password{pwUser ? ` — ${pwUser.name}` : ''}</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submitPassword} className="grid gap-3">
+                    <form onSubmit={submitPassword}>
+                        <DialogBody className="grid gap-3">
                         <div>
                             <Label htmlFor="new_password">New password</Label>
                             <Input id="new_password" type="password" value={pwForm.data.password} onChange={(e) => pwForm.setData('password', e.target.value)} autoFocus />
@@ -275,6 +245,7 @@ export default function UsersIndex({ users, roles, filters }: Props) {
                             <Label htmlFor="new_password_confirmation">Confirm password</Label>
                             <Input id="new_password_confirmation" type="password" value={pwForm.data.password_confirmation} onChange={(e) => pwForm.setData('password_confirmation', e.target.value)} />
                         </div>
+                        </DialogBody>
                         <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setPwOpen(false)}>Cancel</Button>
                             <Button type="submit" disabled={pwForm.processing}>Reset</Button>

@@ -225,23 +225,10 @@
     }
 }
 
-.finance-overlay{position:fixed;inset:0;background:rgba(13,36,54,.45);z-index:50}
+.finance-overlay{position:fixed;inset:0;z-index:50}
 .finance-dialog {
     position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:51;
-    background:#fff;border-radius:16px;width:min(720px,calc(100% - 40px));
-    max-height:calc(100dvh - 40px);overflow:hidden;
-    box-shadow:0 24px 60px rgba(13,36,54,.3);
-    .payment-form{display:flex;flex-direction:column;max-height:inherit}
-    .mb{min-height:0;overscroll-behavior:contain}
-    .mh,.mf{flex:none}
-    /* modal */
-    .ib{width:30px;height:30px;border-radius:8px;border:0;background:none;display:grid;place-items:center;color:var(--ink3)}
-    .ib:hover{background:var(--line2);color:var(--ink)}
-    .mh{display:flex;align-items:flex-start;gap:10px;padding:18px 22px 14px;border-bottom:1px solid var(--line)}
-    .mh h2{font-size:17px;font-weight:700;letter-spacing:-.2px}
-    .msub{font-size:12px;color:var(--ink3);margin-top:2px}
-    .mh .ib{margin-left:auto}
-    .mb{padding:16px 22px;overflow-y:auto}
+    max-width:720px;
     .ptype{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
     .ptype button{border:1.5px solid var(--line);background:#fff;border-radius:11px;padding:10px 12px;display:grid;grid-template-columns:auto 1fr;column-gap:10px;align-items:center;text-align:left;font-weight:600;font-size:13px}
     .ptype button svg{grid-row:span 2;width:30px;height:30px;padding:7px;border-radius:8px;background:var(--line2);color:var(--ink2)}
@@ -251,14 +238,11 @@
     .fg{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px}
     .f{display:flex;flex-direction:column;gap:5px;min-width:0}
     .f.full{grid-column:1/-1}
-    .f label{font-size:12px;font-weight:600;color:var(--ink2)}
-    .f input,.f select{height:38px;border:1px solid #d5dce3;border-radius:9px;padding:0 11px;background:#fff;outline:none;font-size:13px;width:100%}
-    .f input:focus,.f select:focus{border-color:var(--teal2);box-shadow:0 0 0 3px rgba(20,184,166,.15)}
+    .f input,.f select{padding:0 11px;width:100%}
     .f .bad{border-color:var(--red)!important;box-shadow:0 0 0 3px rgba(220,38,38,.12)!important}
-    .amt{display:flex;align-items:center;border:1px solid #d5dce3;border-radius:9px;background:#fff;height:38px;overflow:hidden}
-    .amt:focus-within{border-color:var(--teal2);box-shadow:0 0 0 3px rgba(20,184,166,.15)}
+    .amt{display:flex;align-items:center;overflow:hidden}
     .amt span{padding:0 4px 0 11px;color:var(--ink3);font-weight:600;font-size:12px}
-    .amt input{border:0!important;box-shadow:none!important;height:100%;font-weight:700;font-size:14px;padding-left:4px}
+    .amt input{border:0;box-shadow:none;outline:none;align-self:stretch;font-weight:700;font-size:14px;padding-left:4px}
     .quick{display:flex;gap:6px;flex-wrap:wrap}
     .quick button{border:1px solid var(--line);background:#f7f9fa;border-radius:20px;padding:3px 9px;font-size:11px;font-weight:600;color:var(--ink2)}
     .quick button:hover{border-color:var(--teal2);color:var(--teal)}
@@ -298,7 +282,6 @@
     .msum .err{background:var(--redbg);border-color:#f8d0d0}
     .merr{font-size:12px;color:var(--red);font-weight:600;margin-top:8px;min-height:0}
     .merr:empty{display:none}
-    .mf{display:flex;align-items:center;gap:8px;padding:14px 22px;border-top:1px solid var(--line)}
     .mf .sp{flex:1}
     .mf .btn{padding:9px 18px;font-size:13px}
     .btn:disabled{opacity:.45;cursor:not-allowed}
@@ -311,8 +294,6 @@
     .ah .allocation-meta{font-weight:500;color:var(--ink3)}
     .ah .allocation-meta b{color:var(--ink)}
     @media(max-width:680px){
-        width:calc(100% - 16px);max-height:calc(100dvh - 16px);
-        .mh,.mb,.mf{padding:12px}
         .ar{grid-template-columns:minmax(0,1fr) auto 86px auto;gap:4px 7px;padding:8px}
         .ar .ix{display:none}
         .ar .dt{grid-column:1;grid-row:2;font-size:11px}
@@ -325,9 +306,7 @@
         .msum{grid-template-columns:1fr 1fr}
         .msum b{font-size:13px}
         .mf .keyboard-hint{display:none}
-        .f input,.f select{font-size:16px;height:42px}
-        .f .amt{height:42px}
-        .mf .btn{min-height:42px}
+        .f .amt input{font-size:16px}
     }
     @media(max-width:400px){
         .fg{column-gap:8px}

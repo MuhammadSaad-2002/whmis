@@ -1,8 +1,8 @@
 import InputError from '@/components/input-error';
 import { ProductSearchCell, type ProductHit } from '@/components/product-search-cell';
 import { PurchaseBatchCell } from '@/components/purchase-batch-cell';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -14,14 +14,14 @@ import { useTreasuryPayment } from '@/hooks/use-treasury-payment';
 import { draftWasSaved, useDraftLeave } from '@/hooks/use-draft-leave';
 import AppLayout from '@/layouts/app-layout';
 import type { VisitOptions } from '@inertiajs/core';
-import { amount, dec2, money, toNumber } from '@/lib/format';
+import { amount, dec2, money, pakistanDate, qty, shortDate, toNumber } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { computeLine, computeTotals } from '@/lib/invoice-math';
-import { type BreadcrumbItem } from '@/types';
-import { Head, router } from '@inertiajs/react';
-import { Copy, Plus, Printer, Save, Send, Trash2, XCircle } from 'lucide-react';
+import { Head, Link, router } from '@inertiajs/react';
+import { ArrowUp, Check, ChevronLeft, Copy, Landmark, Package, Plus, Printer, Save, Trash2, TrendingUp, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import './purchase-form.css';
 
 interface ItemRow {
     product_id: number | null;
@@ -53,6 +53,14 @@ interface InvoiceDto {
     discount_percent: string;
     gst_percent: string;
     notes: string | null;
+    updated_at: string | null;
+    posted_at: string | null;
+    subtotal: string;
+    item_discount_total: string;
+    item_gst_total: string;
+    discount_amount: string;
+    gst_amount: string;
+    total_margin: string;
     total_amount: string;
     items: {
         product_id: number;
@@ -67,12 +75,15 @@ interface InvoiceDto {
         retail_price: string;
         discount_percent: string;
         gst_percent: string;
+        net_amount: string;
+        margin: string;
+        margin_percent: string;
         remarks: string | null;
     }[];
 }
 
 interface Props {
-    companies: { id: number; name: string }[];
+    companies: { id: number; name: string; payment_terms?: string | null; payable_balance?: number | string | null }[];
     warehouse: { id: number; name: string };
     invoice: InvoiceDto | null;
 }
@@ -96,16 +107,22 @@ const DECIMAL_KEYS: ReadonlySet<keyof ItemRow> = new Set([
     'purchase_rate', 'trade_price', 'retail_price', 'discount_percent', 'gst_percent',
 ] as (keyof ItemRow)[]);
 
+const CELL_LABELS = ['Product', 'Batch', 'Expiry', 'Qty', 'Bonus', 'Rate', 'Trade', 'Retail', 'Disc %', 'GST %', 'Remarks'];
+const tableColumns = ['#', 'Product', 'Batch', 'Expiry', 'Qty', 'Bonus', 'Rate', 'Trade', 'Retail', 'Disc %', 'GST %', 'Net', 'Margin', 'Remarks', ''];
+const clockPKT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit' });
+
 export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
     const treasury = useTreasuryPayment();
     const { can } = usePermissions();
     const isDraft = !invoice || invoice.status === 'draft';
     const readonly = !isDraft;
+    const canSave = isDraft && can('purchases.create');
+    const canPost = canSave && can('purchases.post');
 
     const [header, setHeader] = useState({
         company_id: invoice ? String(invoice.company_id) : '',
         supplier_invoice_number: invoice?.supplier_invoice_number ?? '',
-        invoice_date: invoice?.invoice_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+        invoice_date: invoice?.invoice_date?.slice(0, 10) ?? pakistanDate(),
         due_date: invoice?.due_date?.slice(0, 10) ?? '',
         purchase_type: invoice?.purchase_type ?? 'credit',
         financial_account_id: String(invoice?.financial_account_id ?? ''),
@@ -136,6 +153,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
 
     const [searchSignal, setSearchSignal] = useState({ row: -1, n: 0 });
     const [saving, setSaving] = useState(false);
+    const [confirmAction, setConfirmAction] = useState<'post' | 'cancel' | null>(null);
     const [headerErrors, setHeaderErrors] = useState<Record<string, string>>({});
     const [rowErrors, setRowErrors] = useState<Record<number, Record<string, string>>>({});
 
@@ -228,6 +246,16 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
         () => computeTotals(computed.filter((_, i) => rows[i].product_id), header),
         [computed, rows, header],
     );
+    const displayTotals = readonly && invoice ? invoice : totals;
+    const filledRows = rows.filter(row => row.product_id);
+    const units = filledRows.reduce((sum, row) => sum + toNumber(row.quantity) + toNumber(row.bonus_quantity), 0);
+    const batches = `${filledRows.length} ${filledRows.length === 1 ? 'batch' : 'batches'}`;
+    const stockSummary = `${qty(units)} units · ${batches}`;
+    const supplier = companies.find(company => String(company.id) === header.company_id);
+    const isCash = header.purchase_type === 'cash';
+    const marginValue = toNumber(displayTotals.total_margin);
+    const invoiceTotal = toNumber(displayTotals.total_amount);
+    const marginPercent = invoiceTotal > 0 ? `${(marginValue / invoiceTotal * 100).toFixed(0)}%` : '';
 
     const grid = useKeyboardGrid({
         appendOnArrowDown: false,
@@ -319,10 +347,15 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
     });
 
     const draftVersion = JSON.stringify([header, rows]);
-    const draft = useDraftLeave({ version: draftVersion, editable: !readonly && can('purchases.create'), saving, save });
+    const draft = useDraftLeave({ version: draftVersion, editable: canSave, saving, save });
+
+    function persistDraft(options: VisitOptions) {
+        if (invoice) router.put(route('purchases.update', invoice.id), payload(), options);
+        else router.post(route('purchases.store'), payload(), options);
+    }
 
     function save(done?: (saved: boolean) => void) {
-        if (readonly || saving) {
+        if (!canSave || saving) {
             done?.(false);
             return;
         }
@@ -346,50 +379,64 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                 done?.(saved && draft.canLeaveAfterSave());
             },
         };
-        if (invoice) router.put(route('purchases.update', invoice.id), payload(), options);
-        else router.post(route('purchases.store'), payload(), options);
+        persistDraft(options);
     }
 
-    const post = () => {
-        if (!invoice || readonly || saving) return;
+    const askPost = () => {
+        if (!canPost || saving || confirmAction) return;
         if (!validate()) {
             toast.error(ALERT_FIX);
             return;
         }
-        if (!confirm(`Post ${invoice.invoice_number}? Stock will be received and the supplier ledger updated.`)) return;
+        setConfirmAction('post');
+    };
+
+    const post = () => {
+        if (!canPost || saving) return;
+        setConfirmAction(null);
         setSaving(true);
-        // Save latest edits first, then post.
-        router.put(route('purchases.update', invoice.id), payload(), {
+        // Store/update first, then use the existing posting route. If posting
+        // is rejected by stock or finance checks, the saved draft remains.
+        let posting = false;
+        persistDraft({
+            replace: true,
             preserveScroll: true,
             onSuccess: (page) => {
-                if (!draftWasSaved(page.props.flash)) {
-                    setSaving(false);
-                    return;
-                }
+                if (!draftWasSaved(page.props.flash)) return;
+                const id = (page.props.invoice as InvoiceDto | undefined)?.id ?? invoice?.id;
+                if (!id) return;
                 draft.markSaved(draftVersion);
-                router.post(route('purchases.post', invoice.id), {}, { onError: handleServerErrors, onFinish: () => setSaving(false) });
+                posting = true;
+                router.post(route('purchases.post', id), {}, { preserveScroll: true, onError: handleServerErrors, onFinish: () => setSaving(false) });
             },
-            onError: (errors) => { handleServerErrors(errors); setSaving(false); },
+            onError: handleServerErrors,
+            onFinish: () => { if (!posting) setSaving(false); },
         });
     };
 
-    const hotkeys = useInvoiceHotkeys({ onSave: save, onPost: post });
+    const cancel = () => {
+        if (!invoice || saving || invoice.status !== 'posted' || !can('purchases.cancel')) return;
+        setConfirmAction(null);
+        setSaving(true);
+        router.post(route('purchases.cancel', invoice.id), {}, { preserveScroll: true, onFinish: () => setSaving(false) });
+    };
+
+    const hotkeys = useInvoiceHotkeys({ onSave: save, onPost: askPost });
     useEffect(() => {
-        const listener = (e: KeyboardEvent) => hotkeys.handleKeyDown(e);
-        window.addEventListener('keydown', listener);
-        return () => window.removeEventListener('keydown', listener);
-    }, [hotkeys]);
-
-    const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Purchases', href: '/purchases' },
-        { title: invoice ? invoice.invoice_number : 'New Purchase Invoice', href: '#' },
-    ];
-
-    const statusBadge = invoice && (
-        <Badge variant={invoice.status === 'posted' ? 'default' : invoice.status === 'cancelled' ? 'destructive' : 'secondary'}>
-            {invoice.status}
-        </Badge>
-    );
+        if (readonly || confirmAction) return;
+        const listener = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || event.repeat || event.isComposing || document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && canPost) {
+                event.preventDefault();
+                event.stopPropagation();
+                askPost();
+                return;
+            }
+            hotkeys.handleKeyDown(event);
+        };
+        window.addEventListener('keydown', listener, true);
+        return () => window.removeEventListener('keydown', listener, true);
+    });
 
     const cellInput = (rowIndex: number, colIndex: number, key: keyof ItemRow, type = 'text', className = '') => {
         const isQty = key === 'quantity';
@@ -408,6 +455,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
             <Input
                 ref={grid.registerCell(rowIndex, colIndex) as never}
                 type={type}
+                aria-label={`${CELL_LABELS[colIndex]}, line ${rowIndex + 1}`}
                 min={isQty ? 1 : undefined}
                 value={rows[rowIndex][key] as string}
                 disabled={readonly || locked}
@@ -419,72 +467,38 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                 }}
                 onBlur={onBlur}
                 onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, colIndex)}
-                className={`h-8 rounded-none border-0 px-2 text-sm focus-visible:ring-1 ${cellError ? 'bg-destructive/10 ring-1 ring-destructive' : ''} ${className}`}
+                className={`purchase-cell ${className}`}
             />
         );
     };
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
+        <AppLayout>
             {draft.dialog}
-            <Head title={invoice ? invoice.invoice_number : 'New Purchase'} />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
-                    <div className="flex items-center gap-3">
-                        <h1 className="text-4xl font-bold">
-                            {invoice ? `Purchase ${invoice.invoice_number}` : 'New Purchase Invoice'}
-                        </h1>
-                        {statusBadge}
+            <Head title={invoice ? invoice.invoice_number : 'New Purchase Invoice'} />
+            <main className={`purchase-doc${readonly ? ' purchase-doc--view' : ''}`} aria-busy={saving}>
+                <nav className="purchase-crumb" aria-label="Breadcrumb">
+                    <Link href={route('purchases.index')}><ChevronLeft aria-hidden="true" />Purchase Invoices</Link>
+                    <span aria-hidden="true">/</span><span aria-current="page">{invoice?.invoice_number ?? 'New'}</span>
+                </nav>
+                <header className="purchase-heading">
+                    <h1>{invoice ? <><span>Purchase</span> {invoice.invoice_number}</> : 'New Purchase Invoice'}</h1>
+                    <span className="purchase-status" data-status={invoice?.status ?? 'draft'}>{invoice?.status ?? 'draft'}</span>
+                    {isDraft && invoice?.updated_at && draft.canLeaveAfterSave() && <span className="purchase-saved"><Check aria-hidden="true" />Draft saved {clockPKT.format(new Date(invoice.updated_at))}</span>}
+                    <div className="purchase-actions">
+                        {invoice && <>
+                            <Button variant="outline" className="purchase-button" asChild><a href={route('purchases.print', invoice.id)} target="_blank" rel="noreferrer"><Printer />Print</a></Button>
+                            {can('purchases.create') && <Button variant="outline" className="purchase-button" disabled={saving} onClick={() => router.post(route('purchases.duplicate', invoice.id), {}, { preserveState: false })}><Copy />Duplicate</Button>}
+                            {invoice.status === 'posted' && can('purchases.cancel') && <Button variant="outline" className="purchase-button purchase-button--danger" disabled={saving} onClick={() => setConfirmAction('cancel')}><XCircle />Cancel Invoice</Button>}
+                        </>}
+                        {canSave && <Button variant="outline" className="purchase-button" onClick={() => save()} disabled={saving}><Save />Save Draft <kbd>F8</kbd></Button>}
+                        {canPost && <Button className="purchase-button purchase-button--primary" onClick={askPost} disabled={saving}><Check />Post invoice <kbd>Ctrl ↵</kbd></Button>}
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                        {invoice && (
-                            <>
-                                <Button variant="outline" size="sm" asChild>
-                                    <a href={route('purchases.print', invoice.id)} target="_blank" rel="noreferrer">
-                                        <Printer className="mr-1 size-4" /> Print
-                                    </a>
-                                </Button>
-                                <Button
-                                    variant="outline" size="sm"
-                                    onClick={() => router.post(route('purchases.duplicate', invoice.id))}
-                                >
-                                    <Copy className="mr-1 size-4" /> Duplicate
-                                </Button>
-                                {invoice.status === 'posted' && can('purchases.cancel') && (
-                                    <Button
-                                        variant="outline" size="sm"
-                                        onClick={() => {
-                                            if (confirm('Cancel this posted invoice? Stock and ledger will be reversed.')) {
-                                                router.post(route('purchases.cancel', invoice.id));
-                                            }
-                                        }}
-                                    >
-                                        <XCircle className="mr-1 size-4 text-destructive" /> Cancel Invoice
-                                    </Button>
-                                )}
-                            </>
-                        )}
-                        {isDraft && (
-                            <>
-                                <Button variant="outline" size="sm" onClick={() => save()} disabled={saving}>
-                                    <Save className="mr-1 size-4" /> Save Draft <kbd className="ml-1 text-xs opacity-60">F8</kbd>
-                                </Button>
-                                {invoice && can('purchases.post') && (
-                                    <Button size="sm" onClick={post} disabled={saving}>
-                                        <Send className="mr-1 size-4" /> Post <kbd className="ml-1 text-xs opacity-60">F9</kbd>
-                                    </Button>
-                                )}
-                            </>
-                        )}
-                    </div>
-                </div>
+                </header>
 
-                <div
-                    data-enter-nav
-                    className="grid grid-cols-1 gap-3 rounded-xl border p-2.5 [&>div]:min-w-0 [&>div>label]:mb-1 [&>div>label]:block sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-5 xl:gap-x-2 xl:gap-y-1.5 xl:[&>div>button]:h-8 xl:[&>div>input]:h-8 xl:[&>div>label]:whitespace-nowrap xl:[&>div>label]:text-[11px] 2xl:grid-cols-9"
-                >
-                    <div>
-                        <Label>Supplier *</Label>
+                <section data-enter-nav className="purchase-fields" aria-label="Invoice details">
+                    <div className="purchase-field purchase-supplier">
+                        <Label htmlFor="purchase-supplier">Supplier <em>*</em></Label>
                         <Select
                             value={header.company_id}
                             onValueChange={(v) => {
@@ -494,9 +508,8 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                             disabled={readonly}
                         >
                             <SelectTrigger
-                                autoFocus={!readonly}
+                                id="purchase-supplier"
                                 aria-invalid={!!headerErrors.company_id}
-                                className={headerErrors.company_id ? 'border-destructive ring-1 ring-destructive' : ''}
                             >
                                 <SelectValue placeholder="Select supplier" />
                             </SelectTrigger>
@@ -506,113 +519,87 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                                 ))}
                             </SelectContent>
                         </Select>
-                        <InputError message={headerErrors.company_id} className="mt-1 text-xs" />
+                        {supplier && (supplier.payable_balance !== undefined || supplier.payment_terms) && <p className="purchase-field-note" title={supplier.payment_terms ?? undefined}>
+                            {supplier.payable_balance !== undefined && <>Payable {money(supplier.payable_balance)}{supplier.payment_terms ? ' · ' : ''}</>}{supplier.payment_terms}
+                        </p>}
+                        <InputError message={headerErrors.company_id} className="text-xs" />
                     </div>
-                    <div>
-                        <Label>Supplier Invoice #</Label>
+                    <div className="purchase-field">
+                        <Label htmlFor="purchase-supplier-reference">Supplier Invoice #</Label>
                         <Input
+                            id="purchase-supplier-reference" placeholder="e.g. 11622"
                             value={header.supplier_invoice_number}
                             disabled={readonly}
+                            aria-invalid={!!headerErrors.supplier_invoice_number}
                             onChange={(e) => setHeader((h) => ({ ...h, supplier_invoice_number: e.target.value }))}
                         />
                     </div>
-                    <div>
-                        <Label>Invoice Date *</Label>
+                    <div className="purchase-field">
+                        <Label htmlFor="purchase-invoice-date">Invoice Date <em>*</em></Label>
                         <Input
+                            id="purchase-invoice-date" aria-invalid={!!headerErrors.invoice_date}
                             type="date" value={header.invoice_date} disabled={readonly}
                             onChange={(e) => setHeader((h) => ({ ...h, invoice_date: e.target.value }))}
                         />
                     </div>
-                    <div>
-                        <Label>Due Date</Label>
+                    <div className="purchase-field">
+                        <Label htmlFor="purchase-due-date">Due Date</Label>
                         <Input
+                            id="purchase-due-date" aria-invalid={!!headerErrors.due_date}
                             type="date" value={header.due_date} disabled={readonly}
                             onChange={(e) => setHeader((h) => ({ ...h, due_date: e.target.value }))}
                         />
                     </div>
-                    <div>
-                        <Label>Type</Label>
-                        <Select
-                            value={header.purchase_type}
-                            onValueChange={(v) => setHeader((h) => ({ ...h, purchase_type: v, financial_account_id: v === 'cash' ? h.financial_account_id : '' }))}
-                            disabled={readonly}
-                        >
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="credit">Credit</SelectItem>
-                                <SelectItem value="cash">Cash</SelectItem>
-                            </SelectContent>
-                        </Select>
+                    <div className="purchase-field">
+                        <Label id="purchase-type-label">Type</Label>
+                        <div className="purchase-types" role="group" aria-labelledby="purchase-type-label">
+                            {['credit', 'cash'].map(type => <button key={type} type="button" aria-pressed={header.purchase_type === type} disabled={readonly}
+                                onClick={() => setHeader(h => ({ ...h, purchase_type: type, financial_account_id: type === 'cash' ? h.financial_account_id : '' }))}>{type === 'cash' ? 'Cash' : 'Credit'}</button>)}
+                        </div>
                     </div>
-                    {treasury.required && header.purchase_type === 'cash' && <div><Label htmlFor="purchase-cash-account">Pay from cash account</Label><select id="purchase-cash-account" className="h-9 w-full rounded-md border bg-background px-2" disabled={readonly} value={header.financial_account_id} onChange={e => setHeader(h => ({ ...h, financial_account_id: e.target.value }))}><option value="">Select an account</option>{treasury.accounts.filter(a => ['cash','petty_cash'].includes(a.kind)).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>}
-                    <div>
-                        <Label>Warehouse</Label>
-                        <Input value={warehouse.name} disabled />
+                    <div className="purchase-field">
+                        <Label htmlFor="purchase-warehouse">Warehouse</Label>
+                        <Input id="purchase-warehouse" value={warehouse.name} disabled />
                     </div>
-                    <div>
-                        <Label>Discount %</Label>
+                    <div className="purchase-field purchase-remarks">
+                        <Label htmlFor="purchase-remarks">Remarks</Label>
                         <Input
-                            type="number" min={0} max={100} step="0.01" value={header.discount_percent} disabled={readonly}
-                            onChange={(e) => setHeader((h) => ({ ...h, discount_percent: e.target.value }))}
-                            onBlur={(e) => setHeader((h) => ({ ...h, discount_percent: dec2(e.target.value) || '0.00' }))}
-                        />
-                    </div>
-                    <div>
-                        <Label>GST %</Label>
-                        <Input
-                            type="number" min={0} max={100} step="0.01" value={header.gst_percent} disabled={readonly}
-                            onChange={(e) => setHeader((h) => ({ ...h, gst_percent: e.target.value }))}
-                            onBlur={(e) => setHeader((h) => ({ ...h, gst_percent: dec2(e.target.value) || '0.00' }))}
-                            onKeyDown={(e) => {
-                                // Last header field: Enter drops into the grid's product cell.
-                                if (e.key === 'Enter' && !readonly) {
-                                    e.preventDefault();
-                                    grid.focusCell(0, 0);
-                                }
-                            }}
-                        />
-                    </div>
-                    <div className="sm:col-span-2 xl:col-span-1">
-                        <Label>Remarks</Label>
-                        <Input
+                            id="purchase-remarks" aria-invalid={!!headerErrors.notes}
                             value={header.notes} disabled={readonly}
                             placeholder="Optional note for this invoice"
                             onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && !readonly) { e.preventDefault(); grid.focusCell(0, 0); } }}
                         />
                     </div>
-                </div>
+                    {treasury.required && isCash && !readonly && <div className="purchase-field"><Label htmlFor="purchase-cash-account">Pay from cash account</Label><select id="purchase-cash-account" aria-invalid={!!headerErrors.financial_account_id} value={header.financial_account_id} onChange={e => setHeader(h => ({ ...h, financial_account_id: e.target.value }))}><option value="">Select an account</option>{treasury.accounts.filter(a => ['cash', 'petty_cash'].includes(a.kind)).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>}
+                </section>
 
-                <div className="rounded-xl border">
-                    <div className="max-h-[55dvh] overflow-auto">
-                    <table className="w-full min-w-[1250px] text-sm">
-                        <thead className="sticky top-0 z-10 bg-muted text-xs uppercase">
-                            <tr className="[&>th]:border-b [&>th]:px-2 [&>th]:py-2 [&>th]:text-left">
-                                <th className="w-8">#</th>
-                                <th className="min-w-56">Product <kbd className="opacity-50">F2</kbd></th>
-                                <th className="w-28">Batch</th>
-                                <th className="w-36">Expiry</th>
-                                <th className="w-20 text-right">Qty</th>
-                                <th className="w-20 text-right">Bonus</th>
-                                <th className="w-24 text-right">Rate</th>
-                                <th className="w-24 text-right">Trade</th>
-                                <th className="w-24 text-right">Retail</th>
-                                <th className="w-20 text-right">Disc %</th>
-                                <th className="w-20 text-right">GST %</th>
-                                <th className="w-28 text-right">Net</th>
-                                <th className="w-28 text-right">Margin</th>
-                                <th className="w-28">Remarks</th>
-                                <th className="w-10" />
-                            </tr>
-                        </thead>
+                {readonly && invoice && (invoice.status === 'posted' || invoice.posted_at) && <section className="purchase-strip" aria-label="Posted invoice summary">
+                    <SummaryTile icon={Package} tone="teal" label={invoice.status === 'cancelled' ? 'Stock reversed' : 'Stock added'} value={stockSummary} />
+                    <SummaryTile icon={ArrowUp} tone="red" label={invoice.status === 'cancelled' ? (isCash ? 'Cash payment reversed' : 'Payable reversed') : isCash ? 'Paid in cash' : 'Added to payable'} value={money(invoiceTotal)} />
+                    <SummaryTile icon={Landmark} tone="blue" label={supplier?.payable_balance !== undefined ? 'Supplier balance now' : 'Supplier'} value={supplier?.payable_balance !== undefined ? money(supplier.payable_balance) : supplier?.name ?? '—'} />
+                    <SummaryTile icon={TrendingUp} tone={marginValue < 0 ? 'red' : 'green'} label="Expected margin" value={`${money(marginValue)}${marginPercent ? ` · ${marginPercent}` : ''}`} />
+                </section>}
+
+                <section className="purchase-lines" aria-label="Invoice items">
+                    <div className="purchase-lines-scroll" tabIndex={0} role="region" aria-label="Scrollable invoice line items">
+                    <table className="purchase-table">
+                        <thead><tr>{tableColumns.map((label, index) => <th key={index} scope="col" className={index >= 4 && index <= 12 ? 'text-right' : ''}>
+                            {label || <span className="sr-only">Actions</span>}{index === 1 && !readonly && <kbd>F2</kbd>}
+                        </th>)}</tr></thead>
                         <tbody>
-                            {rows.map((row, rowIndex) => (
-                                <tr key={rowIndex} className="border-b last:border-0 [&>td]:border-r [&>td]:p-0 [&>td:last-child]:border-r-0">
-                                    <td className="px-2 text-center text-muted-foreground">{rowIndex + 1}</td>
+                            {rows.map((row, rowIndex) => {
+                                const stored = readonly ? invoice?.items[rowIndex] : undefined;
+                                const net = toNumber(stored?.net_amount ?? computed[rowIndex].net_amount);
+                                const margin = toNumber(stored?.margin ?? computed[rowIndex].margin);
+                                const percent = toNumber(stored?.margin_percent ?? computed[rowIndex].margin_percent);
+                                return <tr key={rowIndex} data-issue={!!rowErrors[rowIndex]}>
+                                    <td className="purchase-line-no">{rowIndex + 1}</td>
                                     <td
-                                        className={rowErrors[rowIndex]?.product_id ? 'ring-1 ring-inset ring-destructive' : ''}
+                                        className="purchase-product" data-invalid={!!rowErrors[rowIndex]?.product_id}
                                         title={rowErrors[rowIndex]?.product_id}
                                     >
-                                        <ProductSearchCell
+                                        {readonly ? <span title={row.product_name}>{row.product_name}</span> : <ProductSearchCell
                                             value={row.product_name}
                                             warehouseId={warehouse.id}
                                             disabled={readonly}
@@ -620,13 +607,13 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                                             onSelect={(product) => applyProduct(rowIndex, product)}
                                             onGridKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 0)}
                                             inputRef={grid.registerCell(rowIndex, 0)}
-                                        />
+                                        />}
                                     </td>
                                     <td
-                                        className={rowErrors[rowIndex]?.batch_number ? 'ring-1 ring-inset ring-destructive' : ''}
+                                        data-invalid={!!rowErrors[rowIndex]?.batch_number}
                                         title={rowErrors[rowIndex]?.batch_number}
                                     >
-                                        <PurchaseBatchCell
+                                        {readonly ? <span className="purchase-cell-value">{row.batch_number}</span> : <PurchaseBatchCell
                                             productId={row.product_id}
                                             warehouseId={warehouse.id}
                                             value={row.batch_id}
@@ -663,7 +650,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                                                 setRows((r) => r.map((rw, i) => (i === rowIndex ? { ...rw, batch_id: '', batch_number: number } : rw)));
                                                 grid.focusCell(rowIndex, 2); // proceed to Expiry (new batch)
                                             }}
-                                        />
+                                        />}
                                     </td>
                                     <td>{cellInput(rowIndex, 2, 'expiry_date', 'date')}</td>
                                     <td>{cellInput(rowIndex, 3, 'quantity', 'number', 'text-right')}</td>
@@ -673,50 +660,82 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                                     <td>{cellInput(rowIndex, 7, 'retail_price', 'number', 'text-right')}</td>
                                     <td>{cellInput(rowIndex, 8, 'discount_percent', 'number', 'text-right')}</td>
                                     <td>{cellInput(rowIndex, 9, 'gst_percent', 'number', 'text-right')}</td>
-                                    <td className="px-2 text-right tabular-nums">{amount(computed[rowIndex].net_amount)}</td>
-                                    <td className="px-2 text-right tabular-nums">
-                                        <span className={computed[rowIndex].margin < 0 ? 'text-destructive' : ''}>
-                                            {amount(computed[rowIndex].margin)}
-                                        </span>
-                                        <span className="ml-1 text-xs text-muted-foreground">
-                                            {computed[rowIndex].margin_percent.toFixed(2)}%
-                                        </span>
+                                    <td className="purchase-calc"><b data-empty={!row.product_id}>{amount(net)}</b></td>
+                                    <td className="purchase-calc">
+                                        {row.product_id && (stored || toNumber(row.purchase_rate)) ?
+                                            <div className="purchase-margin">{amount(margin)}<span data-tone={percent < 0 ? 'red' : percent < 20 ? 'amber' : 'green'}>{percent.toFixed(0)}%</span></div> : <span className="purchase-muted">—</span>}
                                     </td>
                                     <td>{cellInput(rowIndex, 10, 'remarks')}</td>
-                                    <td className="px-1 text-center">
+                                    <td className="purchase-line-action">
                                         {!readonly && (
-                                            <button type="button" tabIndex={-1} onClick={() => removeRow(rowIndex)}>
-                                                <Trash2 className="size-4 text-muted-foreground hover:text-destructive" />
+                                            <button type="button" title="Remove line" aria-label={`Remove line ${rowIndex + 1}`} onClick={() => removeRow(rowIndex)}>
+                                                <Trash2 />
                                             </button>
                                         )}
                                     </td>
-                                </tr>
-                            ))}
+                                </tr>;
+                            })}
                         </tbody>
                     </table>
                     </div>
                     {!readonly && (
-                        <div className="border-t p-2">
-                            <Button variant="ghost" size="sm" onClick={() => setRows((r) => [...r, emptyRow()])}>
-                                <Plus className="mr-1 size-4" /> Add Row
-                            </Button>
+                        <div className="purchase-add-row">
+                            <button type="button" onClick={() => { setRows((r) => [...r, emptyRow()]); grid.focusCell(rows.length, 0); }}><Plus /> Add line</button>
+                            <div className="purchase-keys"><span><kbd>Enter</kbd> next cell</span><span><kbd>↑ ↓</kbd> move between lines</span><span><kbd>Ctrl + I</kbd> insert</span><span><kbd>Ctrl + D</kbd> delete</span><span><kbd>F2</kbd> product search</span></div>
                         </div>
                     )}
-                </div>
+                </section>
 
-                <div className="sticky bottom-0 z-10 mt-auto bg-background pt-2">
-                    <div className="flex flex-wrap items-center gap-x-8 gap-y-1 rounded-xl border bg-muted px-5 py-3 text-base font-bold tabular-nums">
-                        <span>Subtotal <span className="ml-1">{amount(totals.subtotal)}</span></span>
-                        <span>Discounts <span className="ml-1">−{amount(totals.item_discount_total)}</span></span>
-                        <span>GST <span className="ml-1">+{amount(totals.item_gst_total)}</span></span>
-                        {totals.discount_amount > 0 && <span>Inv. Disc <span className="ml-1">−{amount(totals.discount_amount)}</span></span>}
-                        {totals.gst_amount > 0 && <span>Inv. GST <span className="ml-1">+{amount(totals.gst_amount)}</span></span>}
-                        <span className="ml-auto font-normal text-muted-foreground">Exp. Margin <span className="ml-1">{amount(totals.total_margin)}</span></span>
-                        <span className="text-2xl text-primary">Total <span className="ml-1">{money(totals.total_amount)}</span></span>
-                    </div>
-                </div>
-            </div>
+                {!readonly && (Object.keys(headerErrors).length > 0 || Object.keys(rowErrors).length > 0) && <div className="purchase-issues" role="alert">
+                    <b>Check these fields</b><ul>
+                        {Object.entries(headerErrors).map(([key, message]) => <li key={key}>{message}</li>)}
+                        {Object.entries(rowErrors).flatMap(([index, errors]) => Object.entries(errors).map(([key, message]) => {
+                            const col = key === 'product_id' ? 0 : COLS.findIndex(name => name === key);
+                            return <li key={`${index}-${key}`}>{col < 0 ? `Line ${Number(index) + 1}: ${message}` : <button type="button" onClick={() => grid.focusCell(Number(index), col)}>Line {Number(index) + 1}: {message}</button>}</li>;
+                        }))}
+                    </ul>
+                </div>}
+
+                <section className="purchase-totals" aria-label="Invoice totals">
+                    <div className="purchase-total-part"><span>Subtotal</span><b>{amount(displayTotals.subtotal)}</b></div>
+                    {(['discount_percent', 'gst_percent'] as const).map(key => {
+                        const discount = key === 'discount_percent';
+                        const adjustment = discount ? toNumber(displayTotals.discount_amount) + toNumber(displayTotals.item_discount_total) : toNumber(displayTotals.gst_amount) + toNumber(displayTotals.item_gst_total);
+                        const name = discount ? 'Discount' : 'GST';
+                        return <label className="purchase-total-part" key={key}><span>{name}</span><span className="purchase-percent">
+                            <input aria-label={`Invoice ${name.toLowerCase()} %`} aria-invalid={!!headerErrors[key]} type="number" min="0" max="100" step="0.01" value={header[key]} disabled={readonly}
+                                onChange={e => setHeader(h => ({ ...h, [key]: e.target.value }))} onBlur={e => setHeader(h => ({ ...h, [key]: dec2(e.target.value) || '0.00' }))} />
+                            <i aria-hidden="true">%</i></span><b data-empty={adjustment === 0}>{discount ? '−' : '+'}{amount(adjustment)}</b></label>;
+                    })}
+                    <div className="purchase-total-part"><span>Items</span><b className="purchase-muted">{filledRows.length} · {qty(units)} units</b></div>
+                    <div className="purchase-margin-total" data-loss={marginValue < 0}><span>Exp. margin</span><b>{amount(marginValue)}</b>{marginPercent && <small>{marginPercent}</small>}</div>
+                    <div className="purchase-grand"><span>Total</span><b>{money(invoiceTotal)}</b></div>
+                </section>
+            </main>
+
+            <Dialog open={confirmAction !== null} onOpenChange={open => { if (!open) setConfirmAction(null); }}>
+                <DialogContent appearance="form" className="purchase-dialog max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>{confirmAction === 'cancel' ? `Cancel ${invoice?.invoice_number}?` : 'Post this purchase invoice?'}</DialogTitle>
+                        <DialogDescription>{confirmAction === 'cancel' ? 'Cancelling reverses the invoice’s stock and ledger entries. This can’t be undone.' : 'Stock and the supplier ledger update when you post. A posted invoice can’t be edited.'}</DialogDescription>
+                    </DialogHeader>
+                    {confirmAction === 'post' && <DialogBody><dl className="purchase-dialog-details">
+                        <div><dt>Supplier</dt><dd>{supplier?.name}</dd></div>
+                        <div><dt>Stock into {warehouse.name.toLowerCase()}</dt><dd>{stockSummary}</dd></div>
+                        <div><dt>{isCash ? 'Paid in cash' : 'Added to payable'}</dt><dd>{money(invoiceTotal)}</dd></div>
+                        {!isCash && <div><dt>Due</dt><dd>{header.due_date ? shortDate(header.due_date) : 'No due date'}</dd></div>}
+                    </dl></DialogBody>}
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setConfirmAction(null)}>{confirmAction === 'cancel' ? 'Keep invoice' : 'Back'}</Button>
+                        <Button variant={confirmAction === 'cancel' ? 'destructive' : 'default'} disabled={saving} onClick={confirmAction === 'cancel' ? cancel : post}>{confirmAction === 'cancel' ? 'Cancel invoice' : 'Post invoice'}</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
         </AppLayout>
     );
+}
+
+function SummaryTile({ icon: Icon, tone, label, value }: { icon: typeof Package; tone: string; label: string; value: string }) {
+    return <div className="purchase-summary-tile"><span className="purchase-summary-icon" data-tone={tone}><Icon aria-hidden="true" /></span><div><small>{label}</small><b>{value}</b></div></div>;
 }

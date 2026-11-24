@@ -1,0 +1,52 @@
+.master-register {
+    .hero { min-height: 100px; }
+    .filters .fld { height: 42px; }
+    .filters .register-date input { width: 128px; min-width: 0; }
+    .filters .dens { width: 42px; height: 42px; }
+    .dens[aria-pressed='true'] { border-color: var(--teal); background: var(--tealbg); color: var(--teal); }
+    .tblwrap > div { overflow: visible; }
+    .tblwrap table { min-width: 650px; }
+    .tblwrap table.product-table { min-width: 820px; }
+    .tblwrap table.customer-table, .tblwrap table.supplier-table { min-width: 760px; }
+    .tblwrap table.category-table { min-width: 550px; }
+    .tblwrap table.loan-table { min-width: 1080px; }
+    .tblwrap table.loan-table-out { min-width: 1380px; }
+    .tblwrap table.audit-table { min-width: 890px; }
+    .tblwrap table.register-short-table { min-width: 0; }
+    .tblwrap th.r { text-align: right; }
+    th { height: auto; }
+    tbody tr { cursor: default; }
+    .entity-name { white-space: normal; min-width: 155px; }
+    .entity-name > strong { display: block; font-weight: 700; }
+    .entity-name small, .row-secondary { display: block; color: var(--ink3); font-size: 13px; }
+    .wrap-cell { white-space: normal; overflow-wrap: anywhere; }
+    .st.register-positive { background: var(--greenbg); color: var(--green); }
+    .st.register-neutral, .st.master-tag { background: var(--line2); color: var(--ink2); }
+    .st.register-attention { background: var(--amberbg); color: var(--amber); }
+    .st.register-negative { background: var(--redbg); color: var(--red); }
+    .st.master-tag { margin-inline-start: 4px; text-transform: none; }
+    .master-delete { color: var(--red); }
+    .master-delete:hover { background: var(--redbg); color: var(--red); }
+    .pg { flex-wrap: wrap; }
+    .register-hero-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .register-stats { display: grid; gap: 10px; margin-top: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .register-panel { margin-top: 14px; }
+    .register-panel h2 { font-size: 17px; font-weight: 700; }
+    .register-group { position: static; background: var(--tealbg); color: var(--teal); }
+    .audit-toggle-row { cursor: pointer; }
+    .audit-detail { background: var(--bg); }
+    .audit-detail-table :is(th, td) { position: static; white-space: normal; overflow-wrap: anywhere; }
+    .pg .page-current { display: grid; min-width: 30px; height: 30px; place-items: center; border-radius: 7px; background: var(--navy); padding: 0 8px; color: #fff; font-size: 12px; font-weight: 600; }
+    @media (max-width:760px) {
+        .hero { min-height: auto; }
+        .filters .app-search-field { flex-basis: 100%; max-width: none; }
+        .filters .choice select { max-width: none; }
+        .filters .choice { max-width: 100%; }
+        .filters .choice select, .filters .register-date input { font-size: 16px; }
+        .register-stats { gap: 6px; }
+        .register-stats .kpi { padding: 10px; }
+        .acts .ib { width: 36px; height: 40px; }
+        .pager .sp { display: none; }
+        .pager .pg { margin-inline-start: auto; }
+    }
+}

@@ -25,6 +25,7 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SalesInvoiceController;
 use App\Http\Controllers\SampleIssueController;
 use App\Http\Controllers\SampleReceiptController;
+use App\Http\Controllers\StaffDailyActivityController;
 use App\Http\Controllers\StockLoanController;
 use App\Http\Controllers\UserController;
 use App\Http\Middleware\AuthorizeOperations;
@@ -32,10 +33,12 @@ use App\Services\ReportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use Spatie\Permission\Middleware\RoleMiddleware;
 
 Route::get('/', fn () => redirect()->route('workspace'))->name('home');
 
 Route::middleware(['auth', 'licensed'])->group(function () {
+    Route::get('staff-activity', StaffDailyActivityController::class)->middleware(RoleMiddleware::class.':Super Admin')->name('staff-activity.index');
     Route::get('hr/my-profile', [\App\Http\Controllers\HrController::class, 'selfProfile'])->middleware('can:hr.self.view')->name('hr.self');
     Route::get('hr/employees/{employee}', [\App\Http\Controllers\HrController::class, 'employee'])->middleware('can:employees.view')->name('hr.employee');
     Route::put('hr/employees/{employee}/customers', [\App\Http\Controllers\HrController::class, 'assignCustomers'])->middleware(['can:employees.view', 'can:bookers.assign'])->name('hr.employee.customers');

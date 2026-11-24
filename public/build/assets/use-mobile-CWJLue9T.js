@@ -1,0 +1,1 @@
+import{r as o}from"./app-D2CcRsw_.js";const c=768;function d(s=c){const e=`(width < ${s}px)`,[i,a]=o.useState(()=>typeof window<"u"&&window.matchMedia(e).matches);return o.useEffect(()=>{const t=window.matchMedia(e),n=()=>{a(t.matches)};return t.addEventListener("change",n),n(),()=>t.removeEventListener("change",n)},[e]),i}export{d as u};

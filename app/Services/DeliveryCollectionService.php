@@ -221,11 +221,13 @@ class DeliveryCollectionService
                     'method' => $method, 'amount' => Paisa::rupees($amount + $shortage), 'payment_date' => $date, 'reference_no' => $reference ?: null,
                     '_verified_cash_paisa' => $row->included_in_opening ? 0 : $amount,
                     'notes' => $notes ?: "Verified delivery collection #{$id}", 'financial_account_id' => $account->id,
-                    ], [['invoice_type' => $invoice->getMorphClass(), 'invoice_id' => $invoice->id, 'amount' => Paisa::rupees($amount + $shortage)]]);
+                    ], [['invoice_type' => $invoice->getMorphClass(), 'invoice_id' => $invoice->id, 'amount' => Paisa::rupees($amount + $shortage)]], recalculateCommissions: false);
                 }
             }
             DB::table('delivery_collections')->where('id', $id)->update(['verified_paisa' => $amount, 'payment_id' => $payment?->id,
                 'shortage_paisa' => $shortage, 'reviewer_id' => $actor->id, 'review_note' => $notes ?: null, 'recorded_at' => now()]);
+            // Both commission roles must see the verified amount, not just the payment allocation.
+            if ($payment) app(CommissionService::class)->recalculate($invoice);
             if ($approval) {
                 $approval->update(['status' => 'posted', 'posted_by' => $actor->id, 'posted_at' => now()]);
                 $this->treasury->event('approval', $approval->id, 'posted', $actor, ['payment_id' => $payment->id]);

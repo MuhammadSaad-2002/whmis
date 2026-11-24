@@ -1,7 +1,8 @@
+import { RegisterLayout, RegisterList } from '@/components/master-register';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-    Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+    Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -74,72 +75,60 @@ export default function RolesIndex({ roles, permissionGroups }: Props) {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Roles & Permissions" />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
-                    <div>
-                        <h1 className="text-4xl font-bold">Roles &amp; Permissions</h1>
-                        <p className="text-sm text-muted-foreground">Define roles and what each can do</p>
-                    </div>
-                    <div className="flex gap-2">
-                        <Button variant="outline" asChild>
-                            <Link href={route('permissions.index')}>
-                                <ShieldCheck className="mr-1 size-4" /> Permission Catalog
-                            </Link>
-                        </Button>
-                        <Button onClick={openCreate}>
-                            <Plus className="mr-1 size-4" /> Add Role
-                        </Button>
-                    </div>
-                </div>
-
-                <div className="rounded-xl border">
-                    <Table>
+            <RegisterLayout title="Roles & Permissions" description={<>Define roles and what each can do · {roles.length} {roles.length === 1 ? 'role' : 'roles'}</>}
+                actions={<div className="register-hero-actions">
+                    <Link className="hbtn" href={route('permissions.index')}><ShieldCheck className="i" aria-hidden="true" />Permission Catalog</Link>
+                    <button type="button" className="hbtn pri" onClick={openCreate}><Plus className="i" aria-hidden="true" />Add Role</button>
+                </div>}>
+                <RegisterList title="Roles">
+                    {dense => <Table className={dense ? 'dense' : undefined}>
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Role</TableHead>
-                                <TableHead className="text-right">Users</TableHead>
-                                <TableHead className="text-right">Permissions</TableHead>
-                                <TableHead className="w-24" />
+                                <TableHead className="r">Users</TableHead>
+                                <TableHead className="r">Permissions</TableHead>
+                                <TableHead className="r"><span className="sr-only">Actions</span></TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {roles.map((role) => (
                                 <TableRow key={role.id}>
-                                    <TableCell className="font-medium">{role.name}</TableCell>
-                                    <TableCell className="text-right tabular-nums">{role.users_count}</TableCell>
-                                    <TableCell className="text-right tabular-nums">{role.permissions.length}</TableCell>
+                                    <TableCell className="entity-name"><strong>{role.name}</strong></TableCell>
+                                    <TableCell className="r num">{role.users_count}</TableCell>
+                                    <TableCell className="r num">{role.permissions.length}</TableCell>
                                     <TableCell>
-                                        <div className="flex justify-end gap-1">
-                                            <Button variant="ghost" size="icon" title="Edit" onClick={() => openEdit(role)}>
-                                                <Pencil className="size-4" />
-                                            </Button>
+                                        <div className="acts">
+                                            <button type="button" className="ib" title="Edit" aria-label="Edit" onClick={() => openEdit(role)}>
+                                                <Pencil className="i" aria-hidden="true" />
+                                            </button>
                                             {role.name !== 'Super Admin' && (
-                                                <Button
-                                                    variant="ghost" size="icon" title="Delete"
+                                                <button
+                                                    type="button" className="ib" title="Delete" aria-label="Delete"
                                                     onClick={() => {
                                                         if (confirm(`Delete role "${role.name}"?`)) {
                                                             router.delete(route('roles.destroy', role.id), { preserveScroll: true });
                                                         }
                                                     }}
                                                 >
-                                                    <Trash2 className="size-4 text-destructive" />
-                                                </Button>
+                                                    <Trash2 className="i text-destructive" aria-hidden="true" />
+                                                </button>
                                             )}
                                         </div>
                                     </TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
-                    </Table>
-                </div>
-            </div>
+                    </Table>}
+                </RegisterList>
+            </RegisterLayout>
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+                <DialogContent appearance="form" className="max-w-3xl" aria-describedby={undefined}>
                     <DialogHeader>
                         <DialogTitle>{editing ? `Edit ${editing.name}` : 'Add Role'}</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submit} className="grid gap-4">
+                    <form onSubmit={submit}>
+                        <DialogBody className="grid gap-4">
                         <div>
                             <Label htmlFor="role_name">Role Name *</Label>
                             <Input id="role_name" value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} disabled={isSuperAdmin} autoFocus />
@@ -171,6 +160,7 @@ export default function RolesIndex({ roles, permissionGroups }: Props) {
                                 );
                             })}
                         </div>
+                        </DialogBody>
                         <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
                             <Button type="submit" disabled={form.processing}>{editing ? 'Save Changes' : 'Create Role'}</Button>

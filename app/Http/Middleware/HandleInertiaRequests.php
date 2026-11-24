@@ -42,7 +42,8 @@ class HandleInertiaRequests extends Middleware
         $user = $request->user();
         $canViewSupplierDetails = $user?->canViewSupplierDetails() ?? false;
         $permissions = $user?->getAllPermissions()->pluck('name')
-            ->diff(['commission.self'])
+            ->diff(['commission.self', 'view-staff-daily-activity'])
+            ->when($user?->hasRole('Super Admin'), fn ($names) => $names->push('view-staff-daily-activity'))
             ->when(! $user?->can('manage-employee-commissions'), fn ($names) => $names->diff(['commission.manage', 'commission.waive']));
 
         return array_merge(parent::share($request), [

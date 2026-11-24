@@ -1,12 +1,12 @@
 /* Shared register styling; the sales preview is scoped separately. */
-.sales-invoices, .purchase-invoices, .booking-register, .inventory-register, .payment-register, .sales-preview{
+.sales-invoices, .purchase-invoices, .booking-register, .inventory-register, .payment-register, .master-register, .sales-preview{
   --bg:#f3f5f7; --card:#fff; --ink:#0f1f2c; --ink2:#3e5367; --ink3:#415467; --line:#e5e9ee; --line2:#eef1f4;
   --navy:#0d2436; --teal:#087568; --teal2:#14b8a6; --tealbg:#e6f6f3;
   --sales:#1f4e79; --purch:#e3a008; --red:#b4232a; --redbg:#fdecec; --amber:#984708; --amberbg:#fff6e0; --green:#087452; --greenbg:#e3f7ef;
   --radius:14px; --shadow:0 1px 2px rgba(15,31,44,.05),0 4px 16px rgba(15,31,44,.04);
 }
 
-.sales-invoices, .purchase-invoices, .booking-register, .inventory-register, .payment-register, .sales-preview {
+.sales-invoices, .purchase-invoices, .booking-register, .inventory-register, .payment-register, .master-register, .sales-preview {
     font-family:var(--font-sans);
     font-size:14px;
     line-height:1.45;
@@ -35,7 +35,7 @@
     button:disabled{opacity:.45;cursor:default}
 }
 
-.sales-invoices, .purchase-invoices, .booking-register, .inventory-register, .payment-register {
+.sales-invoices, .purchase-invoices, .booking-register, .inventory-register, .payment-register, .master-register {
     padding:18px 20px 40px;
     min-height:100%;
     background:var(--bg);

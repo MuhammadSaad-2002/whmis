@@ -1,4 +1,5 @@
 import { Paginator, type PaginatedData } from '@/components/paginator';
+import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import AppLayout from '@/layouts/app-layout';
 import { money, shortDate } from '@/lib/format';
@@ -340,17 +341,19 @@ function InvoicePreview({ row, today }: { row: Invoice; today: string }) {
 
 function DailySheet({ open, setOpen, today, staff, restoreFocus }: { open: boolean; setOpen: (open: boolean) => void; today: string; staff: Staff[]; restoreFocus: () => void }) {
     return <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="right" className="dispatch-preview w-full gap-0 p-0 sm:max-w-[500px]" onCloseAutoFocus={event => { event.preventDefault(); restoreFocus(); }}>
-            <SheetHeader className="drawer-header text-left">
+        <SheetContent appearance="form" side="right" className="dispatch-preview w-full sm:max-w-[500px]" onCloseAutoFocus={event => { event.preventDefault(); restoreFocus(); }}>
+            <SheetHeader>
                 <SheetTitle>Daily delivery sheet</SheetTitle>
                 <SheetDescription>Print invoices planned for one staff member on the chosen date.</SheetDescription>
             </SheetHeader>
-            <form className="drawer-body sheet-form" method="get" target="_blank" rel="noopener" action={route('dispatch.sheet', {}, false)}>
-                <label>Delivery date<input className="filter-field" type="date" name="date" required defaultValue={today} /></label>
-                <label>Salesman / staff<select className="filter-field" name="assignee_id" required defaultValue="">
+            <form method="get" target="_blank" rel="noopener" action={route('dispatch.sheet', {}, false)}>
+                <div className="grid gap-3" data-popup-section="body">
+                <label className="grid gap-1">Delivery date<input className="px-3" type="date" name="date" required defaultValue={today} /></label>
+                <label className="grid gap-1">Salesman / staff<select className="px-3" name="assignee_id" required defaultValue="">
                     <option value="">Choose staff</option>{staff.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}
                 </select></label>
-                <button type="submit" className="outline-button solid"><Printer />Print daily sheet</button>
+                </div>
+                <footer data-popup-section="footer"><Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit"><Printer />Print daily sheet</Button></footer>
             </form>
         </SheetContent>
     </Sheet>;

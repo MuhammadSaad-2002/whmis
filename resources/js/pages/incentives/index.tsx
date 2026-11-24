@@ -2,7 +2,7 @@ import { Paginator, type PaginatedData } from '@/components/paginator';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-    Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+    Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -291,11 +291,12 @@ export default function IncentivesIndex({ rules, products, companies, customers,
             </div>
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+                <DialogContent appearance="form" className="max-w-2xl" aria-describedby={undefined}>
                     <DialogHeader>
                         <DialogTitle>{editing ? `Edit ${editing.name}` : 'Add Incentive Rule'}</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <form onSubmit={submit}>
+                        <DialogBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                             <Label>Rule Name *</Label>
                             <Input
@@ -469,7 +470,8 @@ export default function IncentivesIndex({ rules, products, companies, customers,
                                 </SelectContent>
                             </Select>
                         </div>
-                        <DialogFooter className="col-span-2">
+                        </DialogBody>
+                        <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
                             <Button type="submit" disabled={form.processing}>{editing ? 'Save Changes' : 'Create Rule'}</Button>
                         </DialogFooter>

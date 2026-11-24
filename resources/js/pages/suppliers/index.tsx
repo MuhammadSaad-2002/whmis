@@ -1,8 +1,8 @@
-import { Paginator, type PaginatedData } from '@/components/paginator';
-import { Badge } from '@/components/ui/badge';
+import { MasterRegister, MasterStatus, useMasterFilters } from '@/components/master-register';
+import { type PaginatedData } from '@/components/paginator';
 import { Button } from '@/components/ui/button';
 import {
-    Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+    Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,8 +18,8 @@ import { type BreadcrumbItem } from '@/types';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { ALERT_FIX, positive, required, useClientValidation } from '@/lib/form-validation';
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { BookUser, Pencil, Plus, Search, Trash2 } from 'lucide-react';
-import { FormEvent, useEffect, useState } from 'react';
+import { BookUser, Pencil, Plus, Trash2 } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 import { toast } from 'sonner';
 
 interface Company {
@@ -56,12 +56,15 @@ const emptyForm = {
 
 export default function SuppliersIndex({ companies, filters }: Props) {
     const { can } = usePermissions();
+    const canManage = can('suppliers.manage');
+    const canViewLedger = can('ledger.view');
+    const showActions = canManage || canViewLedger;
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editing, setEditing] = useState<Company | null>(null);
-    const [search, setSearch] = useState(filters.search ?? '');
+    const filterState = useMasterFilters('/suppliers', filters);
     const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
         rowCount: companies.data.length,
-        onActivate: (i) => openEdit(companies.data[i]),
+        onActivate: (i) => { if (canManage) openEdit(companies.data[i]); },
     });
 
     const form = useForm(emptyForm);
@@ -70,15 +73,6 @@ export default function SuppliersIndex({ companies, filters }: Props) {
         credit_days: positive('Credit days'),
         credit_limit: positive('Credit limit'),
     });
-
-    useEffect(() => {
-        const timeout = setTimeout(() => {
-            if ((filters.search ?? '') !== search) {
-                router.get('/suppliers', { ...filters, search: search || undefined }, { preserveState: true, replace: true });
-            }
-        }, 350);
-        return () => clearTimeout(timeout);
-    }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const openCreate = () => {
         setEditing(null);
@@ -135,118 +129,68 @@ export default function SuppliersIndex({ companies, filters }: Props) {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Suppliers" />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
-                    <div>
-                        <h1 className="text-4xl font-bold">Suppliers</h1>
-                        <p className="text-sm text-muted-foreground">Pharmaceutical companies you purchase stock from</p>
-                    </div>
-                    {can('suppliers.manage') && (
-                        <Button onClick={openCreate}>
-                            <Plus className="mr-1 size-4" /> Add Supplier
-                        </Button>
-                    )}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                    <div className="relative w-full sm:w-72">
-                        <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                        <Input
-                            ref={searchRef}
-                            onKeyDown={onSearchKeyDown}
-                            placeholder="Search name, contact, phone…"
-                            className="pl-8"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                        />
-                    </div>
-                    <Select
-                        value={filters.status ?? 'all'}
-                        onValueChange={(v) =>
-                            router.get('/suppliers', { ...filters, status: v === 'all' ? undefined : v }, { preserveState: true })
-                        }
-                    >
-                        <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All statuses</SelectItem>
-                            <SelectItem value="active">Active</SelectItem>
-                            <SelectItem value="inactive">Inactive</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-
-                <div className="rounded-xl border">
-                    <Table>
+            <MasterRegister title="Suppliers" description="Pharmaceutical companies you purchase stock from" label="supplier" page={companies}
+                state={filterState} searchRef={searchRef} onSearchKeyDown={onSearchKeyDown} placeholder="Supplier name, contact or phone"
+                status={{ value: filters.status, onChange: status => filterState.change({ status }) }}
+                actions={canManage && <button type="button" className="hbtn pri" onClick={openCreate}><Plus className="i" aria-hidden="true" />Add Supplier</button>}>
+                    {dense => <Table className={`supplier-table${dense ? ' dense' : ''}`}>
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Name</TableHead>
                                 <TableHead>Contact</TableHead>
                                 <TableHead>City</TableHead>
                                 <TableHead>NTN</TableHead>
-                                <TableHead className="text-right">Credit Limit</TableHead>
-                                <TableHead className="text-right">Products</TableHead>
+                                <TableHead className="r">Credit Limit</TableHead>
+                                <TableHead className="r">Products</TableHead>
                                 <TableHead>Status</TableHead>
-                                <TableHead className="w-32" />
+                                {showActions && <TableHead className="r acts-head">Actions</TableHead>}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {companies.data.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
-                                        No suppliers found.
+                                    <TableCell colSpan={showActions ? 8 : 7} className="empty">
+                                        {filterState.applied ? 'No suppliers match these filters.' : 'No suppliers found.'}
                                     </TableCell>
                                 </TableRow>
                             )}
                             {companies.data.map((company, index) => (
                                 <TableRow key={company.id} {...rowProps(index)}>
-                                    <TableCell className="font-medium">{company.name}</TableCell>
+                                    <TableCell className="entity-name"><strong>{company.name}</strong></TableCell>
                                     <TableCell>
-                                        <div className="text-sm">{company.contact_person || '—'}</div>
-                                        <div className="text-xs text-muted-foreground">{company.phone}</div>
+                                        <span>{company.contact_person || '—'}</span>
+                                        {company.phone && <small className="row-secondary">{company.phone}</small>}
                                     </TableCell>
                                     <TableCell>{company.city || '—'}</TableCell>
                                     <TableCell>{company.ntn_number || '—'}</TableCell>
-                                    <TableCell className="text-right tabular-nums">{money(company.credit_limit)}</TableCell>
-                                    <TableCell className="text-right">{company.products_count}</TableCell>
-                                    <TableCell>
-                                        <Badge variant={company.status === 'active' ? 'default' : 'secondary'}>
-                                            {company.status}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex justify-end gap-1">
-                                            <Button variant="ghost" size="icon" asChild title="Ledger">
-                                                <Link href={route('ledger.supplier', company.id)}>
-                                                    <BookUser className="size-4" />
-                                                </Link>
-                                            </Button>
-                                            {can('suppliers.manage') && (
+                                    <TableCell className="r num">{money(company.credit_limit)}</TableCell>
+                                    <TableCell className="r num">{company.products_count}</TableCell>
+                                    <TableCell><MasterStatus status={company.status} /></TableCell>
+                                    {showActions && <TableCell>
+                                        <div className="acts">
+                                            {canViewLedger && <Link className="ib" title="Ledger" aria-label={`Ledger for ${company.name}`} href={route('ledger.supplier', company.id)}><BookUser className="i" aria-hidden="true" /></Link>}
+                                            {canManage && (
                                                 <>
-                                                    <Button variant="ghost" size="icon" onClick={() => openEdit(company)}>
-                                                        <Pencil className="size-4" />
-                                                    </Button>
-                                                    <Button variant="ghost" size="icon" onClick={() => destroy(company)}>
-                                                        <Trash2 className="size-4 text-destructive" />
-                                                    </Button>
+                                                    <button type="button" className="ib" title="Edit supplier" aria-label={`Edit ${company.name}`} onClick={() => openEdit(company)}><Pencil className="i" aria-hidden="true" /></button>
+                                                    <button type="button" className="ib master-delete" title="Delete supplier" aria-label={`Delete ${company.name}`} onClick={() => destroy(company)}><Trash2 className="i" aria-hidden="true" /></button>
                                                 </>
                                             )}
                                         </div>
-                                    </TableCell>
+                                    </TableCell>}
                                 </TableRow>
                             ))}
                         </TableBody>
-                    </Table>
-                    <Paginator meta={companies} />
-                </div>
-            </div>
+                    </Table>}
+            </MasterRegister>
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+                <DialogContent appearance="form" className="max-w-2xl" aria-describedby={undefined}>
                     <DialogHeader>
                         <DialogTitle>{editing ? `Edit ${editing.name}` : 'Add Supplier'}</DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div className="col-span-2">
+                    <form onSubmit={submit}>
+                        <DialogBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="col-span-full">
                             <Label htmlFor="name">Supplier Name *</Label>
                             <Input
                                 id="name"
@@ -297,7 +241,7 @@ export default function SuppliersIndex({ companies, filters }: Props) {
                                 onChange={(e) => form.setData('credit_limit', Number(e.target.value))}
                             />
                         </div>
-                        <div className="col-span-2">
+                        <div className="col-span-full">
                             <Label htmlFor="address">Address</Label>
                             <Input id="address" value={form.data.address} onChange={(e) => form.setData('address', e.target.value)} />
                         </div>
@@ -311,11 +255,12 @@ export default function SuppliersIndex({ companies, filters }: Props) {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="col-span-2">
+                        <div className="col-span-full">
                             <Label htmlFor="notes">Notes</Label>
                             <Textarea id="notes" rows={2} value={form.data.notes} onChange={(e) => form.setData('notes', e.target.value)} />
                         </div>
-                        <DialogFooter className="col-span-2">
+                        </DialogBody>
+                        <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
                             <Button type="submit" disabled={form.processing}>
                                 {editing ? 'Save Changes' : 'Create Supplier'}

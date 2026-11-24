@@ -17,6 +17,8 @@ on the server; `dispatch.plan` gates schedule management and staff delivery shee
 Employee Commissions and commission-specific finance actions require
 `commission.manage`. Booker and Salesman accounts without an Admin or Super
 Admin role are blocked even if they have a legacy or direct commission grant.
+Daily Staff Activity is read-only and checks the Super Admin role on the server.
+Its navigation flag is derived from that role; no database grant is required.
 The workspace menu and Global Search follow the same restriction and refresh
 stale commission permissions before hiding access. Deployments restore missing
 standard finance and commission grants to Super Admin only. If using phpMyAdmin
