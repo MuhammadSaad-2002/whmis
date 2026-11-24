@@ -13,6 +13,7 @@ use App\Services\NumberSeriesService;
 use App\Services\PaymentService;
 use App\Services\ReportPdfRenderer;
 use App\Services\ReturnService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Closure;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSeeder;
@@ -190,6 +191,65 @@ class ListSummariesTest extends TestCase
         $pdf->assertOk()->assertHeader('Content-Type', 'application/pdf');
         $this->assertStringStartsWith('%PDF', $pdf->getContent());
         $this->actingAs(User::factory()->create()->assignRole('Booker'))->get(route('sales.list.pdf'))->assertForbidden();
+    }
+
+    public function test_purchase_register_filters_sorts_and_counts_all_matching_statuses(): void
+    {
+        $this->purchase->update(['supplier_invoice_number' => 'GETZ-100']);
+        $cash = PurchaseInvoice::create([
+            'invoice_number' => 'PI-CASH-DRAFT', 'supplier_invoice_number' => 'GETZ-101', 'company_id' => $this->company->id,
+            'warehouse_id' => 1, 'invoice_date' => $this->purchase->invoice_date, 'purchase_type' => 'cash', 'total_amount' => 9000,
+        ]);
+        PurchaseInvoice::create([
+            'invoice_number' => 'PI-OTHER-DRAFT', 'company_id' => Company::create(['name' => 'Other Supplier'])->id,
+            'warehouse_id' => 1, 'invoice_date' => $this->purchase->invoice_date, 'purchase_type' => 'credit', 'total_amount' => 200,
+        ]);
+
+        $this->get(route('purchases.index', ['search' => 'Getz Pharma', 'sort' => 'total', 'direction' => 'desc', 'per_page' => 10]))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->has('invoices.data', 2)->where('invoices.per_page', 10)->where('invoices.data.0.id', $cash->id)
+                ->where('counts.all', 2)->where('counts.draft', 1)->where('counts.posted', 1)->where('counts.cancelled', 0)
+                ->where('summary.drafts_total', $this->eq(9000))->where('summary.gross', $this->eq(17000)));
+
+        $this->get(route('purchases.index', ['company_id' => $this->company->id, 'status' => 'posted', 'sort' => 'supplier']))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->has('invoices.data', 1)->where('invoices.data.0.id', $this->purchase->id)
+                ->where('counts.all', 2)->where('counts.draft', 1)->where('summary.gross', $this->eq(8000)));
+
+        $this->get(route('purchases.index', ['search' => 'GETZ-101', 'purchase_type' => 'cash']))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->has('invoices.data', 1)->where('invoices.data.0.id', $cash->id)->where('counts.posted', 0));
+    }
+
+    public function test_invoice_documents_share_print_typography_margins_and_one_numbered_footer_per_page(): void
+    {
+        config(['branding.footer' => 'Invoice Footer Check']);
+        $encode = fn (string $value) => mb_convert_encoding($value, 'UTF-16BE', 'UTF-8');
+
+        foreach ([['sales.print', $this->sale, 'Sales Invoice'], ['purchases.print', $this->purchase, 'Purchase Invoice'],
+            ['sales.net-position', $this->sale, 'Net / Final Position']] as [$route, $invoice, $title]) {
+            $this->app->forgetInstance('dompdf.wrapper');
+            $document = app('dompdf.wrapper');
+            Pdf::swap($document);
+            $this->get(route($route, $invoice))->assertOk()->assertHeader('Content-Type', 'application/pdf');
+            $dompdf = $document->getDomPDF();
+            $canvas = $dompdf->getCanvas();
+            $this->assertGreaterThan($canvas->get_width(), $canvas->get_height());
+            $style = $dompdf->getCss()->get_page_styles()['base'];
+            $this->assertEquals(ReportPdfRenderer::TOP_MARGIN, $style->margin_top);
+            $this->assertEquals(ReportPdfRenderer::SIDE_MARGIN, $style->margin_left);
+            $this->assertEquals(ReportPdfRenderer::SIDE_MARGIN, $style->margin_right);
+            $this->assertEquals(ReportPdfRenderer::BOTTOM_MARGIN, $style->margin_bottom);
+            $pdf = $document->output(['compress' => false]);
+            $this->assertStringContainsString($encode($invoice->invoice_number), $pdf);
+            $this->assertStringContainsString($encode($title), $pdf);
+            $this->assertStringContainsString('/InstrumentSans-Regular', $pdf);
+            $pages = $canvas->get_page_count();
+            $this->assertSame($pages, substr_count($pdf, $encode('Invoice Footer Check')));
+            for ($page = 1; $page <= $pages; $page++) {
+                $this->assertSame(1, substr_count($pdf, $encode("Page {$page} / {$pages}")));
+            }
+        }
     }
 
     public function test_sales_preview_shows_real_items_and_completed_allocations(): void

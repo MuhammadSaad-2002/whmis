@@ -71,7 +71,7 @@ export default function BookerAssignmentsIndex({ logs, filters, customers, booke
                     <Input type="date" className="w-40" value={filters.from ?? ''} onChange={(e) => apply({ from: e.target.value || undefined })} />
                     <Input type="date" className="w-40" value={filters.to ?? ''} onChange={(e) => apply({ to: e.target.value || undefined })} />
                     {hasFilters && (
-                        <Button variant="ghost" onClick={() => router.get('/booker-assignments')}>Clear</Button>
+                        <Button variant="ghost" onClick={() => router.get('/booker-assignments')}>Clear filters</Button>
                     )}
                 </div>
 

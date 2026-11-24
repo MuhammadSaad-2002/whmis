@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\{Employee, EmployeeAttendance, EmployeeLeave, EmployeeSalary, HrDepartment, HrDesignation, HrLeaveType, HrTransaction, Payroll, PayrollItem, User};
 use App\Services\{HrService, HrReportService, LedgerService, ReportService};
+use Barryvdh\DomPDF\Facade\Pdf;
 use Database\Seeders\{RolePermissionSeeder, SystemSeeder};
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -137,7 +138,14 @@ class HrModuleTest extends TestCase
             ->has('leaves'));
         $this->get(route('hr.index','employees'))->assertForbidden();
         $this->get(route('hr.employee',$e))->assertForbidden();
+        config(['branding.footer' => 'Payroll Document Footer']);
+        $document = app('dompdf.wrapper');
+        Pdf::swap($document);
         $this->get(route('hr.payslip',$p->items()->first()))->assertOk()->assertHeader('content-type','application/pdf');
+        $pdf = $document->output(['compress' => false]);
+        foreach (['Salary Payslip', 'Current Unpaid Balance', 'Payroll Document Footer'] as $text) {
+            $this->assertStringContainsString(mb_convert_encoding($text, 'UTF-16BE', 'UTF-8'), $pdf);
+        }
         $this->get(route('reports.show',['key'=>'hr-payroll','format'=>'xlsx']))->assertForbidden();
         $other=User::factory()->create();$other->assignRole('Booker');$this->actingAs($other);
         $this->get(route('hr.payslip',$p->items()->first()))->assertForbidden();

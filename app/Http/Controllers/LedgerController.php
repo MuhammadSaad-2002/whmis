@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\Customer;
 use App\Services\FinancialPositionPdfCharts;
 use App\Services\LedgerService;
+use App\Services\ReportPdfRenderer;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -44,32 +45,32 @@ class LedgerController extends Controller
         ]);
     }
 
-    public function customerStatementPdf(Request $request, Customer $customer)
+    public function customerStatementPdf(Request $request, Customer $customer, ReportPdfRenderer $pdf)
     {
         [$from, $to] = $this->range($request);
 
-        return Pdf::loadView('pdf.statement', [
+        return $pdf->renderView('pdf.statement', [
             'party' => $customer,
             'partyLabel' => 'Customer',
             'statement' => $this->ledger->statement($customer, $from, $to),
             'aging' => $this->ledger->aging($customer),
             'from' => $from,
             'to' => $to,
-        ])->setPaper('a4')->stream("statement-{$customer->id}.pdf");
+        ], 'portrait')->stream("statement-{$customer->id}.pdf");
     }
 
-    public function companyStatementPdf(Request $request, Company $company)
+    public function companyStatementPdf(Request $request, Company $company, ReportPdfRenderer $pdf)
     {
         [$from, $to] = $this->range($request);
 
-        return Pdf::loadView('pdf.statement', [
+        return $pdf->renderView('pdf.statement', [
             'party' => $company,
             'partyLabel' => 'Supplier',
             'statement' => $this->ledger->statement($company, $from, $to),
             'aging' => $this->ledger->aging($company),
             'from' => $from,
             'to' => $to,
-        ])->setPaper('a4')->stream("statement-{$company->id}.pdf");
+        ], 'portrait')->stream("statement-{$company->id}.pdf");
     }
 
     /** Consolidated receivables + payables + payments log with totals. */

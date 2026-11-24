@@ -3,14 +3,14 @@
 <head>
     <meta charset="utf-8">
     <title>{{ $invoice->invoice_number }}</title>
-    @include('pdf.partials.style')
+    @include('pdf.partials.document-style')
 </head>
 <body>
     <table class="header">
         <tr>
             <td>
                 @include('pdf.partials.header')
-                <div class="meta">Purchase Invoice</div>
+                <h2 class="document-title">Purchase Invoice</h2>
             </td>
             <td style="text-align: right;">
                 <h1>{{ $invoice->invoice_number }}</h1>
@@ -23,7 +23,7 @@
         </tr>
     </table>
 
-    <table style="width:100%; margin-bottom: 8px;">
+    <table class="document-info">
         <tr>
             <td>
                 <h2>Supplier</h2>
@@ -84,9 +84,8 @@
     </table>
 
     @if($invoice->notes)
-        <p style="margin-top: 10px;" class="meta">Notes: {{ $invoice->notes }}</p>
+        <p class="meta document-note">Notes: {{ $invoice->notes }}</p>
     @endif
 
-    @include('pdf.partials.footer')
 </body>
 </html>

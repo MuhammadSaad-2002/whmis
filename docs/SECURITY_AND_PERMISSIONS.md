@@ -14,6 +14,11 @@ The Salesman role can be combined with Booker and grants `dispatch.assigned`,
 not organization-wide access. Assignment scope and allowed actions are checked
 on the server; `dispatch.plan` gates schedule management and staff delivery sheets.
 
+Employee Commissions and commission-specific finance actions require
+`commission.manage`. Booker and Salesman accounts without an Admin or Super
+Admin role are blocked even if they have a legacy or direct commission grant.
+The workspace menu and Global Search follow the same restriction.
+
 WHMIS uses Laravel session authentication with Spatie Laravel Permission. Routes
 are permission-gated with `can:` middleware, and React receives roles and
 permissions from `HandleInertiaRequests`.

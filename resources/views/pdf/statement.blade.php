@@ -3,14 +3,14 @@
 <head>
     <meta charset="utf-8">
     <title>Statement — {{ $party->name }}</title>
-    @include('pdf.partials.style')
+    @include('pdf.partials.document-style')
 </head>
 <body>
     <table class="header">
         <tr>
             <td>
                 @include('pdf.partials.header')
-                <div class="meta">{{ $partyLabel }} Account Statement</div>
+                <h2 class="document-title">{{ $partyLabel }} Account Statement</h2>
             </td>
             <td style="text-align: right;">
                 <h1>{{ $party->name }}</h1>
@@ -47,7 +47,7 @@
                     <td class="num">{{ number_format($sign * $row['balance'], 2) }}</td>
                 </tr>
             @endforeach
-            <tr style="background: #edf3f6;">
+            <tr class="subtotal">
                 <td colspan="3"><strong>Period Totals</strong></td>
                 <td class="num"><strong>{{ number_format(array_sum(array_column($statement['rows'], 'debit')), 2) }}</strong></td>
                 <td class="num"><strong>{{ number_format(array_sum(array_column($statement['rows'], 'credit')), 2) }}</strong></td>
@@ -60,7 +60,7 @@
         </tbody>
     </table>
 
-    <h2 style="margin-top: 14px;">Aging</h2>
+    <h2 class="document-section">Aging</h2>
     <table class="items" style="width: 60%;">
         <thead>
             <tr>
@@ -79,6 +79,5 @@
         </tbody>
     </table>
 
-    @include('pdf.partials.footer')
 </body>
 </html>

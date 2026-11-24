@@ -3,23 +3,11 @@
 <head>
     <meta charset="utf-8">
     <title>Daily Delivery Sheet</title>
-    @include('pdf.partials.style', ['pageMargins' => '12mm 12mm 14mm'])
+    @include('pdf.partials.document-style')
     <style>
-        body { padding: 0; font-size: 10.5pt; }
-        .header { margin-bottom: 8pt; padding-bottom: 6pt; }
-        .header h1 { font-size: 14pt; }
-        .header .meta { font-size: 9pt; }
         table.items { table-layout: fixed; }
-        table.items thead { display: table-header-group; }
-        table.items tr { page-break-inside: avoid; }
-        table.items th, table.items td { padding: 4pt 5pt; vertical-align: top; }
-        table.items th { font-size: 9pt; line-height: 1.2; padding: 4pt 3.5pt; }
-        table.items td { line-height: 1.28; overflow-wrap: break-word; }
         table.items .write-in { height: 22pt; }
-        table.items .num { text-align: right; }
         table.items .stop-number { padding-right: 2pt; padding-left: 2pt; }
-        .invoice-number { font-size: 10pt; }
-        .detail { color: #496175; font-size: 9pt; }
         .signatures { page-break-inside: avoid; margin-top: 12pt; width: 100%; }
         .signatures td { width: 50%; }
     </style>
@@ -29,7 +17,8 @@
         <tr>
             <td>
                 @include('pdf.partials.header')
-                <div class="meta"><strong>Daily Delivery Sheet</strong> · {{ $staff->name }}</div>
+                <h2 class="document-title">Daily Delivery Sheet</h2>
+                <div class="meta">{{ $staff->name }}</div>
             </td>
             <td class="meta" style="text-align: right;">
                 {{ $date->format('l, d M Y') }}<br>
@@ -40,13 +29,13 @@
     </table>
     <table class="items">
         <thead><tr>
-            <th style="width: 3.5%;">#</th>
-            <th style="width: 17%;">Sales Inv #</th>
-            <th style="width: 14%;">Customer Name</th>
-            <th style="width: 21%;">Customer Address</th>
-            <th class="num" style="width: 13%;">Total Amount</th>
-            <th style="width: 16.5%;">Receiver / Remarks</th>
-            <th class="num" style="width: 15%;">Payment Received</th>
+            <th style="width: 4%;">#</th>
+            <th style="width: 13%;">Sales Inv #</th>
+            <th style="width: 17%;">Customer Name</th>
+            <th style="width: 25%;">Customer Address</th>
+            <th class="num" style="width: 11%;">Total Amount</th>
+            <th style="width: 17%;">Receiver / Remarks</th>
+            <th class="num" style="width: 13%;">Payment Received</th>
         </tr></thead>
         <tbody>
             @forelse($stops as $stop)
@@ -65,7 +54,7 @@
                 @endphp
                 <tr>
                     <td class="stop-number">{{ $loop->first ? $stopNumber : '' }}</td>
-                    <td><strong class="invoice-number">{{ $delivery->invoice->invoice_number }}</strong></td>
+                    <td><strong>{{ $delivery->invoice->invoice_number }}</strong></td>
                     <td><strong>{{ $customer?->name ?? 'Customer #'.$delivery->invoice->customer_id }}</strong></td>
                     <td>{{ $place ?: '—' }}</td>
                     <td class="num">{{ number_format($delivery->invoice->total_amount, 2) }}</td>
@@ -73,7 +62,7 @@
                     <td class="num write-in">
                         @if($received > 0)
                             {{ number_format($received / 100, 2) }}
-                            <div class="detail">Verified</div>
+                            <div class="meta">Verified</div>
                         @endif
                     </td>
                 </tr>

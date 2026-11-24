@@ -240,6 +240,7 @@ class IntegratedDistributionTest extends TestCase
         $this->get($show)->assertInertia(fn (Assert $page) => $page->where('canReportCollection', false)->where('collectiblePaisa', 0));
         $this->get(route('booker.workday'))->assertInertia(fn (Assert $page) => $page
             ->where('deliveries.data.0.can_collect', false)->where('deliveries.data.0.collectible_paisa', 0)
+            ->where('deliveries.data.0.is_complete', false)->where('activeDeliveries', 1)
             ->where('deliveries.data.0.pending_paisa', 200000)->where('collections.cash', 175000)
             ->where('deliveries.data.0.outstanding', fn ($amount) => (float) $amount === 2000.0));
         $this->assertDatabaseCount('payments', 0);
@@ -261,6 +262,36 @@ class IntegratedDistributionTest extends TestCase
         $this->pay($invoice, $till, 50);
         $this->actingAs($this->salesman)->get($show)->assertInertia(fn (Assert $page) => $page
             ->where('canReportCollection', false)->where('collectiblePaisa', 0));
+        $this->get(route('booker.workday'))->assertInertia(fn (Assert $page) => $page
+            ->where('deliveries.data.0.is_complete', true)->where('activeDeliveries', 0));
+        $this->get(route('dispatch.index'))->assertInertia(fn (Assert $page) => $page
+            ->where('invoices.data.0.is_complete', true)->where('activeDeliveries', 0));
+    }
+
+    public function test_field_delivery_lists_default_to_today_and_order_completed_deliveries_last(): void
+    {
+        $till = $this->opening();
+        $post = fn () => app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($this->booking(2)));
+        $completed = $post();
+        $overdue = $post();
+        $future = $post();
+        $this->deliver($completed);
+        $this->pay($completed, $till, 2000);
+
+        $yesterday = now('Asia/Karachi')->subDay()->toDateString();
+        $tomorrow = now('Asia/Karachi')->addDay()->toDateString();
+        Dispatch::where('sales_invoice_id', $overdue->id)->update(['planned_date' => $yesterday]);
+        Dispatch::where('sales_invoice_id', $future->id)->update(['planned_date' => $tomorrow]);
+
+        $this->actingAs($this->salesman)->get(route('dispatch.index'))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('scoped', true)->where('filters.date', $this->date)
+                ->where('activeDeliveries', 1)->has('invoices.data', 2)
+                ->where('invoices.data.0.id', $overdue->id)->where('invoices.data.0.is_complete', false)
+                ->where('invoices.data.1.id', $completed->id)->where('invoices.data.1.is_complete', true));
+        $this->get(route('booker.workday'))->assertInertia(fn (Assert $page) => $page->where('activeDeliveries', 1)
+            ->has('deliveries.data', 2)->where('deliveries.data.0.id', $overdue->id)->where('deliveries.data.1.id', $completed->id));
+        $this->get(route('dispatch.index', ['date' => $tomorrow]))->assertInertia(fn (Assert $page) => $page
+            ->where('filters.date', $tomorrow)->has('invoices.data', 1)->where('invoices.data.0.id', $future->id));
     }
 
     public function test_delivery_can_continue_without_collection_when_a_partial_delivery_reported_the_full_balance(): void

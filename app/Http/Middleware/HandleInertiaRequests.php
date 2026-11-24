@@ -41,7 +41,9 @@ class HandleInertiaRequests extends Middleware
         [$message, $author] = str(Inspiring::quotes()->random())->explode('-');
         $user = $request->user();
         $canViewSupplierDetails = $user?->canViewSupplierDetails() ?? false;
-        $permissions = $user?->getAllPermissions()->pluck('name');
+        $permissions = $user?->getAllPermissions()->pluck('name')
+            ->diff(['commission.self'])
+            ->when(! $user?->can('manage-employee-commissions'), fn ($names) => $names->diff(['commission.manage', 'commission.waive']));
 
         return array_merge(parent::share($request), [
             ...parent::share($request),
@@ -49,7 +51,7 @@ class HandleInertiaRequests extends Middleware
             'quote' => ['message' => trim($message), 'author' => trim($author)],
             'auth' => [
                 'user' => $user,
-                'permissions' => $permissions?->when(! $canViewSupplierDetails, fn ($names) => $names->diff(User::SUPPLIER_MODULE_PERMISSIONS)->values()) ?? [],
+                'permissions' => $permissions?->when(! $canViewSupplierDetails, fn ($names) => $names->diff(User::SUPPLIER_MODULE_PERMISSIONS))->values() ?? [],
                 'roles' => $user?->getRoleNames() ?? [],
                 'canViewSupplierDetails' => $canViewSupplierDetails,
                 'canManageOwnAccount' => $user?->can('manage-own-account') ?? false,

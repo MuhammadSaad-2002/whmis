@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { shiftDate, weekdayDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Link } from '@inertiajs/react';
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export const fieldPage = 'mx-auto flex w-full min-w-0 flex-col gap-5 px-3 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-5 sm:pt-4';
@@ -25,6 +25,18 @@ export function FieldHeading({ id, title, count, note }: { id: string; title: st
         <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-bold text-secondary-foreground">{count}</span>
         {note && <span className="text-sm text-muted-foreground sm:ml-auto">{note}</span>}
     </div>;
+}
+
+export function FieldCompletedDeliveries({ count, children }: { count: number; children: ReactNode }) {
+    if (!count) return null;
+    return <details className="group rounded-2xl border bg-muted/45">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+            <CheckCircle2 aria-hidden="true" className="size-4 text-chart-2" />
+            Completed deliveries <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{count}</span>
+            <ChevronDown aria-hidden="true" className="ml-auto size-4 group-open:rotate-180" />
+        </summary>
+        <div className="p-2 pt-0 sm:p-3 sm:pt-0">{children}</div>
+    </details>;
 }
 
 export function FieldDatePicker({ date, today, changeDate, dateLabel, groupLabel, emptyLabel = 'All dates' }: {

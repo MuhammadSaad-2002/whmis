@@ -91,7 +91,7 @@ export const navGroups: PermittedNavGroup[] = [
             { title: 'Employee Finance', url: '/hr/finance', icon: BookUser, permission: 'hr.payroll.view' },
             { title: 'HR Settings', url: '/hr/settings', icon: UserCog, permission: 'hr.settings.manage' },
             { title: 'My HR', url: '/hr/my-profile', icon: Users, permission: 'hr.self.view' },
-            { title: 'Employee Commissions', url: '/commissions', icon: Banknote, permission: 'commission.self', alternatePermission: 'commission.manage' },
+            { title: 'Employee Commissions', url: '/commissions', icon: Banknote, permission: 'commission.manage' },
         ],
     },
     {

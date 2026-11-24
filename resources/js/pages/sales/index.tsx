@@ -88,6 +88,7 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
     const sort = filters.sort ?? 'date';
     const direction = filters.direction ?? 'desc';
     const activeStatus = filters.status ?? 'all';
+    const hasFilters = Boolean(filters.search?.trim() || filters.customer_id || filters.status || filters.sale_type || filters.from || filters.to);
     const inverted = !!dates.from && !!dates.to && dates.from > dates.to;
     const activePreset = presets.find((preset) => {
         const item = range(preset, today);
@@ -225,7 +226,7 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
                             changeFilters(value);
                         }}>{preset === 'all' ? 'All' : `${preset}D`}</button>)}
                     </div>
-                    <button type="button" className="clear" onClick={clearFilters}>Clear filters</button><div className="fsp" />
+                    {hasFilters && <button type="button" className="clear" onClick={clearFilters}>Clear filters</button>}<div className="fsp" />
                     <button type="button" className="dens" title="Toggle row density" aria-label="Compact rows" aria-pressed={dense} onClick={() => setDense((value) => !value)}><List className="i" /></button>
                     {inverted && <p className="filter-error" role="alert">To date must be on or after From date.</p>}
                 </div>
@@ -248,7 +249,7 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
                             <th scope="col">Status</th><th scope="col" className="r acts-head">Actions</th>
                         </tr></thead>
                         <tbody>
-                            {!invoices.data.length && <tr><td colSpan={12} className="empty">No invoices match these filters.<br /><button type="button" className="clear" onClick={clearFilters}>Clear filters</button></td></tr>}
+                            {!invoices.data.length && <tr><td colSpan={12} className="empty">{hasFilters ? 'No invoices match these filters.' : 'No invoices found.'}</td></tr>}
                             {invoices.data.map((invoice, index) => <tr key={invoice.id} {...rowProps(index)} className={selected.has(invoice.id) ? 'sel' : ''} onClick={(event) => {
                                 if (event.target instanceof Element && !event.target.closest('a,button,input,.check-col')) setPreviewId(invoice.id);
                             }}>

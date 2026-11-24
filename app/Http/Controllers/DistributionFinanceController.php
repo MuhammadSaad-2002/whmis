@@ -201,7 +201,7 @@ class DistributionFinanceController
             'summary' => $summary,
             'filters' => ['status' => $status, 'search' => $search, 'type' => $filters['type'] ?? ''],
             'requestId' => $requestId,
-            'accounts' => $this->treasury->options($actor), 'kinds' => $actor->can('commission.manage') ? FinanceApprovalService::KINDS
+            'accounts' => $this->treasury->options($actor), 'kinds' => $actor->can('manage-employee-commissions') ? FinanceApprovalService::KINDS
                 : array_values(array_diff(FinanceApprovalService::KINDS, FinanceApprovalService::PRIVATE_KINDS)),
             'today' => now('Asia/Karachi')->toDateString(), 'actorId' => $actor->id,
         ]);
@@ -261,7 +261,7 @@ class DistributionFinanceController
     public function evidence(Request $request, int $id)
     {
         $item = $this->approvals->visibleRequests($request->user())->findOrFail($id);
-        abort_if(in_array($item->kind, FinanceApprovalService::PRIVATE_KINDS, true) && ! $request->user()->can('commission.manage'), 403);
+        abort_if(in_array($item->kind, FinanceApprovalService::PRIVATE_KINDS, true) && ! $request->user()->can('manage-employee-commissions'), 403);
         abort_unless($item->evidence_path, 404);
         return Storage::disk('local')->download($item->evidence_path);
     }
@@ -292,7 +292,7 @@ class DistributionFinanceController
             return [
                 'id' => $invoice->id, 'number' => $invoice->invoice_number, 'outstanding' => $current,
                 'projected' => $current + $delta, 'refund_credit' => $this->approvals->refundable($invoice),
-                'commission_paisa' => $request->user()->can('commission.manage') ? (int) DB::table('commission_awards')->where('sales_invoice_id',$invoice->id)->sum('earned_paisa') : null,
+                'commission_paisa' => $request->user()->can('manage-employee-commissions') ? (int) DB::table('commission_awards')->where('sales_invoice_id',$invoice->id)->sum('earned_paisa') : null,
                 'dependencies' => $this->approvals->dependencies($invoice)->map(fn ($item) => $item->only(['id','kind','status','amount_paisa'])
                     + ['target_id'=>$item->payload['target_id'] ?? null])->values(),
             ];

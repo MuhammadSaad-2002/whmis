@@ -74,6 +74,9 @@ class ReportController extends Controller
             ], $supplierPurchaseValue ? 'landscape' : null)->stream("{$key}.pdf");
         }
 
+        $today = now();
+        $defaultDates = ['from' => $today->copy()->startOfMonth()->toDateString(), 'to' => $today->toDateString()];
+
         return Inertia::render('reports/show', [
             'report' => [
                 'key' => $key,
@@ -91,10 +94,8 @@ class ReportController extends Controller
             'sectionTitle' => $data['section_title'] ?? null,
             'context' => $data['context'] ?? null,
             'notes' => $data['notes'] ?? [],
-            'filterValues' => $filters + [
-                'from' => $filters['from'] ?? now()->startOfMonth()->toDateString(),
-                'to' => $filters['to'] ?? now()->toDateString(),
-            ],
+            'filterValues' => $filters + $defaultDates,
+            'defaultDates' => $defaultDates,
             'options' => [
                 'customers' => in_array('customer', $meta['filters'])
                     ? Customer::active()->orderBy('name')->get(['id', 'name']) : [],

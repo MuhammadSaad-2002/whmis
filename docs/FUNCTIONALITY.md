@@ -64,6 +64,11 @@ verification, Cash & Bank, refunds, and employee commissions.
   list printing. Tracking does not move stock or create payments.
   Salesmen work their assigned deliveries, and Admins can set customer booking
   and delivery weekdays and print a daily stop sheet per assignee.
+  My Deliveries defaults to today (PKT), with older open assignments carried
+  forward. Use Filters to view another day. In both My Deliveries and My Workday,
+  fully delivered and settled invoices and closed deliveries move to a collapsed
+  Completed deliveries section. Reported collections still awaiting Finance do
+  not count as settlement.
   The Admin queue offers a live stage pipeline, board, sortable list, invoice
   activity preview, and a picking PDF for pending or picking invoices. The
   individual delivery detail also exports its recorded picking or delivery
@@ -74,6 +79,9 @@ verification, Cash & Bank, refunds, and employee commissions.
   Follow-ups do not settle invoices. See [DISTRIBUTION_OPERATIONS.md](DISTRIBUTION_OPERATIONS.md).
 
 - Purchases: list/create/edit/post/cancel/duplicate/print under `/purchases`.
+  The register shares the Sales Invoices layout, with status counts, supplier
+  and invoice search, purchase type, date presets, sorting, and row density.
+  Returns in the summary keep their existing supplier/date scope.
 - Sales: list/create/edit/post/cancel/print/summary/net-position under `/sales`.
   The list includes status counts, date presets, sortable net-of-return figures,
   an invoice preview, CSV export, a PDF for the current filtered page or selected
@@ -81,6 +89,9 @@ verification, Cash & Bank, refunds, and employee commissions.
   still requires `sales.post` and uses the same stock and credit checks as the
   invoice editor.
 - Bookings: draft, submit, approve, reject, cancel, and convert to linked draft sales invoice.
+  The booking list shares the Sales Invoices styling, with status counts and
+  values, customer and date filters, sorting, and mobile cards with timestamps.
+  List rows, counts, and values all use the same Booker scope.
 - In booking, sales, purchase, and both return item grids, Up/Down move between existing rows without changing values. They stay in the same field when available; Enter and Add Row still create new rows.
 - On phones and tablets the booking form puts customer selection above compact
   product cards. Product selection opens a searchable dialog; each card keeps
@@ -124,7 +135,9 @@ verification, Cash & Bank, refunds, and employee commissions.
 
 ## Inventory
 
-- Inventory summary: `/inventory`.
+- Inventory summary: `/inventory` uses the Sales register styling with stock
+  totals, low-stock and supplier filters, a sortable table, and mobile cards.
+  The all-inventory value stays global; quantity and table totals use the active filters.
 - Batches: `/inventory/batches`.
 - Movements: `/inventory/movements`.
 - Adjustments: `/inventory/adjustments`.
@@ -132,7 +145,7 @@ verification, Cash & Bank, refunds, and employee commissions.
 
 ## Finance
 
-- Payments: `/payments`; supports receipts/payments, allocations, and cancellation.
+- Payments: `/payments`; the register shows completed receipt/payment totals and net movement, with filters for direction, payment/receipt number, method, and date. Mobile uses payment cards. Recording, allocation, and cancellation are permission-gated.
 - Ledger position: `/ledger/position` and PDF export.
   The PDF opens with a chart summary; receivables, payables, and payment activity
   tables start on page two and continue if necessary.
@@ -286,6 +299,9 @@ balances. PDFs render the same negative values in red with a printable guide.
 ## PDFs and documents
 
 - Purchase invoice, sales invoice, statements, sales net position, financial position, executive dashboard, samples, and generic reports use Blade PDF views under `resources/views/pdf/`.
+- Operational PDFs (invoices, statements, samples, dispatch, and payslips)
+  share `pdf.partials.document-style` and the numbered PKT footer. Page
+  orientation is chosen per document. Report and chart templates are separate.
 - Daily Payment Reconciliation and Daily Collection Summary offer a tabular PDF
   for the applied Pakistan business date. Reconciliation respects the salesman
   filter; the personal summary only includes the signed-in Salesman's reports.

@@ -14,9 +14,7 @@ class CommissionController
 {
     public function index(Request $request)
     {
-        $actor = $request->user();
-        $manage = $actor->can('commission.manage');
-        $employees = $manage ? Employee::orderBy('name')->get(['id','name','employee_number']) : Employee::where('user_id', $actor->id)->get(['id','name','employee_number']);
+        $employees = Employee::orderBy('name')->get(['id','name','employee_number']);
         $selected = $employees->firstWhere('id', (int) $request->input('employee_id', $employees->first()?->id));
         abort_if($request->filled('employee_id') && ! $selected, 404);
         $awards = DB::table('commission_awards as a')->join('sales_invoices as i', 'i.id', '=', 'a.sales_invoice_id')
@@ -30,13 +28,13 @@ class CommissionController
             'payable' => (clone $entries)->sum('payable_paisa'),
         ];
         return Inertia::render('operations/commissions', [
-            'employee' => $selected, 'employees' => $employees, 'manage' => $manage, 'totals' => $totals,
+            'employee' => $selected, 'employees' => $employees, 'manage' => true, 'totals' => $totals,
             'awards' => $awards->latest('a.id')->select('a.*','i.invoice_number')
                 ->selectSub(DB::table('commission_entries')->whereColumn('commission_award_id','a.id')->selectRaw('COALESCE(SUM(payable_paisa),0)'), 'payable_paisa')
                 ->selectSub(DB::table('commission_entries')->whereColumn('commission_award_id','a.id')->where('kind','commission_payout')->selectRaw('COALESCE(SUM(cash_out_paisa),0)'), 'paid_paisa')
                 ->paginate(25, ['*'], 'awards')->withQueryString(),
             'entries' => $entries->latest('id')->paginate(20, ['*'], 'entries')->withQueryString(),
-            'rules' => $manage ? DB::table('commission_rules')->orderByDesc('effective_from')->orderByDesc('id')->paginate(20, ['*'], 'rules')->withQueryString() : null,
+            'rules' => DB::table('commission_rules')->orderByDesc('effective_from')->orderByDesc('id')->paginate(20, ['*'], 'rules')->withQueryString(),
             'hold' => $selected ? (bool) DB::table('commission_employee_controls')->where('employee_id', $selected->id)->value('hold_recovery') : false,
         ]);
     }

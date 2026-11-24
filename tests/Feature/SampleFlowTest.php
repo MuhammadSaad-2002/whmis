@@ -16,6 +16,7 @@ use App\Models\Warehouse;
 use App\Services\InvoicePostingService;
 use App\Services\NumberSeriesService;
 use App\Services\SamplePostingService;
+use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use RuntimeException;
@@ -135,6 +136,22 @@ class SampleFlowTest extends TestCase
         $movement = StockMovement::firstOrFail();
         $this->assertSame('sample_in', $movement->type);
         $this->assertEqualsWithDelta(50.0, (float) $movement->quantity, 0.001);
+    }
+
+    public function test_sample_documents_print_with_the_shared_document_footer(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        $this->actingAs(User::factory()->create()->assignRole('Super Admin'));
+        config(['branding.footer' => 'Sample Document Footer']);
+        foreach ([['samples.receipts.print', $this->makeReceipt()], ['samples.issues.print', $this->makeIssue()]] as [$route, $sample]) {
+            $this->app->forgetInstance('dompdf.wrapper');
+            $document = app('dompdf.wrapper');
+            \Barryvdh\DomPDF\Facade\Pdf::swap($document);
+            $this->get(route($route, $sample))->assertOk()->assertHeader('Content-Type', 'application/pdf');
+            $pdf = $document->output(['compress' => false]);
+            $this->assertStringContainsString('/InstrumentSans-Regular', $pdf);
+            $this->assertStringContainsString(mb_convert_encoding('Sample Document Footer', 'UTF-16BE', 'UTF-8'), $pdf);
+        }
     }
 
     public function test_issue_drains_sample_stock_before_normal(): void

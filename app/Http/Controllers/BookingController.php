@@ -38,19 +38,42 @@ class BookingController extends Controller
 
     public function index(Request $request)
     {
-        $bookings = $this->scoped($request)
+        $statuses = [Booking::STATUS_DRAFT, Booking::STATUS_PENDING, Booking::STATUS_APPROVED,
+            Booking::STATUS_PARTIALLY_INVOICED, Booking::STATUS_CONVERTED, Booking::STATUS_REJECTED, Booking::STATUS_CANCELLED];
+        $sorts = ['booking' => 'booking_number', 'date' => 'booking_date', 'created' => 'created_at', 'total' => 'total_amount'];
+        $filters = $request->validate([
+            'search' => 'nullable|string|max:120', 'customer_id' => 'nullable|integer|min:1',
+            'status' => ['nullable', Rule::in($statuses)], 'from' => 'nullable|date_format:Y-m-d', 'to' => 'nullable|date_format:Y-m-d',
+            'sort' => ['nullable', Rule::in(array_keys($sorts))], 'direction' => 'nullable|in:asc,desc', 'per_page' => 'nullable|in:10,15,25,50',
+        ]);
+        $base = $this->scoped($request)
             ->with(['customer:id,name,city', 'booker:id,name'])
-            ->when($request->search, fn ($q, $search) => $q->where('booking_number', 'like', "%{$search}%"))
-            ->when($request->status, fn ($q, $status) => $q->where('status', $status))
-            ->when($request->customer_id, fn ($q, $id) => $q->where('customer_id', $id))
-            ->latest('booking_date')->latest('id')
-            ->paginate(15)
-            ->withQueryString();
+            ->when(($filters['search'] ?? '') !== '', fn ($q) => $q->where(fn ($match) => $match
+                ->where('booking_number', 'like', '%'.$filters['search'].'%')
+                ->orWhereHas('customer', fn ($customer) => $customer->where('name', 'like', '%'.$filters['search'].'%'))))
+            ->when($filters['customer_id'] ?? null, fn ($q, $id) => $q->where('customer_id', $id))
+            ->when($filters['from'] ?? null, fn ($q, $from) => $q->whereDate('booking_date', '>=', $from))
+            ->when($filters['to'] ?? null, fn ($q, $to) => $q->whereDate('booking_date', '<=', $to));
+        $query = (clone $base)->when($filters['status'] ?? null, fn ($q, $status) => $q->where('status', $status));
 
         return Inertia::render('bookings/index', [
-            'bookings' => $bookings,
-            'customers' => $this->customerOptions($request),
-            'filters' => $request->only('search', 'status', 'customer_id'),
+            'bookings' => fn () => (clone $query)->orderBy($sorts[$filters['sort'] ?? 'date'], $filters['direction'] ?? 'desc')
+                ->orderByDesc('id')->paginate((int) ($filters['per_page'] ?? 15))->withQueryString(),
+            'customers' => fn () => $this->customerOptions($request),
+            'filters' => $filters,
+            'statusSummary' => function () use ($base, $statuses, $filters) {
+                $groups = (clone $base)->toBase()->selectRaw('status, COUNT(*) as booking_count, SUM(total_amount) as booking_value')
+                    ->groupBy('status')->get()->keyBy('status');
+                $summary = collect($statuses)->mapWithKeys(fn ($status) => [$status => [
+                    'count' => (int) ($groups[$status]->booking_count ?? 0),
+                    'value' => round((float) ($groups[$status]->booking_value ?? 0), 2),
+                ]]);
+
+                return ['counts' => ['all' => (int) $groups->sum('booking_count')] + $summary->map(fn ($row) => $row['count'])->all(),
+                    'totals' => $summary->map(fn ($row) => $row['value'])->all(), 'shown_value' => isset($filters['status'])
+                        ? $summary[$filters['status']]['value'] : round((float) $groups->sum('booking_value'), 2)];
+            },
+            'today' => now('Asia/Karachi')->toDateString(),
         ]);
     }
 

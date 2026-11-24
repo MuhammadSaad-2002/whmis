@@ -3,8 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Customer, Dispatch, User};
-use App\Services\{DeliveryPlanningService, OperationsAccess};
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Services\{DeliveryPlanningService, OperationsAccess, ReportPdfRenderer};
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -48,7 +47,7 @@ class DeliveryPlanningController extends Controller
         return back()->with('success', "Added {$counts['visits']} booking visit(s) and {$counts['dispatches']} delivery task(s).");
     }
 
-    public function sheet(Request $request, OperationsAccess $access)
+    public function sheet(Request $request, OperationsAccess $access, ReportPdfRenderer $pdf)
     {
         $data = $request->validate(['date' => 'required|date_format:Y-m-d', 'assignee_id' => 'required|integer']);
         $access->validateAssignee($data['assignee_id'], ['dispatch.view', 'dispatch.assigned'], $request->user());
@@ -79,9 +78,9 @@ class DeliveryPlanningController extends Controller
                 ($group->first()->invoice->customer?->city ?? '').'|'.($group->first()->invoice->customer?->name ?? '')
             ))->values();
 
-        return Pdf::loadView('pdf.daily-delivery-sheet', [
+        return $pdf->renderView('pdf.daily-delivery-sheet', [
             'staff' => $staff, 'date' => Carbon::parse($data['date'], 'Asia/Karachi'), 'stops' => $stops,
             'invoiceCount' => $dispatches->count(), 'verifiedPayments' => $verifiedPayments,
-        ])->setPaper('a4')->stream('delivery-sheet-'.$data['date'].'.pdf');
+        ], 'landscape')->stream('delivery-sheet-'.$data['date'].'.pdf');
     }
 }

@@ -7,8 +7,8 @@ use App\Models\Product;
 use App\Models\SampleReceipt;
 use App\Models\Warehouse;
 use App\Services\NumberSeriesService;
+use App\Services\ReportPdfRenderer;
 use App\Services\SamplePostingService;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -150,13 +150,11 @@ class SampleReceiptController extends Controller
         return redirect()->route('samples.receipts.index')->with('success', 'Draft deleted.');
     }
 
-    public function print(SampleReceipt $receipt)
+    public function print(SampleReceipt $receipt, ReportPdfRenderer $pdf)
     {
         $receipt->load(['items.product', 'company', 'warehouse']);
 
-        return Pdf::loadView('pdf.sample-receipt', ['receipt' => $receipt])
-            ->setPaper('a4')
-            ->stream("{$receipt->receipt_number}.pdf");
+        return $pdf->renderView('pdf.sample-receipt', ['receipt' => $receipt], 'portrait')->stream("{$receipt->receipt_number}.pdf");
     }
 
     private function validated(Request $request, ?SampleReceipt $existing = null): array

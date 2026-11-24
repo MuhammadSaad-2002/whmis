@@ -6,8 +6,8 @@ use App\Models\Customer;
 use App\Models\SampleIssue;
 use App\Models\Warehouse;
 use App\Services\NumberSeriesService;
+use App\Services\ReportPdfRenderer;
 use App\Services\SamplePostingService;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -153,13 +153,11 @@ class SampleIssueController extends Controller
         return redirect()->route('samples.issues.index')->with('success', 'Draft deleted.');
     }
 
-    public function print(SampleIssue $issue)
+    public function print(SampleIssue $issue, ReportPdfRenderer $pdf)
     {
         $issue->load(['items.product', 'items.batch', 'customer', 'warehouse']);
 
-        return Pdf::loadView('pdf.sample-issue', ['issue' => $issue])
-            ->setPaper('a4')
-            ->stream("{$issue->issue_number}.pdf");
+        return $pdf->renderView('pdf.sample-issue', ['issue' => $issue], 'portrait')->stream("{$issue->issue_number}.pdf");
     }
 
     private function validated(Request $request, ?SampleIssue $existing = null): array

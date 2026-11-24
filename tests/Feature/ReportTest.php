@@ -83,6 +83,19 @@ class ReportTest extends TestCase
                 ->has('catalog.Financial'));
     }
 
+    public function test_report_exposes_default_dates_separately_from_applied_dates(): void
+    {
+        $this->travelTo(now()->startOfMonth()->addDays(14));
+
+        $this->get(route('reports.show', ['key' => 'product-sales', 'from' => now()->subDays(7)->toDateString()]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filterValues.from', now()->subDays(7)->toDateString())
+                ->where('filterValues.to', now()->toDateString())
+                ->where('defaultDates.from', now()->startOfMonth()->toDateString())
+                ->where('defaultDates.to', now()->toDateString()));
+    }
+
     public function test_product_sales_report_aggregates_qty_bonus_revenue_profit(): void
     {
         $response = $this->get(route('reports.show', 'product-sales'));

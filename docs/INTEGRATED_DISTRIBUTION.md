@@ -159,8 +159,12 @@
    limit for each action. Commission waivers additionally require
    `commission.waive`. Makers and financial beneficiaries cannot approve their
    own requests. Admin and Finance staff perform reconciliation and posting
-   according to their grants and account access. Field staff see only their own
-   work, collection submissions, and linked employee commission dashboard.
+   according to their grants and account access. Field staff see their own
+   work and collection submissions; Booker and Salesman field roles cannot
+   open Employee Commissions. Existing installations using phpMyAdmin should
+   import [the field commission permission cleanup](../database/manual/2026_11_24_restrict_field_commission_permissions.sql)
+   and reset the permission cache. Commission accruals and payouts are not
+   changed by the access restriction.
 4. Pilot split invoicing and custody before cutover. Reconcile imported
    balances to counts, bank statements and customer/supplier balances before
    opening lock. Pilot one route and one commission payout before expanding.

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <title>{{ $title }}</title>
     @include('pdf.partials.style', [
-        'pageMargins' => '18pt '.\App\Services\ReportPdfRenderer::SIDE_MARGIN.'pt '.\App\Services\ReportPdfRenderer::BOTTOM_MARGIN.'pt',
+        'pageMargins' => \App\Services\ReportPdfRenderer::PAGE_MARGINS,
     ])
     <style>
         body { padding: 0; }

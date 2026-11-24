@@ -3,8 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{CollectionFollowUp, Dispatch, SalesInvoice, User};
-use App\Services\{AdminDispatchOverview, CollectionService, DeliveryCollectionService, DeliveryPlanningService, DispatchService, InvoiceBalanceService, OperationsAccess, ReportPdfRenderer};
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Services\{AdminDispatchOverview, CollectionService, DeliveryCollectionService, DeliveryPlanningService, DispatchService, FieldDeliveryOverview, InvoiceBalanceService, OperationsAccess, ReportPdfRenderer};
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -12,9 +11,10 @@ use Inertia\Inertia;
 
 class OperationsController extends Controller
 {
-    public function dispatches(Request $request, AdminDispatchOverview $overview)
+    public function dispatches(Request $request, AdminDispatchOverview $overview, FieldDeliveryOverview $fieldDeliveries)
     {
         $actor = $request->user();
+        $today = now('Asia/Karachi')->toDateString();
         $scoped = ! $actor->can('dispatch.view');
         abort_if($scoped && ! $actor->is_active, 403);
         $filters = $request->validate([
@@ -29,7 +29,6 @@ class OperationsController extends Controller
                 'dir' => 'nullable|in:asc,desc',
             ]);
             $view = $filters['view'] ?? 'board';
-            $today = now('Asia/Karachi')->toDateString();
             $query = $overview->query($filters);
             $rows = $overview->rows(clone $query);
             if ($stage = ($filters['stage'] ?? null)) {
@@ -47,28 +46,27 @@ class OperationsController extends Controller
                 'canPlan' => $actor->can('dispatch.plan'), 'canManage' => $actor->can('dispatch.manage') && $actor->is_active,
             ]);
         }
-        $invoices = SalesInvoice::query()->where('sales_invoices.status', 'posted')
-            ->leftJoin('dispatches', 'dispatches.sales_invoice_id', '=', 'sales_invoices.id')
-            ->leftJoin('users as delivery_staff', 'delivery_staff.id', '=', 'dispatches.assigned_to')
-            ->with('customer:id,name,city')->select('sales_invoices.id', 'invoice_number', 'invoice_date', 'customer_id')
-            ->addSelect('dispatches.planned_date', 'delivery_staff.name as assignee')
-            ->selectRaw("COALESCE(dispatches.status, 'untracked') as dispatch_status")
-            ->where(fn ($rows) => $rows->where('dispatches.assigned_to', $actor->id)->orWhere('dispatches.handover_to_id', $actor->id))
-            ->when($filters['date'] ?? null, fn ($q, $date) => $q->where('dispatches.planned_date', $date))
+        $filters['date'] ??= $today;
+        unset($filters['assignee_id']);
+        $query = $fieldDeliveries->forDay($actor->id, $filters['date'], $today)
             ->when($filters['search'] ?? null, fn ($q, $s) => $q->where(fn ($q) => $q->where('invoice_number', 'like', "%{$s}%")
                 ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%"))))
-            ->when($filters['status'] ?? null, fn ($q, $s) => $s === 'untracked'
-                ? $q->whereNull('dispatches.status')
-                : $q->where('dispatches.status', $s))
-            ->orderByRaw("CASE WHEN dispatches.status IN ('delivered', 'closed') THEN 1 ELSE 0 END")
-            ->orderByRaw('CASE WHEN dispatches.planned_date IS NULL THEN 1 ELSE 0 END')->orderBy('dispatches.planned_date')
-            ->orderByDesc('sales_invoices.id')->paginate(20)->withQueryString();
-        unset($filters['assignee_id']);
+            ->when($filters['status'] ?? null, fn ($q, $s) => $q->where('d.status', $s));
+
         return Inertia::render('operations/dispatch-index', [
-            'invoices' => $invoices, 'filters' => $filters, 'scoped' => true,
+            'invoices' => fn () => $fieldDeliveries->ordered(clone $query)->with('customer:id,name,city')
+                ->paginate(20)->withQueryString()->through(fn (SalesInvoice $invoice) => [
+                    ...$invoice->only(['id', 'invoice_number', 'planned_date', 'dispatch_status', 'customer']),
+                    'invoice_date' => $invoice->invoice_date?->toDateString(),
+                    'is_complete' => (bool) $invoice->is_complete,
+                    'pending_paisa' => (int) $invoice->pending_collection_paisa,
+                    'outstanding' => max(0, (float) $invoice->outstanding),
+                ]),
+            'filters' => $filters, 'scoped' => true,
+            'activeDeliveries' => fn () => $fieldDeliveries->uncompleted(clone $query)->count(),
             'staff' => [],
             'canPlan' => $actor->can('dispatch.plan'),
-            'today' => now('Asia/Karachi')->toDateString(),
+            'today' => $today,
         ]);
     }
 
@@ -90,7 +88,7 @@ class OperationsController extends Controller
         ])->header('Cache-Control', 'private, no-store');
     }
 
-    public function dispatchPickList(Request $request, AdminDispatchOverview $overview, DispatchService $dispatch)
+    public function dispatchPickList(Request $request, AdminDispatchOverview $overview, DispatchService $dispatch, ReportPdfRenderer $pdf)
     {
         $filters = $request->validate([
             'search' => 'nullable|string|max:100', 'date' => 'nullable|date_format:Y-m-d', 'assignee_id' => 'nullable|integer',
@@ -103,7 +101,7 @@ class OperationsController extends Controller
             ->select('sales_invoices.*')->addSelect('dispatches.planned_date', 'dispatches.custody_required')
             ->with('customer:id,name')->orderBy('dispatches.planned_date')->orderBy('sales_invoices.id')->limit(31)->get();
 
-        return Pdf::loadView('pdf.dispatch-pick-list', [
+        return $pdf->renderView('pdf.dispatch-pick-list', [
             'truncated' => $rows->count() > 30,
             'orders' => $rows->take(30)->map(fn ($invoice) => [
                 'invoice' => $invoice,
@@ -113,7 +111,7 @@ class OperationsController extends Controller
                     : collect($dispatch->progress($invoice))->filter(fn ($line) => $line['remaining'] > 0)
                         ->map(fn ($line) => ['product' => $line['product'], 'batch' => $line['batch'], 'expiry' => $line['expiry'], 'quantity' => $line['remaining']]),
             ]),
-        ])->setPaper('a4')->stream('dispatch-pick-list.pdf');
+        ], 'portrait')->stream('dispatch-pick-list.pdf');
     }
 
     public function dispatchMoveOptions(Request $request, SalesInvoice $sale, DispatchService $service, DeliveryPlanningService $planning, OperationsAccess $access)
@@ -245,8 +243,8 @@ class OperationsController extends Controller
             'Invoice: '.ucfirst($sale->status), 'Dispatch: '.ucfirst($dispatch?->status ?? 'untracked'),
         ]));
 
-        return $pdf->render([
-            'title' => $title, 'headerLabel' => $sale->invoice_number, 'context' => $context, 'readable' => true,
+        return $pdf->renderView('pdf.dispatch-items', [
+            'title' => $title, 'headerLabel' => $sale->invoice_number, 'context' => $context,
             'notes' => array_filter([implode(', ', array_filter([$customer?->address, $customer?->city])), 'Quantities include bonus units. Only recorded activity is shown.']),
             'columns' => [
                 ['key' => 'product', 'label' => 'Product', 'wrap' => true], ['key' => 'batch', 'label' => 'Batch'],
@@ -254,7 +252,7 @@ class OperationsController extends Controller
                 ['key' => 'completed', 'label' => $tracksPickup ? 'Picked' : 'Delivered', 'align' => 'right'],
                 ['key' => 'remaining', 'label' => $tracksPickup ? 'To pick' : 'To deliver', 'align' => 'right'],
             ], 'rows' => $rows, 'totals' => $rows ? $totals : [],
-        ])->stream('dispatch-items-'.$sale->id.'.pdf')->header('Cache-Control', 'private, no-store');
+        ], 'portrait')->stream('dispatch-items-'.$sale->id.'.pdf')->header('Cache-Control', 'private, no-store');
     }
 
     public function dispatchAction(Request $request, SalesInvoice $sale, DispatchService $service)

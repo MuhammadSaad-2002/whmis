@@ -3,17 +3,17 @@
 <head>
     <meta charset="utf-8">
     <title>{{ $invoice->invoice_number }}</title>
-    @include('pdf.partials.style')
+    @include('pdf.partials.document-style')
 </head>
 <body>
     <table class="header">
         <tr>
             <td>
                 @include('pdf.partials.header')
+                <h2 class="document-title">Sales Invoice</h2>
                 <div class="meta">
-                    Sales Invoice
                     @if($invoice->booking)
-                        <br>Booking #: {{ $invoice->booking->booking_number }}
+                        Booking #: {{ $invoice->booking->booking_number }}
                         <br>Booking Date: {{ $invoice->booking->booking_date->format('d M Y') }}
                         @if($invoice->booking->booker)<br>Booked by: {{ $invoice->booking->booker->name }}@endif
                     @endif
@@ -30,7 +30,7 @@
         </tr>
     </table>
 
-    <table style="width:100%; margin-bottom: 8px;">
+    <table class="document-info">
         <tr>
             <td>
                 <h2>Bill To</h2>
@@ -62,9 +62,9 @@
                     <td>{{ $i + 1 }}</td>
                     <td>
                         <strong>{{ $item->product->name }}</strong>
-                        @if($item->product->company)<br><span class="muted" style="font-size:8px;">{{ $item->product->company->name }}</span>@endif
+                        @if($item->product->company)<br><span class="meta">{{ $item->product->company->name }}</span>@endif
                         @if($item->relationLoaded('incentives') && $item->incentives->isNotEmpty())
-                            <br><span class="muted" style="font-size:8px;">Incentives:
+                            <br><span class="meta">Incentives:
                             {{ $item->incentives->map(fn ($inc) => $inc->rule_name . ((float) $inc->value_given > 0 ? ' (Rs ' . number_format((float) $inc->value_given, 2) . ')' : ''))->implode(', ') }}
                             </span>
                         @endif
@@ -99,15 +99,14 @@
     </table>
 
     @if($invoice->sale_terms)
-        <div style="margin-top: 10px; padding: 6px 8px; border: 1px solid #999;">
+        <div class="document-callout">
             <strong>Sale Base Terms:</strong> {{ $invoice->sale_terms }}
         </div>
     @endif
 
     @if($invoice->notes)
-        <p style="margin-top: 10px;" class="meta">Notes: {{ $invoice->notes }}</p>
+        <p class="meta document-note">Notes: {{ $invoice->notes }}</p>
     @endif
 
-    @include('pdf.partials.footer')
 </body>
 </html>

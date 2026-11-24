@@ -25,9 +25,9 @@ class DistributionPermissionSeeder extends Seeder
         Role::findOrCreate('Super Admin', 'web')->givePermissionTo(self::FINANCE_PERMISSIONS);
         Role::findOrCreate('Admin', 'web')->givePermissionTo(['distribution.reconcile', 'treasury.view', 'treasury.manage', 'finance.review', 'finance.request', 'finance.post']);
         Role::findOrCreate('Accountant', 'web')->givePermissionTo(['distribution.reconcile', 'treasury.view', 'finance.review', 'finance.request', 'finance.post']);
-        foreach (['commission.self','commission.manage','commission.waive'] as $permission) Permission::findOrCreate($permission, 'web');
-        foreach (['Booker','Salesman'] as $role) Role::findOrCreate($role, 'web')->givePermissionTo('commission.self');
-        foreach (['Super Admin','Admin'] as $role) Role::findOrCreate($role, 'web')->givePermissionTo(['commission.self','commission.manage']);
+        foreach (['commission.manage', 'commission.waive'] as $permission) Permission::findOrCreate($permission, 'web');
+        foreach (['Booker', 'Salesman'] as $role) Role::findOrCreate($role, 'web')->revokePermissionTo(['commission.self', 'commission.manage', 'commission.waive']);
+        foreach (['Super Admin', 'Admin'] as $role) Role::findOrCreate($role, 'web')->givePermissionTo('commission.manage');
         Role::findOrCreate('Super Admin', 'web')->givePermissionTo('commission.waive');
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }

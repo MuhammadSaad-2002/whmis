@@ -102,8 +102,8 @@ export default function AuditIndex({ audits, filters, users, events, models }: P
                     </Select>
                     <Input type="date" className="w-40" value={filters.from ?? ''} onChange={(e) => apply({ from: e.target.value || undefined })} />
                     <Input type="date" className="w-40" value={filters.to ?? ''} onChange={(e) => apply({ to: e.target.value || undefined })} />
-                    {(filters.user_id || filters.event || filters.model || filters.from || filters.to || filters.search) && (
-                        <Button variant="ghost" onClick={() => router.get('/audit-log')}>Clear</Button>
+                    {(filters.user_id || filters.event || filters.model || filters.from || filters.to || filters.search?.trim()) && (
+                        <Button variant="ghost" onClick={() => router.get('/audit-log')}>Clear filters</Button>
                     )}
                 </div>
 

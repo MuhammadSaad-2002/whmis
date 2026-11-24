@@ -72,6 +72,7 @@ export function AdminDispatchIndex({ invoices, filters, staff, canPlan, canManag
     }
     const view = filters.view ?? 'board';
     const stageKey = filters.stage ?? (filters.status ? resolveStage(filters.status).key : '');
+    const hasFilters = Boolean(filters.search?.trim() || stageKey || filters.assignee_id || filters.date);
     const visible = view === 'board' ? Object.values(board).flatMap(column => column.data) : invoices.data;
     const selection = visible.filter(row => selected.has(row.id));
     const pickable = selection.filter(eligibleForPick);
@@ -155,7 +156,7 @@ export function AdminDispatchIndex({ invoices, filters, staff, canPlan, canManag
                         <option value="">All staff</option>{staff.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}
                     </select>
                     <input className="filter-field date-field" aria-label="Planned delivery date" type="date" value={filters.date ?? ''} onChange={event => updateFilters({ date: event.target.value || undefined })} />
-                    <button type="button" className="clear" onClick={() => { setSearch(''); updateFilters({ search: undefined, stage: undefined, status: undefined, assignee_id: undefined, date: undefined }); }}>Clear</button>
+                    {hasFilters && <button type="button" className="clear" onClick={() => { setSearch(''); updateFilters({ search: undefined, stage: undefined, status: undefined, assignee_id: undefined, date: undefined }); }}>Clear filters</button>}
                     <div className="view-toggle" role="group" aria-label="Delivery view">
                         <button type="button" aria-pressed={view === 'board'} onClick={() => view !== 'board' && updateFilters({ view: 'board' })}><Columns3 />Board</button>
                         <button type="button" aria-pressed={view === 'list'} onClick={() => view !== 'list' && updateFilters({ view: 'list' })}><List />List</button>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <title>Executive Summary</title>
-    @include('pdf.partials.style', ['pageMargins' => '18pt '.\App\Services\ReportPdfRenderer::SIDE_MARGIN.'pt '.\App\Services\ReportPdfRenderer::BOTTOM_MARGIN.'pt'])
+    @include('pdf.partials.style', ['pageMargins' => \App\Services\ReportPdfRenderer::PAGE_MARGINS])
     <style>
         @include('pdf.partials.report-chart-style')
         body { padding: 0; }

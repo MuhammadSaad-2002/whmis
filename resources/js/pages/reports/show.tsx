@@ -56,6 +56,7 @@ interface Props extends ReportTableData {
     context?: string | null;
     notes?: string[];
     filterValues: Record<string, string | undefined>;
+    defaultDates: { from: string; to: string };
     options: { customers: Option[]; suppliers: Option[]; products: Option[] };
 }
 
@@ -469,7 +470,7 @@ function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData 
     );
 }
 
-export default function ReportShow({ report, columns, rows, totals, chart, visualization, groupBy, sections = [], sectionTitle, context, notes = [], filterValues, options }: Props) {
+export default function ReportShow({ report, columns, rows, totals, chart, visualization, groupBy, sections = [], sectionTitle, context, notes = [], filterValues, defaultDates, options }: Props) {
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Reports', href: '/reports' },
         { title: report.title, href: '#' },
@@ -486,18 +487,7 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
     useEffect(() => {
         setMetricKey((visualization ?? RANKED_CHARTS[report.key])?.metrics[0]?.key ?? '');
         setDraftFilters({ ...filterValues });
-    }, [
-        report.key,
-        visualization,
-        filterValues.from,
-        filterValues.to,
-        filterValues.customer_id,
-        filterValues.company_id,
-        filterValues.product_id,
-        filterValues.direction,
-        filterValues.expiry_window,
-        filterValues.order,
-    ]);
+    }, [report.key, visualization, filterValues]);
 
     const navigate = (values: Record<string, string | undefined>, closeFilters = false) => {
         router.get(route('reports.show', report.key), values, {
@@ -519,12 +509,11 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
     };
 
     const clearDraftFilters = () => {
-        setDraftFilters({
-            from: has('date_range') ? '' : undefined,
-            to: has('date_range') ? '' : undefined,
+        setDraftFilters((current) => ({
+            ...(has('date_range') ? defaultDates : {}),
             expiry_window: has('expiry_window') ? '90' : undefined,
-            order: has('order') ? 'slow' : undefined,
-        });
+            order: current.order,
+        }));
     };
 
     const closeFilterPanel = () => {
@@ -572,13 +561,12 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
 
     const invalidDates = has('date_range') && !!draftFilters.from && !!draftFilters.to && draftFilters.from > draftFilters.to;
     const activeFilterCount = [
-        has('date_range') && filterValues.from && filterValues.to,
+        has('date_range') && ((filterValues.from || defaultDates.from) !== defaultDates.from || (filterValues.to || defaultDates.to) !== defaultDates.to),
         has('customer') && filterValues.customer_id,
         has('supplier') && filterValues.company_id,
         has('product') && filterValues.product_id,
         has('direction') && filterValues.direction,
-        has('expiry_window') && filterValues.expiry_window,
-        has('order') && filterValues.order,
+        has('expiry_window') && (filterValues.expiry_window || '90') !== '90',
     ].filter(Boolean).length;
 
     const metric = rankedConfig?.metrics.find((item) => item.key === metricKey) ?? rankedConfig?.metrics[0];
@@ -796,9 +784,11 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
                         )}
                         {invalidDates && <p className="text-destructive mt-2 text-xs">The From date must be on or before the To date.</p>}
                         <div className="mt-3 flex flex-wrap justify-end gap-2 border-t pt-3">
-                            <Button variant="ghost" size="sm" disabled={isLoading} onClick={clearDraftFilters}>
-                                <RotateCcw className="mr-1 size-3.5" /> Clear
-                            </Button>
+                            {activeFilterCount > 0 && (
+                                <Button variant="ghost" size="sm" disabled={isLoading} onClick={clearDraftFilters}>
+                                    <RotateCcw className="mr-1 size-3.5" /> Clear filters
+                                </Button>
+                            )}
                             <Button variant="outline" size="sm" disabled={isLoading} onClick={closeFilterPanel}>
                                 Cancel
                             </Button>

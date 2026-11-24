@@ -3,19 +3,16 @@
 <head>
     <meta charset="utf-8">
     <title>Dispatch Picking List</title>
-    @include('pdf.partials.style', ['pageMargins' => '12mm 12mm 14mm'])
+    @include('pdf.partials.document-style')
     <style>
-        body { padding: 0; }
         table.items { margin-bottom: 12pt; }
-        table.items thead { display: table-header-group; }
-        table.items tr { page-break-inside: avoid; }
-        .num { text-align: right; }
     </style>
 </head>
 <body>
     <table class="header"><tr><td>
         @include('pdf.partials.header')
-        <div class="meta">Dispatch Picking List · Quantities include bonus units</div>
+        <h2 class="document-title">Dispatch Picking List</h2>
+        <div class="meta">Quantities include bonus units</div>
     </td></tr></table>
     @if($truncated)<p>Showing the first 30 invoices. Narrow the date or assignee filter for a smaller pick list.</p>@endif
     @forelse($orders as $order)

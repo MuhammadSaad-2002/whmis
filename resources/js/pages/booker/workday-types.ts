@@ -19,7 +19,7 @@ export type DirectoryCustomer = Customer & {
 export type RouteVisit = Visit & { customer: Customer };
 export type Delivery = {
     id: number; invoice_number: string; total_amount: number | string; paid_amount: number | string; outstanding: number | string;
-    delivery_status: string; planned_date: string; can_collect: boolean; collectible_paisa: number; pending_paisa: number;
+    delivery_status: string; planned_date: string | null; is_complete: boolean; can_collect: boolean; collectible_paisa: number; pending_paisa: number;
     customer: { name: string; city: string | null; address: string | null; phone: string | null } | null;
 };
 export type BookStats = {

@@ -17,7 +17,7 @@ class FinanceApprovalService
 
     public function visibleRequests(User $actor): \Illuminate\Database\Eloquent\Builder
     {
-        $query = FinanceWorkItem::query()->when(! $actor->can('commission.manage'), fn ($q) => $q->whereNotIn('kind', self::PRIVATE_KINDS));
+        $query = FinanceWorkItem::query()->when(! $actor->can('manage-employee-commissions'), fn ($q) => $q->whereNotIn('kind', self::PRIVATE_KINDS));
         if ($actor->can('treasury.manage')) return $query;
         $accountIds = $this->treasury->visible($actor)->select('financial_accounts.id');
         $cast = in_array(DB::getDriverName(), ['mysql','mariadb'], true) ? 'UNSIGNED' : 'INTEGER';
@@ -52,6 +52,8 @@ class FinanceApprovalService
 
     public function request(User $actor, string $kind, array $data, ?string $evidence): FinanceWorkItem
     {
+        abort_if(in_array($kind, self::PRIVATE_KINDS, true) && ! $actor->can('manage-employee-commissions'), 403);
+
         return DB::transaction(function () use ($actor, $kind, $data, $evidence) {
             $existing = FinanceWorkItem::where('request_key', $data['request_key'])->first();
             if ($existing) {
@@ -107,7 +109,6 @@ class FinanceApprovalService
                 if (! $evidence || $amount <= 0 || $amount > $remaining) $this->treasury->fail('Attach evidence and enter an amount within the unresolved payout.');
                 $data['invoice_id'] = $refund->payload['invoice_id'];
             } elseif ($kind === 'commission_cap') {
-                abort_unless($actor->can('commission.manage'), 403);
                 $scope = DB::table('commission_scopes')->where('booking_id', $data['booking_id'] ?? 0)->first();
                 if (! $scope) $this->treasury->fail('This booking does not have a locked commission snapshot.');
                 $role = $data['commission_role'] ?? null;
@@ -118,7 +119,6 @@ class FinanceApprovalService
             } elseif (in_array($kind, ['commission_share', 'delivery_correction'], true)) {
                 $invoice = SalesInvoice::where('status','posted')->findOrFail($data['invoice_id'] ?? 0);
                 if ($kind === 'commission_share') {
-                    abort_unless($actor->can('commission.manage'), 403);
                     if (! isset($data['share']) || (float) $data['share'] < 0 || (float) $data['share'] > 100) $this->treasury->fail('Enter a share between 0 and 100 percent.');
                     $data['share_bp'] = Paisa::from($data['share']);
                 } else {
@@ -127,7 +127,6 @@ class FinanceApprovalService
                 }
                 $amount = Paisa::from($invoice->total_amount);
             } elseif (in_array($kind, self::EMPLOYEE_KINDS, true)) {
-                abort_unless($actor->can('commission.manage'), 403);
                 $employee = \App\Models\Employee::findOrFail($data['employee_id'] ?? 0);
                 $beneficiary = $employee->user_id;
                 if (! in_array($kind, ['recovery_hold','recovery_resume'], true) && $amount <= 0) $this->treasury->fail('Enter a positive amount.');
@@ -156,7 +155,7 @@ class FinanceApprovalService
                 if ($item->kind === 'recovery_waiver') abort_unless($actor->can('commission.waive'), 403);
             }
             if (in_array($item->kind, self::PRIVATE_KINDS, true)) {
-                abort_unless($actor->can('commission.manage'), 403);
+                abort_unless($actor->can('manage-employee-commissions'), 403);
                 if ($item->kind === 'commission_cap') {
                     abort_if(DB::table('commission_awards as a')->join('employees as e', 'e.id', '=', 'a.employee_id')
                         ->join('commission_scopes as s', 's.id', '=', 'a.commission_scope_id')
@@ -202,7 +201,7 @@ class FinanceApprovalService
             } else {
                 $this->treasury->assertDate($date);
                 if ($item->kind === 'commission_share') {
-                    abort_unless($actor->can('commission.manage'), 403);
+                    abort_unless($actor->can('manage-employee-commissions'), 403);
                     $invoice = SalesInvoice::where('status','posted')->whereKey($data['invoice_id'])->lockForUpdate()->firstOrFail();
                 } elseif ($item->kind === 'delivery_correction') {
                     abort_unless($actor->can('dispatch.manage'), 403);
@@ -220,7 +219,7 @@ class FinanceApprovalService
                         $this->ledger->post($invoice->customer, 'refund_recovery', $date, 0, (float) Paisa::rupees($amount), $item, "Refund recovery on {$invoice->invoice_number}");
                     }
                 } elseif ($item->kind === 'commission_cap') {
-                    abort_unless($actor->can('commission.manage'), 403);
+                    abort_unless($actor->can('manage-employee-commissions'), 403);
                     $booking = \App\Models\Booking::whereKey($data['booking_id'])->lockForUpdate()->firstOrFail();
                     $scope = DB::table('commission_scopes')->where('booking_id', $booking->id)->lockForUpdate()->first();
                     $rules = json_decode($scope->rules, true, flags: JSON_THROW_ON_ERROR);
@@ -245,7 +244,7 @@ class FinanceApprovalService
                     $account = $this->treasury->account((int) ($data['account_id'] ?? 0), $actor);
                     $this->treasury->entry($account, 'shortage_repayment', 'approval', $id, $amount, $date, $actor, $reference);
                 } elseif (in_array($item->kind, self::EMPLOYEE_KINDS, true)) {
-                    abort_unless($actor->can('commission.manage'), 403);
+                    abort_unless($actor->can('manage-employee-commissions'), 403);
                     app(CommissionService::class)->postEmployeeAction($item, $actor, $reference);
                 } elseif ($item->kind === 'credit_release') {
                     $credit = FinanceWorkItem::where('kind', 'credit_apply')->lockForUpdate()->findOrFail($data['credit_id']);
@@ -345,7 +344,7 @@ class FinanceApprovalService
     {
         DB::transaction(function () use ($id, $actor, $reason) {
             $item = $this->visibleRequests($actor)->whereKey($id)->lockForUpdate()->firstOrFail();
-            abort_if(in_array($item->kind, self::PRIVATE_KINDS, true) && ! $actor->can('commission.manage'), 403);
+            abort_if(in_array($item->kind, self::PRIVATE_KINDS, true) && ! $actor->can('manage-employee-commissions'), 403);
             abort_unless(in_array($item->status, ['pending','approved'], true), 409);
             abort_unless($actor->id === $item->created_by || $actor->can('finance.approve'), 403);
             $item->update(['status' => 'cancelled']);

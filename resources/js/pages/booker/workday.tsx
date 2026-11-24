@@ -1,4 +1,4 @@
-import { fieldAction as action, fieldCard as card, FieldDatePicker, fieldGrid as routeGrid, FieldHeading as SectionHeading, fieldHero, fieldHeroAction as heroButton, fieldPage, FieldPager as PageControls, fieldPrimary, FieldTile as Tile } from '@/components/field-work-ui';
+import { fieldAction as action, fieldCard as card, FieldCompletedDeliveries, FieldDatePicker, fieldGrid as routeGrid, FieldHeading as SectionHeading, fieldHero, fieldHeroAction as heroButton, fieldPage, FieldPager as PageControls, fieldPrimary, FieldTile as Tile } from '@/components/field-work-ui';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { amount, money, shortDate, weekdayDate } from '@/lib/format';
@@ -13,7 +13,7 @@ import { OUTCOMES, WORKDAY, type BookStats, type Collections, type Delivery, typ
 
 type Props = {
     today: string; filters: Filters; deliveries: Page<Delivery> | null; visits: Page<RouteVisit> | null;
-    customers: Page<DirectoryCustomer> | null; bookerStats: BookStats | null; pendingDeliveries: number; collections: Collections | null;
+    customers: Page<DirectoryCustomer> | null; bookerStats: BookStats | null; pendingDeliveries: number; activeDeliveries: number; collections: Collections | null;
 };
 const customerGrid = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,320px),1fr))] gap-3';
 const tones = ['bg-chart-1 text-brand-paper', 'bg-chart-2 text-brand-paper', 'bg-chart-5 text-brand-paper', 'bg-primary text-primary-foreground', 'bg-chart-4 text-brand-paper'];
@@ -23,6 +23,8 @@ const collectionsMoney = (paisa: number) => money(Number(paisa) / 100);
 export default function Workday(p: Props) {
     const { auth } = usePage<{ auth: { user: { name: string } | null } }>().props;
     const { date, filter, search, sort, size } = p.filters;
+    const active = p.deliveries?.data.filter(task => !task.is_complete) ?? [];
+    const complete = p.deliveries?.data.filter(task => task.is_complete) ?? [];
     // Old bookmarked links may still include now-hidden directory filters.
     useEffect(() => {
         if (filter === 'all' && !search && sort === 'name') return;
@@ -43,12 +45,17 @@ export default function Workday(p: Props) {
             <Hero {...p} name={auth.user?.name} changeDate={changeDate} />
             <section aria-labelledby="workday-route" className="min-w-0 space-y-2.5">
                 <SectionHeading id="workday-route" title={date === p.today ? 'Today’s route' : 'Route for ' + weekdayDate(date)}
-                    count={Number(p.deliveries?.total ?? 0) + Number(p.visits?.total ?? 0)} note="Deliveries and planned visits" />
-                {!(p.deliveries?.data.length || p.visits?.data.length) && <p className="rounded-2xl border border-dashed bg-card p-5 text-center text-sm text-muted-foreground">Nothing planned for {date === p.today ? 'today' : shortDate(date)}.{p.customers ? ' Use Plan visit below to build your route.' : ''}</p>}
+                    count={p.activeDeliveries + Number(p.visits?.total ?? 0)} note="Open deliveries and visits" />
+                {!(active.length || p.visits?.data.length) && <p className="rounded-2xl border border-dashed bg-card p-5 text-center text-sm text-muted-foreground">
+                    {p.activeDeliveries ? 'No open deliveries on this page.' : complete.length ? 'No deliveries need attention.' : <>Nothing planned for {date === p.today ? 'today' : shortDate(date)}.{p.customers ? ' Use Plan visit below to build your route.' : ''}</>}
+                </p>}
                 <div className={routeGrid}>
-                    {p.deliveries?.data.map(task => <DeliveryCard key={task.id} task={task} date={date} today={p.today} />)}
+                    {active.map(task => <DeliveryCard key={task.id} task={task} date={date} today={p.today} />)}
                     {p.visits?.data.map(visit => <VisitCard key={visit.id} visit={visit} date={date} today={p.today} />)}
                 </div>
+                <FieldCompletedDeliveries key={date} count={complete.length}>
+                    <div className={routeGrid}>{complete.map(task => <DeliveryCard key={task.id} task={task} date={date} today={p.today} />)}</div>
+                </FieldCompletedDeliveries>
                 {p.deliveries && <PageControls page={p.deliveries} label="Delivery pages" />}
                 {p.visits && <PageControls page={p.visits} label="Visit pages" />}
             </section>
@@ -62,7 +69,7 @@ function Hero(p: Props & { name?: string; changeDate: (date: string) => void }) 
     const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Karachi' }).format(new Date()));
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
     const stats = [
-        ...(p.deliveries ? [{ label: 'Deliveries', value: p.deliveries.total, description: p.pendingDeliveries + ' pending' }] : []),
+        ...(p.deliveries ? [{ label: 'Open deliveries', value: p.activeDeliveries, description: p.pendingDeliveries + ' to deliver' }] : []),
         ...(p.visits ? [{ label: 'Visits planned', value: p.visits.total, description: (p.bookerStats?.completedVisits ?? 0) + ' done' }] : []),
         ...(p.collections ? [{ label: 'Collected', value: collectionsMoney(p.collections.cash + p.collections.online), description: p.collections.pending ? p.collections.pending + ' awaiting Finance' : p.collections.entryCount ? 'Reported collections' : 'Nothing reported' }] : []),
         ...(p.bookerStats ? [
@@ -110,7 +117,7 @@ function DeliveryCard({ task, date, today }: { task: Delivery; date: string; tod
                 <p className="text-xs font-bold tracking-wide text-chart-1 uppercase">Delivery · {deliveryLabel(task.delivery_status)}</p>
                 <h3 className="break-words text-base font-bold">{customer?.name ?? 'Customer'}</h3>
                 <p className="break-words text-sm text-muted-foreground">{task.invoice_number}{address ? ' · ' + address : ''}</p>
-                {task.planned_date < date && <p className="text-xs font-semibold text-chart-4">Carried over · {shortDate(task.planned_date)}</p>}
+                {task.planned_date && task.planned_date < date && <p className="text-xs font-semibold text-chart-4">Carried over · {shortDate(task.planned_date)}</p>}
             </div>
         </div>
         <dl className="grid grid-cols-3 divide-x rounded-xl border bg-muted/45">
@@ -121,9 +128,9 @@ function DeliveryCard({ task, date, today }: { task: Delivery; date: string; tod
         </dl>
         {task.pending_paisa > 0 && <p className="flex items-start gap-1.5 rounded-lg bg-accent/60 px-2.5 py-2 text-xs font-semibold text-accent-foreground"><Banknote className="size-4 shrink-0" />{collectionsMoney(task.pending_paisa)} reported · awaiting Finance</p>}
         <div className="mt-auto flex min-w-0 flex-wrap gap-1.5">
-            <Button asChild className={cn(action, fieldPrimary, 'min-w-[8rem] flex-1')}><Link href={'/dispatch/' + task.id}><Truck />Open delivery</Link></Button>
+            <Button asChild variant={task.is_complete ? 'outline' : 'default'} className={cn(action, !task.is_complete && fieldPrimary, 'min-w-[8rem] flex-1')}><Link href={'/dispatch/' + task.id}><Truck />{task.is_complete ? 'View delivery' : 'Open delivery'}</Link></Button>
             {openCollections && <CollectionEditor task={task} />}
-            {(canCall || destination) && <div className="ml-auto flex shrink-0 gap-1.5">
+            {!task.is_complete && (canCall || destination) && <div className="ml-auto flex shrink-0 gap-1.5">
                 {canCall && <Button size="icon" variant="outline" className="size-11 shrink-0 rounded-xl" asChild><a aria-label={'Call ' + (customer?.name ?? 'customer')} href={'tel:' + dial}><Phone /></a></Button>}
                 {destination && <MapButton address={destination} name={customer?.name ?? 'customer'} />}
             </div>}

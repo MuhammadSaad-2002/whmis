@@ -3,8 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Employee, EmployeeAttendance, EmployeeLeave, EmployeeSalary, HrDepartment, HrDesignation, HrLeaveType, HrTransaction, Payroll, PayrollItem, User};
-use App\Services\{HrService, NumberSeriesService};
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Services\{HrService, NumberSeriesService, ReportPdfRenderer};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -239,11 +238,14 @@ class HrController extends Controller
         $this->hr->reverseCash($transaction,$d['date'],$d['reason']); return back()->with('success','Reversal recorded.');
     }
 
-    public function payslip(Request $request, PayrollItem $item)
+    public function payslip(Request $request, PayrollItem $item, ReportPdfRenderer $pdf)
     {
         $item->load('payroll','employee');
         abort_unless($request->user()->can('hr.payroll.view') || ($request->user()->can('hr.self.view') && $item->employee->user_id===$request->user()->id),403);
         abort_unless(in_array($item->payroll->status,['posted','cancelled']),404);
-        return Pdf::loadView('pdf.payslip',['item'=>$item,'due'=>round((float)$item->transactions()->sum('payable'),2)])->stream('payslip-'.$item->id.'.pdf');
+
+        return $pdf->renderView('pdf.payslip', [
+            'item' => $item, 'due' => round((float) $item->transactions()->sum('payable'), 2),
+        ], 'portrait')->stream('payslip-'.$item->id.'.pdf');
     }
 }

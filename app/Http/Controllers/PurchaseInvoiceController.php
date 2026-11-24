@@ -10,9 +10,10 @@ use App\Models\Warehouse;
 use App\Services\InvoicePostingService;
 use App\Services\MarginCalculator;
 use App\Services\NumberSeriesService;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Services\ReportPdfRenderer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use RuntimeException;
 
@@ -25,40 +26,57 @@ class PurchaseInvoiceController extends Controller
 
     public function index(Request $request)
     {
-        $query = PurchaseInvoice::query()
+        $statuses = [PurchaseInvoice::STATUS_DRAFT, PurchaseInvoice::STATUS_POSTED, PurchaseInvoice::STATUS_CANCELLED];
+        $sorts = ['invoice' => 'invoice_number', 'reference' => 'supplier_invoice_number', 'date' => 'invoice_date',
+            'type' => 'purchase_type', 'total' => 'total_amount', 'margin' => 'total_margin'];
+        $filters = $request->validate([
+            'search' => 'nullable|string|max:120', 'company_id' => 'nullable|integer|min:1',
+            'status' => ['nullable', Rule::in($statuses)], 'purchase_type' => 'nullable|in:cash,credit',
+            'from' => 'nullable|date_format:Y-m-d', 'to' => 'nullable|date_format:Y-m-d',
+            'sort' => ['nullable', Rule::in(['supplier', ...array_keys($sorts)])],
+            'direction' => 'nullable|in:asc,desc', 'per_page' => 'nullable|in:10,15,25,50',
+        ]);
+        $base = PurchaseInvoice::query()
             ->with('company:id,name')
-            ->when($request->search, function ($q, $search) {
+            ->when(($filters['search'] ?? '') !== '', function ($q) use ($filters) {
+                $search = $filters['search'];
                 $q->where(fn ($w) => $w
                     ->where('invoice_number', 'like', "%{$search}%")
-                    ->orWhere('supplier_invoice_number', 'like', "%{$search}%"));
+                    ->orWhere('supplier_invoice_number', 'like', "%{$search}%")
+                    ->orWhereHas('company', fn ($supplier) => $supplier->where('name', 'like', "%{$search}%")));
             })
-            ->when($request->company_id, fn ($q, $id) => $q->where('company_id', $id))
-            ->when($request->status, fn ($q, $status) => $q->where('status', $status))
-            ->when($request->from, fn ($q, $from) => $q->whereDate('invoice_date', '>=', $from))
-            ->when($request->to, fn ($q, $to) => $q->whereDate('invoice_date', '<=', $to));
-
-        // Purchase returns aren't invoice-linked in the schema, so net them by the
-        // matching supplier + date filters (search/status don't map to returns).
-        $gross = round((float) (clone $query)->sum('total_amount'), 2);
-        $returns = round((float) PurchaseReturn::query()
-            ->when($request->company_id, fn ($q, $id) => $q->where('company_id', $id))
-            ->when($request->from, fn ($q, $from) => $q->whereDate('return_date', '>=', $from))
-            ->when($request->to, fn ($q, $to) => $q->whereDate('return_date', '<=', $to))
-            ->sum('total_amount'), 2);
-
-        $invoices = $query->latest('invoice_date')->latest('id')
-            ->paginate(15)
-            ->withQueryString();
+            ->when($filters['company_id'] ?? null, fn ($q, $id) => $q->where('company_id', $id))
+            ->when($filters['purchase_type'] ?? null, fn ($q, $type) => $q->where('purchase_type', $type))
+            ->when($filters['from'] ?? null, fn ($q, $from) => $q->whereDate('invoice_date', '>=', $from))
+            ->when($filters['to'] ?? null, fn ($q, $to) => $q->whereDate('invoice_date', '<=', $to));
+        $query = (clone $base)->when($filters['status'] ?? null, fn ($q, $status) => $q->where('status', $status));
+        $sort = ($filters['sort'] ?? null) === 'supplier'
+            ? Company::query()->select('name')->whereColumn('companies.id', 'purchase_invoices.company_id')
+            : $sorts[$filters['sort'] ?? 'date'];
 
         return Inertia::render('purchases/index', [
-            'invoices' => $invoices,
-            'companies' => Company::active()->orderBy('name')->get(['id', 'name']),
-            'filters' => $request->only('search', 'company_id', 'status', 'from', 'to'),
-            'summary' => [
-                'gross' => $gross,
-                'returns' => $returns,
-                'net' => round($gross - $returns, 2),
-            ],
+            'invoices' => fn () => (clone $query)->orderBy($sort, $filters['direction'] ?? 'desc')->orderByDesc('id')
+                ->paginate((int) ($filters['per_page'] ?? 15))->withQueryString(),
+            'companies' => fn () => Company::active()->orderBy('name')->get(['id', 'name']),
+            'filters' => $filters,
+            'counts' => function () use ($base, $statuses) {
+                $counts = (clone $base)->toBase()->selectRaw('status, COUNT(*) as total')->groupBy('status')->pluck('total', 'status');
+
+                return ['all' => (int) $counts->sum()] + collect($statuses)->mapWithKeys(fn ($status) => [$status => (int) ($counts[$status] ?? 0)])->all();
+            },
+            'summary' => function () use ($query, $base, $filters) {
+                $gross = round((float) (clone $query)->sum('total_amount'), 2);
+                // Preserve the register's supplier/date return total, independent of invoice-only filters.
+                $returns = round((float) PurchaseReturn::query()
+                    ->when($filters['company_id'] ?? null, fn ($q, $id) => $q->where('company_id', $id))
+                    ->when($filters['from'] ?? null, fn ($q, $from) => $q->whereDate('return_date', '>=', $from))
+                    ->when($filters['to'] ?? null, fn ($q, $to) => $q->whereDate('return_date', '<=', $to))
+                    ->sum('total_amount'), 2);
+
+                return ['gross' => $gross, 'returns' => $returns, 'net' => round($gross - $returns, 2),
+                    'drafts_total' => round((float) (clone $base)->where('status', PurchaseInvoice::STATUS_DRAFT)->sum('total_amount'), 2)];
+            },
+            'today' => now('Asia/Karachi')->toDateString(),
         ]);
     }
 
@@ -197,13 +215,11 @@ class PurchaseInvoiceController extends Controller
             ->with('success', "Duplicated as {$copy->invoice_number}.");
     }
 
-    public function print(PurchaseInvoice $purchase)
+    public function print(PurchaseInvoice $purchase, ReportPdfRenderer $pdf)
     {
         $purchase->load(['items.product', 'company', 'warehouse']);
 
-        return Pdf::loadView('pdf.purchase-invoice', ['invoice' => $purchase])
-            ->setPaper('a4')
-            ->stream("{$purchase->invoice_number}.pdf");
+        return $pdf->renderView('pdf.purchase-invoice', ['invoice' => $purchase], 'portrait')->stream("{$purchase->invoice_number}.pdf");
     }
 
     private function validated(Request $request): array

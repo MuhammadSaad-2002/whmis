@@ -37,6 +37,7 @@ export default function FinanceApprovals({ items, accounts, kinds, today, actorI
     const creatable = kinds.filter(kind => kind !== 'delivery_correction' && (kind !== 'opening' || can('treasury.manage')));
     const canCreate = can('finance.request') && creatable.length > 0;
     const [search, setSearch] = useState(filters.search);
+    const hasFilters = Boolean(filters.type || filters.search.trim());
     const [selectedId, setSelectedId] = useState<number | null>(requestId);
     const [seed, setSeed] = useState<DraftSeed | undefined>(() => {
         const kind = query.get('kind');
@@ -112,7 +113,7 @@ export default function FinanceApprovals({ items, accounts, kinds, today, actorI
                         <select className="approval-type-filter" aria-label="Filter by request type" value={filters.type} onChange={event => apply({ type: event.target.value })}>
                             <option value="">All types</option>{kinds.map(kind => <option key={kind} value={kind}>{kindName(kind)}</option>)}
                         </select>
-                        {(filters.type || search) && <button type="button" className="filter-clear" onClick={() => { setSearch(''); apply({ type: '', search: '' }); }}>Clear</button>}
+                        {hasFilters && <button type="button" className="filter-clear" onClick={() => { setSearch(''); apply({ type: '', search: '' }); }}>Clear filters</button>}
                     </form>
                     <div className="approval-list">
                         {items.data.map(item => <button type="button" className="approval-row" key={item.id} aria-pressed={selected?.id === item.id} onClick={() => choose(item)}>
@@ -123,8 +124,8 @@ export default function FinanceApprovals({ items, accounts, kinds, today, actorI
                             <span className="row-status"><ApprovalBadge status={item.status} compact /></span>
                         </button>)}
                         {!items.data.length && <div className="finance-empty">
-                            <strong>{filters.status === 'pending' && !filters.search && !filters.type ? 'Nothing waiting for review' : 'No matching requests'}</strong>
-                            <p>{filters.search || filters.type ? 'Try another search or clear the filters.' : 'Requests will appear here when they reach this status.'}</p>
+                            <strong>{filters.status === 'pending' && !hasFilters ? 'Nothing waiting for review' : 'No matching requests'}</strong>
+                            <p>{hasFilters ? 'Try another search or clear the filters.' : 'Requests will appear here when they reach this status.'}</p>
                         </div>}
                     </div>
                     {items.last_page > 1 && <div className="approval-pages"><Paginator meta={items} /></div>}

@@ -1,12 +1,12 @@
-/* Visual rules scoped to the invoice list and preview. */
-.sales-invoices, .sales-preview{
+/* Shared register styling; the sales preview is scoped separately. */
+.sales-invoices, .purchase-invoices, .booking-register, .inventory-register, .payment-register, .sales-preview{
   --bg:#f3f5f7; --card:#fff; --ink:#0f1f2c; --ink2:#3e5367; --ink3:#415467; --line:#e5e9ee; --line2:#eef1f4;
   --navy:#0d2436; --teal:#087568; --teal2:#14b8a6; --tealbg:#e6f6f3;
   --sales:#1f4e79; --purch:#e3a008; --red:#b4232a; --redbg:#fdecec; --amber:#984708; --amberbg:#fff6e0; --green:#087452; --greenbg:#e3f7ef;
   --radius:14px; --shadow:0 1px 2px rgba(15,31,44,.05),0 4px 16px rgba(15,31,44,.04);
 }
 
-.sales-invoices, .sales-preview {
+.sales-invoices, .purchase-invoices, .booking-register, .inventory-register, .payment-register, .sales-preview {
     font-family:var(--font-sans);
     font-size:14px;
     line-height:1.45;
@@ -35,7 +35,7 @@
     button:disabled{opacity:.45;cursor:default}
 }
 
-.sales-invoices {
+.sales-invoices, .purchase-invoices, .booking-register, .inventory-register, .payment-register {
     padding:18px 20px 40px;
     min-height:100%;
     background:var(--bg);
@@ -181,6 +181,112 @@
         .hero .sub{color:var(--ink2)}
         .card{box-shadow:none}
     }
+}
+
+.purchase-invoices, .booking-register, .inventory-register {
+    min-width:0;
+    .kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .tblwrap td.inv a{font-weight:700}
+    .tblwrap td.cust{min-width:155px}
+    @media(max-width:1000px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:420px){
+        .filters .choice{padding-inline:8px}
+        .filters .choice svg{display:none}
+        .filters .date-field{display:grid;gap:0;height:54px;padding-inline:8px}
+        .filters .date-field input{height:26px}
+        .filters .presets{margin-right:0}
+        .filters .presets button{padding-inline:7px}
+    }
+    @media print{.tblwrap table{min-width:0}}
+}
+.payment-register {
+    min-width:0;
+    .kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .payment-table table{min-width:760px}
+    .payment-table tbody tr{cursor:default}
+    .payment-number{color:var(--sales);font-weight:700}
+    .type.receipt{background:var(--tealbg);color:var(--teal)}
+    .type.receipt i{background:var(--teal)}
+    .type.payment{background:#eaf1f8;color:var(--sales)}
+    .type.payment i{background:var(--sales)}
+    .payment-cards{display:none}
+    @media screen and (max-width:760px){
+        .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+        .kpi:last-child{grid-column:1/-1}
+        .payment-table,.filters .dens,.pg-entry:not(:has([aria-current=page])){display:none}
+        .payment-cards{display:grid;gap:8px;padding:8px}
+        .payment-card{min-width:0;padding:10px;border:1px solid var(--line);border-radius:10px}
+        .payment-card-head,.payment-card-foot{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+        .payment-card-head > div{min-width:0;overflow-wrap:anywhere}
+        .payment-card h2,.payment-total{font-size:15px;font-weight:700}
+        .payment-card-head .payment-number{font-size:12px;margin-bottom:2px}
+        .payment-total{margin-bottom:3px}
+        .payment-card-foot{margin-top:8px;padding-top:6px;border-top:1px solid var(--line2);align-items:center}
+        .payment-card-meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;color:var(--ink3);font-size:13px}
+        .payment-card .acts .ib{width:40px;height:40px}
+        .filters .clear,.pg button{min-height:40px}
+    }
+    @media print{.payment-table table{min-width:0}}
+}
+
+.purchase-invoices {
+    .tblwrap table{min-width:850px}
+    .tblwrap .acts-head{width:85px}
+    @media print{.tblwrap table{min-width:0}}
+}
+.booking-register {
+    .tblwrap table{min-width:960px}
+    .tblwrap .acts-head{width:118px}
+    .acts{align-items:center}
+    .acts > div{flex-wrap:nowrap;gap:2px}
+    .st.pending,.st.partially_invoiced{background:var(--amberbg);color:var(--amber)}
+    .st.approved{background:var(--greenbg);color:var(--green)}
+    .st.converted{background:var(--tealbg);color:var(--teal)}
+    .st.rejected{background:var(--redbg);color:var(--red)}
+    .booking-filter-controls{display:contents}
+    .booking-filter-toggle{display:none}
+    .booking-card{min-width:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow)}
+    .booking-card-details{border-top:1px solid var(--line2)}
+    @media(max-width:1023px){
+        .booking-filter-controls{display:none}
+        .booking-filter-controls[data-open=true]{display:flex;min-width:0;flex-basis:100%;flex-wrap:wrap;align-items:center;gap:8px}
+        .booking-filter-toggle{display:inline-flex;align-items:center;gap:5px;min-height:44px;border:1px solid var(--line);border-radius:9px;padding-inline:9px;font-weight:600}
+        .booking-filter-toggle[aria-expanded=true]{background:var(--tealbg);color:var(--teal)}
+        .filters .app-search-field{flex:1;min-width:0;width:auto}
+        .booking-filter-controls .fld{flex:1 1 120px}
+        .booking-filter-controls .fld select,.booking-filter-controls .fld input{width:100%}
+        .filters .dens,.filters .fsp{display:none}
+        .pg-entry:not(:has([aria-current=page])){display:none}
+    }
+    @media(max-width:420px){.booking-filter-controls .choice{flex-basis:100%}}
+    @media print{.tblwrap table{min-width:0}}
+}
+.inventory-register {
+    .tblwrap table{min-width:780px}
+    .tblwrap tbody tr{cursor:default}
+    .tblwrap .stock-supplier{white-space:normal}
+    .st.low{background:var(--amberbg);color:var(--amber)}
+    .st.no-stock{background:var(--line2);color:var(--ink2)}
+    .stock-cards,.filters .stock-sort-mobile{display:none}
+    .stock-card{min-width:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow);padding:12px}
+    .stock-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+    .stock-card h2{font-size:15px;font-weight:700;overflow-wrap:anywhere}
+    .stock-card header p{font-size:13px;overflow-wrap:anywhere}
+    .stock-card .st{flex:none}
+    .stock-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 12px;border-top:1px solid var(--line2);margin-top:9px;padding-top:8px}
+    .stock-card dt{color:var(--ink3);font-size:12px}
+    .stock-card dd{font-weight:700;overflow-wrap:anywhere}
+    .stock-card-value{grid-column:1/-1}
+    @media screen and (max-width:760px){
+        .stock-table,.filters .dens,.pg-entry:not(:has([aria-current=page])){display:none}
+        .stock-cards{display:grid;gap:9px;padding:9px}
+        .filters .app-search-field{flex:1 0 100%;min-width:0}
+        .filters .choice{min-width:0}
+        .filters .stock-sort-mobile{display:flex;flex-basis:140px}
+    }
+    @media screen and (max-width:380px){.filters .choice{flex-basis:100%}}
+    @media screen and (min-width:520px) and (max-width:760px){.stock-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media print{.tblwrap table{min-width:0}}
 }
 
 .sales-preview-overlay{position:fixed;inset:0;background:rgba(13,36,54,.35);z-index:40}

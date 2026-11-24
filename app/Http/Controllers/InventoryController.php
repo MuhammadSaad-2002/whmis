@@ -11,6 +11,7 @@ use App\Services\InventoryService;
 use App\Services\NumberSeriesService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use RuntimeException;
 
@@ -24,34 +25,52 @@ class InventoryController extends Controller
     /** Product-wise stock position with value at effective cost. */
     public function index(Request $request)
     {
-        $products = Product::query()
+        $sorts = ['product' => 'products.name', 'available' => 'stock', 'reserved' => 'reserved',
+            'reorder' => 'products.reorder_level', 'value' => 'stock_value'];
+        $filters = $request->validate([
+            'search' => 'nullable|string|max:120', 'company_id' => 'nullable|integer|min:1',
+            'sort' => ['nullable', Rule::in(['supplier', ...array_keys($sorts)])],
+            'direction' => 'nullable|in:asc,desc', 'per_page' => 'nullable|in:10,20,25,50',
+        ]);
+        $lowOnly = $request->boolean('low_stock');
+        $lowStock = 'products.reorder_level > 0 AND COALESCE(balances.stock, 0) <= products.reorder_level';
+        $balances = Batch::query()->select('product_id')->selectRaw('SUM(qty_available) as stock, SUM(qty_reserved) as reserved,
+            SUM(qty_available * effective_cost) as stock_value')->groupBy('product_id');
+        $base = Product::query()->leftJoinSub($balances, 'balances', 'balances.product_id', '=', 'products.id')
             ->with('company:id,name')
-            ->withSum('batches as stock', 'qty_available')
-            ->withSum('batches as reserved', 'qty_reserved')
-            ->addSelect([
-                'stock_value' => Batch::selectRaw('COALESCE(SUM(qty_available * effective_cost), 0)')
-                    ->whereColumn('batches.product_id', 'products.id'),
-            ])
-            ->when($request->search, function ($q, $search) {
+            ->select('products.*', 'balances.stock', 'balances.reserved')
+            ->selectRaw("COALESCE(balances.stock_value, 0) AS stock_value, CASE WHEN {$lowStock} THEN 1 ELSE 0 END AS is_low_stock")
+            ->when(($filters['search'] ?? '') !== '', function ($q) use ($filters) {
+                $search = $filters['search'];
                 $q->where(fn ($w) => $w
-                    ->where('name', 'like', "%{$search}%")
-                    ->orWhere('generic_name', 'like', "%{$search}%"));
+                    ->where('products.name', 'like', "%{$search}%")
+                    ->orWhere('products.generic_name', 'like', "%{$search}%"));
             })
-            ->when($request->company_id, fn ($q, $id) => $q->where('company_id', $id))
-            ->when($request->boolean('low_stock'), function ($q) {
-                $q->havingRaw('COALESCE(stock, 0) <= reorder_level')->where('reorder_level', '>', 0);
-            })
-            ->orderBy('name')
-            ->paginate(20)
-            ->withQueryString();
+            ->when($filters['company_id'] ?? null, fn ($q, $id) => $q->where('products.company_id', $id));
+        $query = (clone $base)->when($lowOnly, fn ($q) => $q->whereRaw($lowStock));
+        $sort = ($filters['sort'] ?? null) === 'supplier'
+            ? Company::query()->select('name')->whereColumn('companies.id', 'products.company_id')
+            : $sorts[$filters['sort'] ?? 'product'];
 
         return Inertia::render('inventory/index', [
-            'products' => $products,
-            'companies' => Company::active()->orderBy('name')->get(['id', 'name']),
-            'filters' => $request->only('search', 'company_id', 'low_stock'),
-            'totals' => [
+            'products' => fn () => (clone $query)->orderBy($sort, $filters['direction'] ?? 'asc')->orderBy('products.id')
+                ->paginate((int) ($filters['per_page'] ?? 20))->withQueryString(),
+            'companies' => fn () => Company::active()->orderBy('name')->get(['id', 'name']),
+            'filters' => array_replace($filters, ['low_stock' => $lowOnly]),
+            'totals' => fn () => [
                 'inventory_value' => (float) Batch::selectRaw('COALESCE(SUM(qty_available * effective_cost), 0) as v')->value('v'),
             ],
+            'summary' => function () use ($base, $lowStock, $lowOnly) {
+                $matched = $lowOnly ? $lowStock : '1 = 1';
+                $summary = (clone $base)->toBase()->select([])->selectRaw("COUNT(*) AS all_count,
+                    SUM(CASE WHEN {$lowStock} THEN 1 ELSE 0 END) AS low_count,
+                    SUM(CASE WHEN {$matched} THEN COALESCE(balances.stock, 0) ELSE 0 END) AS available,
+                    SUM(CASE WHEN {$matched} THEN COALESCE(balances.reserved, 0) ELSE 0 END) AS reserved,
+                    SUM(CASE WHEN {$matched} THEN COALESCE(balances.stock_value, 0) ELSE 0 END) AS stock_value")->first();
+
+                return ['all' => (int) $summary->all_count, 'low' => (int) $summary->low_count,
+                    'available' => (float) $summary->available, 'reserved' => (float) $summary->reserved, 'stock_value' => (float) $summary->stock_value];
+            },
         ]);
     }
 

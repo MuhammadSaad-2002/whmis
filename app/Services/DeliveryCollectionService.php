@@ -17,9 +17,14 @@ class DeliveryCollectionService
     public function invoiceBalances(): Builder
     {
         return $this->balances->sales()->addSelect([
-            'pending_collection_paisa' => DB::table('delivery_collections')->whereColumn('sales_invoice_id', 'sales_invoices.id')
-                ->whereNull('recorded_at')->whereNull('payment_id')->selectRaw('COALESCE(SUM(reported_paisa), 0)'),
+            'pending_collection_paisa' => $this->pendingReportsForInvoice()->selectRaw('COALESCE(SUM(reported_paisa), 0)'),
         ]);
+    }
+
+    public function pendingReportsForInvoice(): \Illuminate\Database\Query\Builder
+    {
+        return DB::table('delivery_collections')->whereColumn('delivery_collections.sales_invoice_id', 'sales_invoices.id')
+            ->whereNull('recorded_at')->whereNull('payment_id');
     }
 
     public function remainingPaisa(int|float|string|null $outstanding, int $pending): int

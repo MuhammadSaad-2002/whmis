@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <title>{{ $invoice->invoice_number }} — Net Position</title>
-    @include('pdf.partials.style')
+    @include('pdf.partials.document-style')
 </head>
 <body>
     @php
@@ -18,7 +18,7 @@
         <tr>
             <td>
                 @include('pdf.partials.header')
-                <div class="meta">Sale — Net / Final Position</div>
+                <h2 class="document-title">Sale — Net / Final Position</h2>
             </td>
             <td style="text-align: right;">
                 <h1>{{ $invoice->invoice_number }}</h1>
@@ -30,7 +30,7 @@
         </tr>
     </table>
 
-    <table style="width:100%; margin-bottom: 8px;">
+    <table class="document-info">
         <tr>
             <td>
                 <h2>Bill To</h2>
@@ -69,7 +69,7 @@
         </tbody>
     </table>
 
-    <h2 style="margin-top: 14px;">Net / Final Position</h2>
+    <h2 class="document-section">Net / Final Position</h2>
     <table class="items">
         <thead>
             <tr>
@@ -104,11 +104,10 @@
         @endif
     </table>
 
-    <p class="meta" style="margin-top: 14px;">
+    <p class="meta document-note">
         This statement reflects the invoice net of valid (non-cancelled) returns as of {{ now()->format('d M Y') }}.
         The original Sales Invoice remains the primary record.
     </p>
 
-    @include('pdf.partials.footer')
 </body>
 </html>

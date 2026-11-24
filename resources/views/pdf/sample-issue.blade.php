@@ -3,14 +3,14 @@
 <head>
     <meta charset="utf-8">
     <title>{{ $issue->issue_number }}</title>
-    @include('pdf.partials.style')
+    @include('pdf.partials.document-style')
 </head>
 <body>
     <table class="header">
         <tr>
             <td>
                 @include('pdf.partials.header')
-                <div class="meta">Sample Issue (Free of Cost)</div>
+                <h2 class="document-title">Sample Issue (Free of Cost)</h2>
             </td>
             <td style="text-align: right;">
                 <h1>{{ $issue->issue_number }}</h1>
@@ -22,7 +22,7 @@
         </tr>
     </table>
 
-    <table style="width:100%; margin-bottom: 8px;">
+    <table class="document-info">
         <tr>
             <td>
                 <h2>Customer</h2>
@@ -64,9 +64,8 @@
     </table>
 
     @if($issue->notes)
-        <p style="margin-top: 10px;" class="meta">Notes: {{ $issue->notes }}</p>
+        <p class="meta document-note">Notes: {{ $issue->notes }}</p>
     @endif
 
-    @include('pdf.partials.footer')
 </body>
 </html>

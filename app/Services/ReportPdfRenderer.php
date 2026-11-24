@@ -10,8 +10,10 @@ use Dompdf\FontMetrics;
 
 class ReportPdfRenderer
 {
+    public const TOP_MARGIN = 18;
     public const SIDE_MARGIN = 18;
     public const BOTTOM_MARGIN = 48;
+    public const PAGE_MARGINS = self::TOP_MARGIN.'pt '.self::SIDE_MARGIN.'pt '.self::BOTTOM_MARGIN.'pt';
 
     public const CHART_PADDING = 7.5;
 

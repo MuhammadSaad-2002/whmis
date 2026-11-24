@@ -40,6 +40,8 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::define('view-supplier-details', fn (User $user) => $user->canViewSupplierDetails());
         Gate::define('manage-own-account', fn (User $user) => ! $user->isFieldBooker());
+        Gate::define('manage-employee-commissions', fn (User $user) => $user->can('commission.manage')
+            && (! $user->hasAnyRole(['Booker', 'Salesman']) || $user->hasAnyRole(['Admin', 'Super Admin'])));
 
         Relation::enforceMorphMap([
             'finance_work_item' => \App\Models\FinanceWorkItem::class,

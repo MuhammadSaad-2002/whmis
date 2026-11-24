@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\{Booking, BookerVisit, Customer};
 use App\Services\DeliveryCollectionService;
+use App\Services\FieldDeliveryOverview;
 use App\Support\AuditLogger;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
@@ -15,7 +16,7 @@ use Inertia\Inertia;
 
 class BookerWorkdayController extends Controller
 {
-    public function index(Request $request, DeliveryCollectionService $collections)
+    public function index(Request $request, DeliveryCollectionService $collections, FieldDeliveryOverview $fieldDeliveries)
     {
         $data = $request->validate([
             'date' => 'nullable|date_format:Y-m-d', 'search' => 'nullable|string|max:100', 'planned' => 'nullable|boolean',
@@ -34,11 +35,7 @@ class BookerWorkdayController extends Controller
         $size = (int) ($data['size'] ?? 12);
         $search = trim($data['search'] ?? '');
 
-        $assignedDeliveries = $salesman ? DB::table('dispatches as d')
-            ->join('sales_invoices as sales', 'sales.id', '=', 'd.sales_invoice_id')->where('sales.status', 'posted')
-            ->where(fn ($query) => $query->where('d.assigned_to', $actorId)->orWhere('d.handover_to_id', $actorId))
-            ->where(fn ($query) => $query->where('d.planned_date', $date)
-                ->orWhere(fn ($past) => $past->where('d.planned_date', '<', $date)->whereNotIn('d.status', ['delivered', 'closed']))) : null;
+        $assignedDeliveries = $salesman ? $fieldDeliveries->forDay($actorId, $date, $today) : null;
         $visits = $booker ? BookerVisit::where('booker_id', $actorId)->whereDate('visit_date', $date)
             ->whereHas('customer', fn ($query) => $query->active()->forBooker($actorId)) : null;
 
@@ -54,7 +51,8 @@ class BookerWorkdayController extends Controller
                     'visit_id' => (clone $visits)->whereColumn('booker_visits.customer_id', 'customers.id')->select('id')->limit(1),
                 ]);
             if ($assignedDeliveries) {
-                $assigned->addSelect(['delivery_id' => (clone $assignedDeliveries)->whereColumn('sales.customer_id', 'customers.id')->select('d.id')->limit(1)]);
+                $assigned->addSelect(['delivery_id' => $fieldDeliveries->uncompleted(clone $assignedDeliveries)
+                    ->whereColumn('sales_invoices.customer_id', 'customers.id')->select('d.id')->limit(1)]);
             } else {
                 $assigned->selectRaw('NULL AS delivery_id');
             }
@@ -64,7 +62,8 @@ class BookerWorkdayController extends Controller
         return Inertia::render('booker/workday', [
             'today' => $today,
             'filters' => ['date' => $date, 'search' => $search, 'filter' => $filter, 'sort' => $sort, 'size' => $size],
-            'deliveries' => fn () => $assignedDeliveries ? $this->deliveries($assignedDeliveries, $collections, $actorId) : null,
+            'deliveries' => fn () => $assignedDeliveries ? $this->deliveries($fieldDeliveries->ordered(clone $assignedDeliveries), $collections, $actorId) : null,
+            'activeDeliveries' => fn () => $assignedDeliveries ? $fieldDeliveries->uncompleted(clone $assignedDeliveries)->count() : 0,
             'visits' => fn () => $visits ? (clone $visits)->with(['customer' => fn ($query) => $query
                 ->select('id', 'name', 'city', 'address')->withSum('ledgerEntries as account_balance', DB::raw('debit - credit'))])
                 ->orderBy('id')->paginate(12, ['*'], 'visit_page')->withQueryString() : null,
@@ -125,29 +124,23 @@ class BookerWorkdayController extends Controller
         ];
     }
 
-    private function deliveries(Builder $routes, DeliveryCollectionService $collections, int $actorId): LengthAwarePaginator
+    private function deliveries(EloquentBuilder $routes, DeliveryCollectionService $collections, int $actorId): LengthAwarePaginator
     {
-        $page = (clone $routes)->orderBy('d.planned_date')->orderBy('d.id')->paginate(20, [
-            'd.sales_invoice_id', 'd.planned_date', 'd.status', 'd.assigned_to',
-        ], 'delivery_page')->withQueryString();
-        if ($page->isEmpty()) {
-            return $page;
-        }
-        $invoiceIds = $page->pluck('sales_invoice_id');
-        $sales = $collections->invoiceBalances()->whereKey($invoiceIds->all())->with('customer:id,name,city,address,phone')->get()->keyBy('id');
-        return $page->through(function ($task) use ($sales, $collections, $actorId) {
-            $invoice = $sales->get($task->sales_invoice_id);
-            $pending = (int) $invoice?->pending_collection_paisa;
-            $remaining = $collections->remainingPaisa($invoice?->outstanding, $pending);
-            $canCollect = $remaining > 0 && (int) $task->assigned_to === $actorId && in_array($task->status, ['partial', 'delivered'], true);
-            return [
-                'id' => $task->sales_invoice_id, 'invoice_number' => $invoice?->invoice_number,
-                'customer' => $invoice?->customer, 'total_amount' => $invoice?->total_amount ?? 0, 'paid_amount' => $invoice?->paid_amount ?? 0,
-                'outstanding' => $invoice?->outstanding ?? 0, 'planned_date' => $task->planned_date, 'delivery_status' => $task->status,
-                'can_collect' => $canCollect, 'collectible_paisa' => $canCollect ? $remaining : 0,
-                'pending_paisa' => $pending,
-            ];
-        });
+        return $routes->with('customer:id,name,city,address,phone')->paginate(20, ['*'], 'delivery_page')->withQueryString()
+            ->through(function ($invoice) use ($collections, $actorId) {
+                $pending = (int) $invoice->pending_collection_paisa;
+                $remaining = $collections->remainingPaisa($invoice->outstanding, $pending);
+                $canCollect = $remaining > 0 && (int) $invoice->assigned_to === $actorId && in_array($invoice->dispatch_status, ['partial', 'delivered'], true);
+
+                return [
+                    'id' => $invoice->id, 'invoice_number' => $invoice->invoice_number,
+                    'customer' => $invoice->customer, 'total_amount' => $invoice->total_amount, 'paid_amount' => $invoice->paid_amount,
+                    'outstanding' => $invoice->outstanding, 'planned_date' => $invoice->planned_date, 'delivery_status' => $invoice->dispatch_status,
+                    'is_complete' => (bool) $invoice->is_complete,
+                    'can_collect' => $canCollect, 'collectible_paisa' => $canCollect ? $remaining : 0,
+                    'pending_paisa' => $pending,
+                ];
+            });
     }
 
     private function collectionReports(int $actorId, string $date): Builder

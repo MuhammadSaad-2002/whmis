@@ -322,7 +322,7 @@ class BookingFlowTest extends TestCase
         Booking::create([
             'booking_number' => 'BK-OTHER-1', 'customer_id' => $this->customer->id,
             'booker_id' => $otherBooker->id, 'warehouse_id' => 1,
-            'booking_date' => now()->toDateString(), 'status' => 'pending',
+            'booking_date' => $booking->booking_date, 'status' => 'pending', 'total_amount' => 10000,
         ]);
 
         $this->actingAs($this->booker);
@@ -331,7 +331,12 @@ class BookingFlowTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('bookings/index')
                 ->has('bookings.data', 1)
-                ->where('bookings.data.0.id', $booking->id));
+                ->where('bookings.data.0.id', $booking->id)
+                ->where('statusSummary.counts.all', 1)->where('statusSummary.counts.pending', 0)
+                ->where('statusSummary.totals.pending', fn ($total) => (float) $total === 0.0));
+        $this->get(route('bookings.index', ['search' => $this->customer->name, 'status' => 'pending']))
+            ->assertInertia(fn (Assert $page) => $page->has('bookings.data', 0)->where('statusSummary.counts.all', 1)
+                ->where('statusSummary.shown_value', fn ($total) => (float) $total === 0.0));
 
         $this->get(route('sales.index'))->assertForbidden();
         $this->get(route('bookings.edit', 'BK-OTHER-1' ? Booking::where('booking_number', 'BK-OTHER-1')->first() : null))
@@ -339,8 +344,14 @@ class BookingFlowTest extends TestCase
 
         // Admin sees both.
         $this->actingAs($this->admin);
-        $this->get(route('bookings.index'))
-            ->assertInertia(fn (Assert $page) => $page->has('bookings.data', 2));
+        $date = $booking->booking_date->toDateString();
+        $filtered = ['search' => $this->customer->name, 'from' => $date, 'to' => $date, 'sort' => 'total', 'direction' => 'desc', 'per_page' => 10];
+        $this->get(route('bookings.index', $filtered))
+            ->assertInertia(fn (Assert $page) => $page->has('bookings.data', 2)->where('bookings.per_page', 10)
+                ->where('bookings.data.0.booking_number', 'BK-OTHER-1')->where('statusSummary.counts.pending', 1));
+        $this->get(route('bookings.index', $filtered + ['status' => 'pending']))
+            ->assertInertia(fn (Assert $page) => $page->has('bookings.data', 1)->where('statusSummary.counts.all', 2)
+                ->where('statusSummary.shown_value', fn ($total) => (float) $total === 10000.0));
     }
 
     public function test_rules_lookup_returns_applicable_rules_for_grid(): void

@@ -76,8 +76,10 @@ Route::middleware(['auth', 'licensed'])->group(function () {
         Route::get('finance-approvals/{id}/evidence', 'evidence')->middleware('can:finance.review');
         Route::get('finance-reversals/{kind}/{id}', 'reversalPreview')->whereIn('kind',['receipt','return'])->middleware('can:finance.review');
     });
-    Route::get('commissions', [CommissionController::class, 'index'])->middleware(AuthorizeOperations::class.':commission.self,commission.manage')->name('commissions.index');
-    Route::post('commissions/rules', [CommissionController::class, 'store'])->middleware('can:commission.manage');
+    Route::middleware('can:manage-employee-commissions')->group(function () {
+        Route::get('commissions', [CommissionController::class, 'index'])->name('commissions.index');
+        Route::post('commissions/rules', [CommissionController::class, 'store']);
+    });
     Route::get('collections/{sale}', [\App\Http\Controllers\OperationsController::class, 'collection'])->middleware(AuthorizeOperations::class.':collections.view')->name('collections.show');
     Route::post('collections/{sale}/follow-ups', [\App\Http\Controllers\OperationsController::class, 'followUp'])->middleware(AuthorizeOperations::class.':collections.manage')->name('collections.follow-up');
     Route::get('system/health', fn (\App\Services\SystemHealthService $health) => \Inertia\Inertia::render('operations/health', ['checks' => $health->checks()]))->middleware(AuthorizeOperations::class.':system.health')->name('system.health');
@@ -109,6 +111,7 @@ Route::middleware(['auth', 'licensed'])->group(function () {
             $user->getAuthIdentifier(),
             $user->getAllPermissions()->pluck('name')->sort()->values()->all(),
             $user->canViewSupplierDetails(),
+            $user->can('manage-employee-commissions'),
         ];
 
         return Inertia::render('workspace/index', [

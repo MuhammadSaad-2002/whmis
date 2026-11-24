@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\{Batch, Booking, BookerVisit, CollectionFollowUp, Company, Customer, Dispatch, DispatchEvent, LedgerEntry, Payment, Product, SalesInvoice, SalesReturn, StockMovement, User};
-use App\Services\{DeliveryPlanningService, DispatchService, PaymentService, SystemHealthService};
+use App\Services\{DeliveryPlanningService, DispatchService, PaymentService, ReportPdfRenderer, SystemHealthService};
 use Barryvdh\DomPDF\Facade\Pdf;
 use Database\Seeders\{RolePermissionSeeder, SystemSeeder};
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -196,9 +196,15 @@ class DistributionOperationsTest extends TestCase
         $this->get(route('dispatch.sheet', ['date' => $day, 'assignee_id' => $this->booker->id]))
             ->assertOk()->assertHeader('content-type', 'application/pdf');
         $pdf = $document->output(['compress' => false]);
-        $margin = $document->getDomPDF()->getCss()->get_page_styles()['base'];
-        $this->assertEqualsWithDelta(34.0, $margin->length_in_pt($margin->margin_left), 0.2);
-        $this->assertEqualsWithDelta(34.0, $margin->length_in_pt($margin->margin_right), 0.2);
+        $dompdf = $document->getDomPDF();
+        $canvas = $dompdf->getCanvas();
+        $this->assertEqualsWithDelta(841.89, $canvas->get_width(), 0.1);
+        $this->assertEqualsWithDelta(595.28, $canvas->get_height(), 0.1);
+        $margin = $dompdf->getCss()->get_page_styles()['base'];
+        $this->assertEquals(ReportPdfRenderer::TOP_MARGIN, $margin->margin_top);
+        $this->assertEquals(ReportPdfRenderer::SIDE_MARGIN, $margin->margin_left);
+        $this->assertEquals(ReportPdfRenderer::SIDE_MARGIN, $margin->margin_right);
+        $this->assertEquals(ReportPdfRenderer::BOTTOM_MARGIN, $margin->margin_bottom);
         preg_match_all('~\bBT [\d.]+ [\d.]+ Td /F\d+ ([\d.]+) Tf[^\r\n]*?\[\((.*?)\)\] TJ ET~', $pdf, $lines);
         $textRuns = array_map(fn (string $line) => mb_convert_encoding($line, 'UTF-8', 'UTF-16BE'), $lines[2]);
         $printed = implode(' ', $textRuns);
@@ -210,7 +216,7 @@ class DistributionOperationsTest extends TestCase
             $this->assertStringNotContainsString($text, $printed);
         }
         $this->assertContains('10.0', $lines[1]);
-        $this->assertContains('10.5', $lines[1]);
+        $this->assertContains('8.5', $lines[1]);
     }
 
     public function test_long_daily_delivery_sheet_repeats_column_headings_without_omitting_invoices(): void
@@ -230,6 +236,9 @@ class DistributionOperationsTest extends TestCase
         $pages = preg_match_all('/\/Type\s*\/Page\b/', $pdf);
         $this->assertGreaterThan(1, $pages);
         $this->assertSame($pages, substr_count($pdf, $encode('SALES INV #')));
+        for ($page = 1; $page <= $pages; $page++) {
+            $this->assertSame(1, substr_count($pdf, $encode("Page {$page} / {$pages}")));
+        }
         foreach (range(1, 40) as $index) {
             $this->assertSame(1, substr_count($pdf, $encode('SI-2026-'.str_pad($index, 4, '0', STR_PAD_LEFT))), 'Missing or repeated invoice '.$index);
         }

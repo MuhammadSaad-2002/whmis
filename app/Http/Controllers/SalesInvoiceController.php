@@ -18,7 +18,6 @@ use App\Services\NumberSeriesService;
 use App\Services\ReportPdfRenderer;
 use App\Services\SaleNetPositionService;
 use App\Services\SalesInvoiceList;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -385,13 +384,11 @@ class SalesInvoiceController extends Controller
         return redirect()->route('sales.index')->with('success', 'Draft deleted.');
     }
 
-    public function print(SalesInvoice $sale)
+    public function print(SalesInvoice $sale, ReportPdfRenderer $pdf)
     {
         $sale->load(['items.product.company', 'items.batch', 'items.incentives', 'customer', 'warehouse', 'booking.booker']);
 
-        return Pdf::loadView('pdf.sales-invoice', ['invoice' => $sale])
-            ->setPaper('a4')
-            ->stream("{$sale->invoice_number}.pdf");
+        return $pdf->renderView('pdf.sales-invoice', ['invoice' => $sale], 'portrait')->stream("{$sale->invoice_number}.pdf");
     }
 
     /** Read-only summary of a posted invoice: original → returns → net position. */
@@ -419,16 +416,16 @@ class SalesInvoiceController extends Controller
         ]);
     }
 
-    public function netPositionPdf(SalesInvoice $sale)
+    public function netPositionPdf(SalesInvoice $sale, ReportPdfRenderer $pdf)
     {
         abort_if($sale->isDraft(), 404);
 
         $sale->load(['items.product.company', 'items.batch', 'customer', 'warehouse', 'returns']);
 
-        return Pdf::loadView('pdf.sales-net-position', [
+        return $pdf->renderView('pdf.sales-net-position', [
             'invoice' => $sale,
             'position' => $this->netPosition->positionFor($sale),
-        ])->setPaper('a4')->stream("{$sale->invoice_number}-net-position.pdf");
+        ], 'portrait')->stream("{$sale->invoice_number}-net-position.pdf");
     }
 
     private function validated(Request $request, ?SalesInvoice $existing = null): array
