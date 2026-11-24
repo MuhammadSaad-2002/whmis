@@ -22,6 +22,7 @@ deployment:
       /opt/alt/php84/usr/bin/php artisan optimize:clear --except=cache
       && (/opt/alt/php84/usr/bin/php artisan storage:link || true)
       && /opt/alt/php84/usr/bin/php artisan migrate --force
+      && /opt/alt/php84/usr/bin/php artisan permission:cache-reset
       && /opt/alt/php84/usr/bin/php artisan whmis:provision
       && /opt/alt/php84/usr/bin/php artisan cache:clear
       && /opt/alt/php84/usr/bin/php artisan whmis:doctor

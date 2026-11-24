@@ -61,22 +61,31 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     Route::post('dispatch/{sale}/events', [\App\Http\Controllers\OperationsController::class, 'dispatchAction'])->middleware(AuthorizeOperations::class.':dispatch.manage,dispatch.assigned')->name('dispatch.record');
     Route::get('collections', [\App\Http\Controllers\OperationsController::class, 'collections'])->middleware(AuthorizeOperations::class.':collections.view')->name('collections.index');
     Route::controller(DistributionFinanceController::class)->group(function () {
-        Route::get('daily-reconciliation', 'daily')->middleware('can:distribution.reconcile')->name('distribution.reconcile');
-        Route::post('daily-reconciliation/{id}/count', 'countCash')->middleware('can:distribution.reconcile');
-        Route::post('daily-reconciliation/{id}/post-matching-cash', 'recordMatchingCash')->middleware(['can:distribution.reconcile', 'can:payments.manage'])->name('distribution.post-matching-cash');
-        Route::post('daily-reconciliation/collection/{id}', 'record')->middleware(['can:distribution.reconcile', 'can:payments.manage']);
-        Route::post('daily-reconciliation/{id}/close', 'close')->middleware('can:distribution.reconcile');
-        Route::get('treasury', 'treasury')->middleware('can:treasury.view')->name('treasury.index');
-        Route::get('treasury/accounts/{id}/csv', 'accountExport')->middleware('can:treasury.view');
-        Route::post('treasury/accounts', 'saveAccount')->middleware('can:treasury.manage');
-        Route::post('treasury/limits', 'limits')->middleware('can:treasury.manage');
-        Route::get('finance-approvals', 'approvals')->middleware('can:finance.review')->name('finance.approvals');
-        Route::post('finance-approvals', 'createApproval')->middleware('can:finance.request');
-        Route::post('finance-approvals/{id}/approve', 'approve')->middleware('can:finance.approve');
-        Route::post('finance-approvals/{id}/post', 'postApproval')->middleware('can:finance.post');
-        Route::post('finance-approvals/{id}/withdraw', 'withdraw')->middleware('can:finance.request');
-        Route::get('finance-approvals/{id}/evidence', 'evidence')->middleware('can:finance.review');
-        Route::get('finance-reversals/{kind}/{id}', 'reversalPreview')->whereIn('kind',['receipt','return'])->middleware('can:finance.review');
+        Route::middleware(AuthorizeOperations::class.':distribution.reconcile')->group(function () {
+            Route::get('daily-reconciliation', 'daily')->name('distribution.reconcile');
+            Route::post('daily-reconciliation/{id}/count', 'countCash');
+            Route::post('daily-reconciliation/{id}/close', 'close');
+            // Separate middleware checks preserve the requirement to hold both grants.
+            Route::post('daily-reconciliation/{id}/post-matching-cash', 'recordMatchingCash')
+                ->middleware(AuthorizeOperations::class.':payments.manage')->name('distribution.post-matching-cash');
+            Route::post('daily-reconciliation/collection/{id}', 'record')
+                ->middleware(AuthorizeOperations::class.':payments.manage');
+        });
+        Route::middleware(AuthorizeOperations::class.':treasury.view')->group(function () {
+            Route::get('treasury', 'treasury')->name('treasury.index');
+            Route::get('treasury/accounts/{id}/csv', 'accountExport');
+        });
+        Route::post('treasury/accounts', 'saveAccount')->middleware(AuthorizeOperations::class.':treasury.manage');
+        Route::post('treasury/limits', 'limits')->middleware(AuthorizeOperations::class.':treasury.manage');
+        Route::middleware(AuthorizeOperations::class.':finance.review')->group(function () {
+            Route::get('finance-approvals', 'approvals')->name('finance.approvals');
+            Route::get('finance-approvals/{id}/evidence', 'evidence');
+            Route::get('finance-reversals/{kind}/{id}', 'reversalPreview')->whereIn('kind', ['receipt', 'return']);
+        });
+        Route::post('finance-approvals', 'createApproval')->middleware(AuthorizeOperations::class.':finance.request');
+        Route::post('finance-approvals/{id}/approve', 'approve')->middleware(AuthorizeOperations::class.':finance.approve');
+        Route::post('finance-approvals/{id}/post', 'postApproval')->middleware(AuthorizeOperations::class.':finance.post');
+        Route::post('finance-approvals/{id}/withdraw', 'withdraw')->middleware(AuthorizeOperations::class.':finance.request');
     });
     Route::middleware('can:manage-employee-commissions')->group(function () {
         Route::get('commissions', [CommissionController::class, 'index'])->name('commissions.index');

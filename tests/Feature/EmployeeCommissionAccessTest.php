@@ -7,10 +7,12 @@ use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class EmployeeCommissionAccessTest extends TestCase
@@ -49,6 +51,46 @@ class EmployeeCommissionAccessTest extends TestCase
                 ->assertInertia(fn (Assert $page) => $page->component('operations/commissions')->where('manage', true)->has('rules'));
             $this->assertContains('commission.manage', $this->get(route('workspace'))->assertOk()->inertiaProps('auth.permissions'));
         }
+    }
+
+    public function test_stale_commission_grant_does_not_hide_the_super_admin_link_or_block_the_route(): void
+    {
+        $role = Role::findByName('Super Admin', 'web');
+        $admin = User::factory()->create()->assignRole($role);
+        $grant = ['role_id' => $role->id, 'permission_id' => Permission::findByName('commission.manage', 'web')->id];
+
+        foreach ([route('workspace'), route('commissions.index')] as $url) {
+            DB::table('role_has_permissions')->where($grant)->delete();
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+            $this->actingAs($admin->fresh())->get(route('commissions.index'))->assertForbidden();
+
+            // Restore the role grant the way a manual SQL import would.
+            DB::table('role_has_permissions')->insert($grant);
+            $actor = $admin->fresh();
+            $this->assertFalse($actor->can('commission.manage'));
+            $response = $this->actingAs($actor)->get($url)->assertOk();
+            $this->assertContains('commission.manage', $response->inertiaProps('auth.permissions'));
+        }
+    }
+
+    public function test_upgrade_restores_missing_finance_grants_to_super_admin_only(): void
+    {
+        $role = Role::findByName('Super Admin', 'web');
+        $field = Role::findByName('Salesman', 'web');
+        $accountant = Role::findByName('Accountant', 'web');
+        $originalAccountantGrants = $accountant->permissions->pluck('name')->sort()->values()->all();
+        $role->revokePermissionTo(['commission.manage', 'treasury.view', 'finance.review', 'distribution.reconcile']);
+        Permission::findByName('commission.waive', 'web')->delete();
+
+        $migration = require database_path('migrations/2026_11_24_000800_restore_super_admin_finance_grants.php');
+        $migration->up();
+        $migration->up();
+
+        foreach (['commission.manage', 'commission.waive', 'treasury.view', 'finance.review', 'distribution.reconcile'] as $permission) {
+            $this->assertTrue($role->refresh()->hasPermissionTo($permission));
+            $this->assertFalse($field->refresh()->hasPermissionTo($permission));
+        }
+        $this->assertSame($originalAccountantGrants, $accountant->refresh()->permissions->pluck('name')->sort()->values()->all());
     }
 
     public function test_commission_requests_stay_private_even_with_extra_field_grants(): void

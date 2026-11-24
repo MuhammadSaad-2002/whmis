@@ -6,8 +6,11 @@ use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class GlobalSearchTest extends TestCase
@@ -31,6 +34,29 @@ class GlobalSearchTest extends TestCase
             ->component('workspace/index')
             ->where('auth.permissions', ['reports.view'])
             ->where('searchableReports', []));
+    }
+
+    public function test_pending_search_migration_uses_existing_permission_even_with_stale_cache(): void
+    {
+        $role = Role::findByName('Super Admin', 'web');
+        $actor = User::factory()->create()->assignRole($role);
+        $existing = Permission::findByName('global-search.use', 'web')->getAttributes();
+        DB::table('permissions')->where('id', $existing['id'])->delete();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->assertFalse($actor->can('global-search.use'));
+
+        // A manual import adds the grant but does not register the migration or reset cache.
+        DB::table('permissions')->insert($existing);
+        DB::table('role_has_permissions')->insert(['permission_id' => $existing['id'], 'role_id' => $role->id]);
+        $this->assertFalse($actor->can('global-search.use'));
+
+        $migration = require database_path('migrations/2026_11_24_000200_add_global_search_permission.php');
+        $migration->up();
+
+        $this->assertSame($existing['id'], Permission::findByName('global-search.use', 'web')->id);
+        $this->assertTrue($actor->can('global-search.use'));
+        $this->assertTrue(Role::findByName('Admin', 'web')->hasPermissionTo('global-search.use'));
+        $this->assertFalse(Role::findByName('Booker', 'web')->hasPermissionTo('global-search.use'));
     }
 
     public function test_individual_report_results_require_the_same_permissions_as_the_report(): void

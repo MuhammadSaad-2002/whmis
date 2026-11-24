@@ -17,7 +17,11 @@ on the server; `dispatch.plan` gates schedule management and staff delivery shee
 Employee Commissions and commission-specific finance actions require
 `commission.manage`. Booker and Salesman accounts without an Admin or Super
 Admin role are blocked even if they have a legacy or direct commission grant.
-The workspace menu and Global Search follow the same restriction.
+The workspace menu and Global Search follow the same restriction and refresh
+stale commission permissions before hiding access. Deployments restore missing
+standard finance and commission grants to Super Admin only. If using phpMyAdmin
+instead, import [the Super Admin grant repair](../database/manual/2026_11_24_restore_super_admin_finance_grants.sql)
+and run `php artisan permission:cache-reset`, then reload the workspace.
 
 WHMIS uses Laravel session authentication with Spatie Laravel Permission. Routes
 are permission-gated with `can:` middleware, and React receives roles and
@@ -70,6 +74,13 @@ access decisions.
 - `usePermissions()` exposes `can()` and `canAny()` in React.
 - `nav-config.ts` defines the workspace top bar's groups and page permission keys.
 - Server-side route middleware remains the real authorization boundary.
+
+Cash & Bank, Daily Reconciliation and Finance Approvals use the same
+cache-aware permission check as Dispatch. If a saved grant was added via
+phpMyAdmin but the cached permission check denies access, these routes refresh
+the permission cache and check again. Missing grants still return 403.
+Posting reconciliation receipts still requires both `distribution.reconcile`
+and `payments.manage`.
 
 **Global Search** (`global-search.use`) enables the workspace search button and
 keyboard shortcut. Admin and Super Admin have it by default; grant it to other

@@ -19,6 +19,7 @@ use App\Models\SampleReceipt;
 use App\Models\StockAdjustment;
 use App\Models\StockLoan;
 use App\Models\User;
+use App\Support\PermissionCheck;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -40,8 +41,8 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::define('view-supplier-details', fn (User $user) => $user->canViewSupplierDetails());
         Gate::define('manage-own-account', fn (User $user) => ! $user->isFieldBooker());
-        Gate::define('manage-employee-commissions', fn (User $user) => $user->can('commission.manage')
-            && (! $user->hasAnyRole(['Booker', 'Salesman']) || $user->hasAnyRole(['Admin', 'Super Admin'])));
+        Gate::define('manage-employee-commissions', fn (User $user) => (! $user->hasAnyRole(['Booker', 'Salesman']) || $user->hasAnyRole(['Admin', 'Super Admin']))
+            && app(PermissionCheck::class)->allowsAny($user, ['commission.manage']));
 
         Relation::enforceMorphMap([
             'finance_work_item' => \App\Models\FinanceWorkItem::class,

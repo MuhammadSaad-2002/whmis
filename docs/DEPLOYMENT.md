@@ -56,13 +56,15 @@ first — otherwise the critical deployment task fails and setup remains incompl
 Git Version Control → the repo → **Manage** → **Update from Remote**, then
 **Deploy HEAD Commit** to run `.cpanel.yml`:
 ```
-artisan up → optimize:clear --except=cache → storage:link → migrate --force → whmis:provision → cache:clear → whmis:doctor
+artisan up → optimize:clear --except=cache → storage:link → migrate --force → permission:cache-reset → whmis:provision → cache:clear → whmis:doctor
 ```
 
-The application cache is cleared after migrations so a fresh deployment can
-create the cache table first. These steps are part of the deploy hook, not
-commands that run on each web request. Critical steps are chained so cache,
-migration, provisioning and readiness failures are visible.
+The permission cache is reset explicitly before provisioning so it reads the
+current grants. Both permission and application
+cache clearing run after migrations so a fresh deployment can create the cache
+table first. These steps are part of the deploy hook, not commands that run on
+each web request. Critical steps are chained so cache, migration, provisioning
+and readiness failures are visible.
 `whmis:provision` preserves existing role grants on an established installation;
 it applies baseline seeds only when no roles exist. `storage:link` tolerates an
 already-existing link. `whmis:doctor` is read-only and also available at System

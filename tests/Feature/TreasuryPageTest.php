@@ -8,6 +8,9 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class TreasuryPageTest extends TestCase
@@ -18,6 +21,48 @@ class TreasuryPageTest extends TestCase
     {
         parent::setUp();
         $this->seed([RolePermissionSeeder::class, SystemSeeder::class]);
+    }
+
+    public function test_finance_pages_refresh_stale_permissions_after_manual_super_admin_grants(): void
+    {
+        $role = Role::findByName('Super Admin', 'web');
+        $admin = User::factory()->create()->assignRole($role);
+        $fieldStaff = User::factory()->create()->assignRole(['Booker', 'Salesman']);
+        $registrar = app(PermissionRegistrar::class);
+
+        foreach ([
+            'treasury.index' => ['treasury.view', 'operations/treasury'],
+            'distribution.reconcile' => ['distribution.reconcile', 'operations/daily-collections'],
+            'finance.approvals' => ['finance.review', 'operations/finance-approvals'],
+        ] as $route => [$permission, $component]) {
+            $grant = ['role_id' => $role->id, 'permission_id' => Permission::findByName($permission, 'web')->id];
+            DB::table('role_has_permissions')->where($grant)->delete();
+            $registrar->forgetCachedPermissions();
+            $this->actingAs($admin->fresh())->get(route($route))->assertForbidden();
+
+            // Simulate an SQL import that restores the grant without clearing Spatie's cache.
+            DB::table('role_has_permissions')->insert($grant);
+            $actor = $admin->fresh();
+            $this->assertTrue($actor->getAllPermissions()->contains('name', $permission));
+            $this->assertFalse($actor->can($permission));
+            $this->actingAs($fieldStaff)->get(route($route))->assertForbidden();
+            $this->assertFalse($actor->can($permission));
+            $this->actingAs($actor)->get(route($route))->assertOk()
+                ->assertInertia(fn (Assert $page) => $page->component($component));
+        }
+    }
+
+    public function test_reconciliation_payment_posting_still_requires_both_permissions(): void
+    {
+        $reconciler = User::factory()->create()->givePermissionTo('distribution.reconcile');
+        $paymentOperator = User::factory()->create()->givePermissionTo('payments.manage');
+        $both = User::factory()->create()->givePermissionTo(['distribution.reconcile', 'payments.manage']);
+
+        foreach ([route('distribution.post-matching-cash', ['id' => 1]), '/daily-reconciliation/collection/1'] as $url) {
+            $this->actingAs($reconciler)->postJson($url, [])->assertForbidden();
+            $this->actingAs($paymentOperator)->postJson($url, [])->assertForbidden();
+            $this->actingAs($both)->postJson($url, [])->assertUnprocessable();
+        }
     }
 
     public function test_ledger_search_and_movement_filters_keep_the_unfiltered_running_balance_and_account_totals(): void
