@@ -9,10 +9,15 @@ class CustomerDeliverySchedule extends Model
 {
     protected $fillable = ['booking_days', 'delivery_days', 'salesman_id', 'delivery_enabled_at'];
 
-    protected $casts = ['booking_days' => 'array', 'delivery_days' => 'array', 'delivery_enabled_at' => 'datetime'];
+    protected $casts = ['booking_days' => 'array', 'delivery_days' => 'array', 'salesman_id' => 'integer', 'delivery_enabled_at' => 'datetime'];
 
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function salesman(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 }

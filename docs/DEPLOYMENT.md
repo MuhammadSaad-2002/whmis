@@ -5,9 +5,9 @@ assets). To make deployment a **pure `git pull`**, this repo commits both the
 compiled frontend (`public/build`) **and** the PHP dependencies (`vendor/`), so
 the cPanel host needs **only PHP 8.2+ and MySQL** — no Node, no Composer.
 
-Deployment uses **cPanel Git™ Version Control**: after each pull, cPanel runs the
-`.cpanel.yml` script in the repo root. That script now **provisions the database
-on its own** — `migrate → whmis:provision → optimize:clear → whmis:doctor` — so a first
+Deployment uses **cPanel Git™ Version Control**: **Deploy HEAD Commit** runs
+`.cpanel.yml` from the repo root. It clears stale Laravel configuration, route,
+event and view caches before migrating and provisioning the database. A first
 deploy needs no phpMyAdmin import.
 
 Production is `whms.digitalupthrust.com.pk`. Required PHP extensions:
@@ -54,12 +54,15 @@ first — otherwise the critical deployment task fails and setup remains incompl
 
 ### 6. Deploy
 Git Version Control → the repo → **Manage** → **Update from Remote**, then
-**Deploy HEAD Commit**. The pull triggers `.cpanel.yml`:
+**Deploy HEAD Commit** to run `.cpanel.yml`:
 ```
-artisan up → storage:link → migrate --force → whmis:provision → optimize:clear → whmis:doctor
+artisan up → optimize:clear --except=cache → storage:link → migrate --force → whmis:provision → cache:clear → whmis:doctor
 ```
 
-Critical steps are chained so migration/provision/readiness failures are visible.
+The application cache is cleared after migrations so a fresh deployment can
+create the cache table first. These steps are part of the deploy hook, not
+commands that run on each web request. Critical steps are chained so cache,
+migration, provisioning and readiness failures are visible.
 `whmis:provision` preserves existing role grants on an established installation;
 it applies baseline seeds only when no roles exist. `storage:link` tolerates an
 already-existing link. `whmis:doctor` is read-only and also available at System
@@ -78,6 +81,8 @@ database before importing. Use only the files for changes not yet applied:
 - Integrated dispatch, Treasury, commission, and daily reconciliation: follow
   the [deployment and permission checklist](INTEGRATED_DISTRIBUTION.md#deployment-and-permission-checklist).
   The new report PDF layouts require no additional SQL once that workflow is installed.
+- Default salesman history: [2026_11_24_create_customer_salesman_history.sql](../database/manual/2026_11_24_create_customer_salesman_history.sql).
+  Import only if the cPanel migration step has not already applied it.
 
 Skip schema SQL already applied by a migration. These schema files register
 their matching migrations.
@@ -115,7 +120,8 @@ and create a real super-admin.
 **Locally** (developer machine):
 ```bash
 npm run build                 # refresh public/build
-git add -A && git commit -m "…"
+git add -- public/build       # also stage the intended source changes
+git commit -m "…"
 git push origin main
 ```
 

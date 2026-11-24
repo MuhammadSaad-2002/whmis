@@ -156,6 +156,29 @@ class DistributionOperationsTest extends TestCase
             ->assertInertia(fn (Assert $p) => $p->has('invoices.data', 2));
     }
 
+    public function test_schedule_batch_validates_atomically_and_history_requires_schedule_permission(): void
+    {
+        $salesman = User::factory()->create(['is_active' => true])->assignRole('Salesman');
+        $other = Customer::create(['name' => 'Second Pharmacy']);
+        $changes = [
+            ['customer_id' => $this->customer->id, 'booking_days' => [1], 'delivery_days' => [2], 'salesman_id' => $salesman->id],
+            ['customer_id' => $other->id, 'booking_days' => [1], 'delivery_days' => [2], 'salesman_id' => $this->booker->id],
+        ];
+        $route = route('dispatch.schedules.bulk-update');
+        $this->put($route, ['schedules' => $changes])->assertSessionHasErrors('schedules.1.salesman_id');
+        $this->assertDatabaseCount('customer_delivery_schedules', 0);
+        $this->assertDatabaseCount('customer_salesman_history', 0);
+
+        $changes[1]['salesman_id'] = $salesman->id;
+        $this->put($route, ['schedules' => $changes])->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('customer_delivery_schedules', 2);
+        $this->assertDatabaseCount('customer_salesman_history', 2);
+        $this->get(route('dispatch.schedules'))->assertInertia(fn (Assert $p) => $p
+            ->component('operations/delivery-schedules')->has('customers', 2)->where('customers.0.bookers.0', $this->booker->name));
+        $this->actingAs($salesman)->getJson(route('dispatch.schedules.history', $other))->assertForbidden();
+        $this->put($route, ['schedules' => $changes])->assertForbidden();
+    }
+
     public function test_daily_sheet_prints_separate_invoice_rows_and_only_verified_route_collections(): void
     {
         $day = '2026-11-23';

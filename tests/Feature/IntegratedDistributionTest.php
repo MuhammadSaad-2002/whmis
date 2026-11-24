@@ -172,6 +172,32 @@ class IntegratedDistributionTest extends TestCase
             'planned_date' => now('Asia/Karachi')->startOfDay()->addDays((8 - now('Asia/Karachi')->isoWeekday()) % 7)->toDateString()]);
     }
 
+    public function test_default_salesman_changes_preserve_existing_dispatches_and_commission_snapshots(): void
+    {
+        $this->opening();
+        $booking = $this->booking(2);
+        $first = app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($booking));
+        $oldName = $this->salesman->name;
+        $next = User::factory()->create(['name' => 'New route salesman', 'is_active' => true])->assignRole('Salesman');
+        $route = route('dispatch.schedules.bulk-update');
+        $change = ['customer_id' => $this->customer->id, 'booking_days' => [1], 'delivery_days' => [], 'salesman_id' => $next->id];
+        $this->actingAs($this->admin)->put($route, ['schedules' => [$change]])->assertSessionHasNoErrors();
+        $this->put($route, ['schedules' => [$change + ['unused' => true]]])->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('customer_salesman_history', 2);
+        $this->salesman->update(['name' => 'Renamed old salesman']);
+        $this->getJson(route('dispatch.schedules.history', $this->customer))->assertOk()
+            ->assertJsonPath('data.0.previous_salesman_name', $oldName)
+            ->assertJsonPath('data.0.salesman_name', $next->name)
+            ->assertJsonPath('data.0.changed_by_name', $this->admin->name);
+        $this->assertDatabaseHas('dispatches', ['sales_invoice_id' => $first->id, 'assigned_to' => $this->salesman->id, 'original_assignee_id' => $this->salesman->id]);
+        $this->assertDatabaseHas('commission_scopes', ['booking_id' => $booking->id, 'original_salesman_id' => $this->salesman->id]);
+
+        $newBooking = $this->booking(2);
+        $second = app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($newBooking));
+        $this->assertDatabaseHas('dispatches', ['sales_invoice_id' => $second->id, 'assigned_to' => $next->id, 'original_assignee_id' => $next->id]);
+        $this->assertDatabaseHas('commission_scopes', ['booking_id' => $newBooking->id, 'original_salesman_id' => $next->id]);
+    }
+
     public function test_admin_board_preserves_pickup_checks_and_attributes_delivery_to_the_salesman(): void
     {
         $this->actingAs($this->admin->refresh());

@@ -55,28 +55,66 @@ class DeliveryPlanningService
             'original_assignee_id' => $defaults['assigned_to'], 'status' => 'pending']);
     }
 
-    public function save(Customer $customer, array $data): void
+    public function save(Customer $customer, array $data, ?User $actor = null): void
     {
-        $bookingDays = $this->days($data['booking_days'] ?? []);
-        $deliveryDays = $this->days($data['delivery_days'] ?? []);
-        $salesman = $data['salesman_id'] ?? null;
-        if (($salesman && ! $this->activeSalesmen()->whereKey($salesman)->exists()) || ($deliveryDays && ! $salesman)) {
-            throw ValidationException::withMessages(['salesman_id' => 'Choose an active Salesman to schedule deliveries.']);
-        }
+        $this->saveMany([['customer_id' => $customer->id] + $data], $actor, bulk: false);
+    }
 
-        DB::transaction(function () use ($customer, $bookingDays, $deliveryDays, $salesman) {
-            $customer = Customer::whereKey($customer->id)->lockForUpdate()->firstOrFail();
-            $schedule = $customer->deliverySchedule()->firstOrNew();
-            $schedule->fill([
-                'booking_days' => $bookingDays, 'delivery_days' => $deliveryDays, 'salesman_id' => $salesman,
-                'delivery_enabled_at' => $salesman ? ($schedule->delivery_enabled_at ?? now()) : null,
-            ]);
-            $schedule->save();
-            AuditLogger::action($customer, 'delivery_schedule_updated', [
-                'salesman_id' => $salesman, 'booking_days' => $bookingDays, 'delivery_days' => $deliveryDays,
-            ]);
-        });
-        if ($salesman) $this->planOpenInvoices(Carbon::today('Asia/Karachi'), $customer->id);
+    public function saveMany(array $changes, ?User $actor, bool $bulk = true): int
+    {
+        $result = DB::transaction(function () use ($changes, $actor, $bulk) {
+            $customers = Customer::active()->whereKey(array_column($changes, 'customer_id'))
+                ->orderBy('id')->lockForUpdate()->get()->load('deliverySchedule')->keyBy('id');
+            $activeSalesmen = $this->activeSalesmen()->whereKey(array_filter(array_column($changes, 'salesman_id')))->pluck('name', 'id');
+            $previousNames = User::whereKey($customers->pluck('deliverySchedule.salesman_id')->filter()->unique()->values()->all())
+                ->pluck('name', 'id');
+            $changed = 0;
+            $plan = [];
+
+            foreach ($changes as $index => $data) {
+                $customer = $customers->get($data['customer_id']);
+                if (! $customer) {
+                    if (! $bulk) abort(404);
+                    throw ValidationException::withMessages(["schedules.{$index}.customer_id" => 'This customer is no longer active.']);
+                }
+                $bookingDays = $this->days($data['booking_days'] ?? []);
+                $deliveryDays = $this->days($data['delivery_days'] ?? []);
+                $salesman = isset($data['salesman_id']) ? (int) $data['salesman_id'] : null;
+                if (($salesman !== null && ! $activeSalesmen->has($salesman)) || ($deliveryDays && ! $salesman)) {
+                    $key = $bulk ? "schedules.{$index}.salesman_id" : 'salesman_id';
+                    throw ValidationException::withMessages([$key => 'Choose an active Salesman to schedule deliveries.']);
+                }
+
+                $schedule = $customer->deliverySchedule ?? $customer->deliverySchedule()->make();
+                $previous = $schedule->salesman_id;
+                $old = [
+                    'booking_days' => $schedule->booking_days ?? [],
+                    'delivery_days' => $schedule->delivery_days ?? [],
+                    'salesman_id' => $previous,
+                ];
+                $new = ['booking_days' => $bookingDays, 'delivery_days' => $deliveryDays, 'salesman_id' => $salesman];
+                if ($salesman) $plan[] = $customer->id;
+                if ($old === $new) continue;
+
+                $schedule->fill($new + ['delivery_enabled_at' => $salesman ? ($schedule->delivery_enabled_at ?? now()) : null])->save();
+                if ($previous !== $salesman) {
+                    DB::table('customer_salesman_history')->insert([
+                        'customer_id' => $customer->id,
+                        'previous_salesman_id' => $previous, 'previous_salesman_name' => $previousNames->get($previous),
+                        'salesman_id' => $salesman, 'salesman_name' => $activeSalesmen->get($salesman),
+                        'changed_by_id' => $actor?->id, 'changed_by_name' => $actor?->name, 'changed_at' => now(),
+                    ]);
+                }
+                AuditLogger::action($customer, 'delivery_schedule_updated', $new, $old);
+                $changed++;
+            }
+
+            return [$changed, $plan];
+        }, 3);
+
+        if ($result[1]) $this->planOpenInvoices(Carbon::today('Asia/Karachi'), $result[1]);
+
+        return $result[0];
     }
 
     /** Generate today's PKT visits and schedule new, eligible posted invoices. Safe to repeat. */
@@ -109,12 +147,12 @@ class DeliveryPlanningService
         return $count;
     }
 
-    private function planOpenInvoices(Carbon $today, ?int $customerId = null): int
+    private function planOpenInvoices(Carbon $today, ?array $customerIds = null): int
     {
         $count = 0;
         SalesInvoice::query()->where('sales_invoices.status', SalesInvoice::STATUS_POSTED)
             ->whereNotNull('sales_invoices.posted_at')
-            ->when($customerId, fn ($q) => $q->where('sales_invoices.customer_id', $customerId))
+            ->when($customerIds, fn ($q) => $q->whereIn('sales_invoices.customer_id', $customerIds))
             ->join('customer_delivery_schedules as schedule', 'schedule.customer_id', '=', 'sales_invoices.customer_id')
             ->where(fn ($q) => $q->whereColumn('sales_invoices.posted_at', '>=', 'schedule.delivery_enabled_at')
                 ->orWhereExists(fn ($rows) => $rows->selectRaw('1')->from('dispatches')->whereColumn('dispatches.sales_invoice_id', 'sales_invoices.id')

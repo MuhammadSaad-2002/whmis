@@ -8,6 +8,9 @@
 # OUT of maintenance mode — it can never get stuck showing 503 again. We never
 # run `artisan down`, so the site stays live throughout.
 #
+# Clear stale bootstrap caches before any database work. The default app
+# cache uses a database table that may not exist until migrations have run.
+#
 # PHP binary: this host runs CloudLinux alt-php 8.4, whose CLI is at
 # /opt/alt/php84/usr/bin/php. If that path ever changes, update it here.
 # Migration/provision/verification failures now fail the deployment task.
@@ -15,5 +18,10 @@
 deployment:
   tasks:
     - /opt/alt/php84/usr/bin/php artisan up || true
-    - /opt/alt/php84/usr/bin/php artisan storage:link || true
-    - /opt/alt/php84/usr/bin/php artisan migrate --force && /opt/alt/php84/usr/bin/php artisan whmis:provision && /opt/alt/php84/usr/bin/php artisan optimize:clear && /opt/alt/php84/usr/bin/php artisan whmis:doctor
+    - >-
+      /opt/alt/php84/usr/bin/php artisan optimize:clear --except=cache
+      && (/opt/alt/php84/usr/bin/php artisan storage:link || true)
+      && /opt/alt/php84/usr/bin/php artisan migrate --force
+      && /opt/alt/php84/usr/bin/php artisan whmis:provision
+      && /opt/alt/php84/usr/bin/php artisan cache:clear
+      && /opt/alt/php84/usr/bin/php artisan whmis:doctor

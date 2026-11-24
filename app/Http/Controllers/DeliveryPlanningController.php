@@ -15,29 +15,71 @@ class DeliveryPlanningController extends Controller
     {
         $search = $request->validate(['search' => 'nullable|string|max:100'])['search'] ?? '';
         $customers = Customer::active()->select('id', 'name', 'city', 'booker_id')
-            ->with(['deliverySchedule', 'bookers:id,name', 'primaryBooker:id,name'])
-            ->when($search !== '', fn ($query) => $query->where(fn ($q) => $q
-                ->where('name', 'like', "%{$search}%")->orWhere('city', 'like', "%{$search}%")))
-            ->orderBy('name')->orderBy('id')->paginate(12)->withQueryString();
+            ->with(['deliverySchedule:id,customer_id,booking_days,delivery_days,salesman_id',
+                'deliverySchedule.salesman:id,name', 'bookers:id,name', 'primaryBooker:id,name'])
+            ->orderBy('name')->orderBy('id')->get()->map(fn (Customer $customer) => [
+                ...$customer->only(['id', 'name', 'city']),
+                'bookers' => $customer->bookers->pluck('name', 'id')->union(
+                    $customer->primaryBooker ? [$customer->primaryBooker->id => $customer->primaryBooker->name] : [],
+                )->values(),
+                'booking_days' => $customer->deliverySchedule?->booking_days ?? [],
+                'delivery_days' => $customer->deliverySchedule?->delivery_days ?? [],
+                'salesman_id' => $customer->deliverySchedule?->salesman_id,
+                'salesman_name' => $customer->deliverySchedule?->salesman?->name,
+            ]);
 
         return Inertia::render('operations/delivery-schedules', [
             'customers' => $customers,
             'salesmen' => $planning->activeSalesmen()->orderBy('name')->get(['id', 'name']),
             'search' => $search,
+            'today' => now('Asia/Karachi')->toDateString(),
         ]);
     }
 
     public function update(Request $request, Customer $customer, DeliveryPlanningService $planning)
     {
         abort_unless($customer->status === 'active', 404);
-        $data = $request->validate([
-            'salesman_id' => 'nullable|integer',
-            'booking_days' => 'present|array|max:7', 'booking_days.*' => 'integer|between:1,7|distinct',
-            'delivery_days' => 'present|array|max:7', 'delivery_days.*' => 'integer|between:1,7|distinct',
-        ]);
-        $planning->save($customer, $data);
+        $data = $request->validate($this->scheduleRules());
+        $planning->save($customer, $data, $request->user());
 
         return back()->with('success', 'Customer schedule saved.');
+    }
+
+    public function updateMany(Request $request, DeliveryPlanningService $planning)
+    {
+        $data = $request->validate([
+            'schedules' => 'required|array|min:1|max:500',
+            'schedules.*.customer_id' => 'required|integer|min:1|distinct',
+            ...$this->scheduleRules('schedules.*.'),
+        ]);
+        $count = $planning->saveMany($data['schedules'], $request->user());
+
+        return back()->with('success', "{$count} ".($count === 1 ? 'schedule' : 'schedules').' saved.');
+    }
+
+    public function history(Customer $customer)
+    {
+        $history = DB::table('customer_salesman_history')->where('customer_id', $customer->id)
+            ->orderByDesc('id')->simplePaginate(20, ['id', 'previous_salesman_id', 'previous_salesman_name',
+                'salesman_id', 'salesman_name', 'changed_by_name', 'changed_at'])
+            ->through(function ($entry) {
+                $entry->changed_at = Carbon::parse($entry->changed_at)->setTimezone('Asia/Karachi')->format('d M Y, H:i');
+
+                return $entry;
+            });
+
+        return response()->json($history)->header('Cache-Control', 'private, no-store');
+    }
+
+    private function scheduleRules(string $prefix = ''): array
+    {
+        return [
+            $prefix.'salesman_id' => 'nullable|integer|min:1',
+            $prefix.'booking_days' => 'present|array|max:7',
+            $prefix.'booking_days.*' => 'integer|between:1,7'.($prefix === '' ? '|distinct' : ''),
+            $prefix.'delivery_days' => 'present|array|max:7',
+            $prefix.'delivery_days.*' => 'integer|between:1,7'.($prefix === '' ? '|distinct' : ''),
+        ];
     }
 
     public function generate(DeliveryPlanningService $planning)

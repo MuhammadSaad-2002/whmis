@@ -43,6 +43,8 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     Route::put('booker/customers/{customer}/visit', [\App\Http\Controllers\BookerWorkdayController::class, 'visit'])->middleware('can:bookings.create')->name('booker.visit');
     Route::middleware(AuthorizeOperations::class.':dispatch.plan')->group(function () {
         Route::get('dispatch/schedules', [\App\Http\Controllers\DeliveryPlanningController::class, 'index'])->name('dispatch.schedules');
+        Route::put('dispatch/schedules', [\App\Http\Controllers\DeliveryPlanningController::class, 'updateMany'])->name('dispatch.schedules.bulk-update');
+        Route::get('dispatch/schedules/{customer}/history', [\App\Http\Controllers\DeliveryPlanningController::class, 'history'])->name('dispatch.schedules.history');
         Route::put('dispatch/schedules/{customer}', [\App\Http\Controllers\DeliveryPlanningController::class, 'update'])->name('dispatch.schedules.update');
         Route::post('dispatch/generate-plan', [\App\Http\Controllers\DeliveryPlanningController::class, 'generate'])->name('dispatch.schedules.generate');
         Route::get('dispatch/daily-sheet', [\App\Http\Controllers\DeliveryPlanningController::class, 'sheet'])->name('dispatch.sheet');

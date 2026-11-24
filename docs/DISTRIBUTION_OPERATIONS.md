@@ -73,7 +73,14 @@ Deliveries** and exposes only dispatches assigned to that login; it does not gra
 invoice, purchasing, collections, or customer-directory permissions.
 
 In **Dispatch & Delivery → Booking & Delivery Schedules**, set each customer's
-booking days, delivery days, and default Salesman. Booking days create today's
+booking days, delivery days, and default Salesman. Edit rows or apply
+weekday and Salesman changes to selected customers, then use **Save changes**.
+The history icon on each customer shows default Salesman changes, including
+the previous and new salesman, the administrator, and the time in PKT.
+Changing a default does not rewrite existing assignments, custody, sales, or
+commission snapshots. A new history entry is recorded only when the default
+changes; earlier activity stays in its original dispatch or audit records.
+Booking days create today's
 planned visits for active primary and additional Bookers. Find them in **My
 Workday → Planned**. They do not create booking orders. For delivery, only
 new invoices posted after delivery scheduling was enabled are eligible. The
@@ -81,6 +88,10 @@ schedule uses the first allowed weekday on or after posting or the day the
 planner runs, whichever is later, in Pakistan time. Drafts and historic invoices
 are not picked up, and existing assignments, visits, and outcomes are never
 overwritten. Existing invoices can be planned manually via **Assign / reschedule**.
+For phpMyAdmin deployments, import
+[`2026_11_24_create_customer_salesman_history.sql`](../database/manual/2026_11_24_create_customer_salesman_history.sql)
+before using the updated editor. It does not replace or populate existing sales
+or dispatch rows.
 
 The application scheduler runs the planner every 30 minutes. If needed, run
 **Generate plan now** or `php artisan whmis:generate-delivery-plan`. Enable the

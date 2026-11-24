@@ -23,9 +23,13 @@ customer/invoice morph aliases, so no additional morph map entries are required.
 Schema and permission SQL: `database/manual/2026_11_16_*.sql`.
 The optional `customer_delivery_schedules` row holds ISO booking and delivery
 weekdays, default Salesman, and the activation timestamp for delivery automation.
+`customer_salesman_history` is an append-only log of changes to the default.
+It snapshots the previous and new salesman and the editor (IDs and names), with
+the change time. It does not backfill old history or drive invoice assignment.
 `dispatches.planned_date` is a scheduled date, not a dispatch or delivery event.
 Production imports: `2026_11_23_create_delivery_schedules.sql` and
-`2026_11_23_seed_salesman_permissions.sql`.
+`2026_11_23_seed_salesman_permissions.sql`; existing installations add
+`2026_11_24_create_customer_salesman_history.sql`.
 
 ### Booking lifecycle timestamps
 
