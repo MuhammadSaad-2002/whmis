@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useInvoiceHotkeys } from '@/hooks/use-keyboard-grid';
 import AppLayout from '@/layouts/app-layout';
-import { money, shortDate, toNumber } from '@/lib/format';
+import { shortDate, toNumber, totalMoney } from '@/lib/format';
+import { returnTotal, type ReturnRounding } from '@/lib/invoice-math';
 import { ALERT_FIX } from '@/lib/form-validation';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
@@ -39,6 +40,7 @@ interface LoadedInvoice {
     invoice_number: string;
     customer: string;
     invoice_date: string;
+    rounding?: ReturnRounding | null;
 }
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -117,8 +119,9 @@ export default function SalesReturnForm({ warehouse, initialInvoiceId }: { wareh
 
     const lineById = useMemo(() => new Map(lines.map((l) => [String(l.line_id), l])), [lines]);
     const totalRefund = useMemo(
-        () => rows.reduce((sum, r) => sum + toNumber(r.qty) * (lineById.get(r.line_id)?.unit_amount ?? 0), 0),
-        [rows, lineById],
+        () => returnTotal(rows.reduce((sum, r) => sum + toNumber(r.qty) * (lineById.get(r.line_id)?.unit_amount ?? 0), 0),
+            rows.reduce((sum, r) => sum + (r.line_id ? toNumber(r.qty) : 0), 0), invoice?.rounding),
+        [rows, lineById, invoice],
     );
 
     const submit = () => {
@@ -143,7 +146,7 @@ export default function SalesReturnForm({ warehouse, initialInvoiceId }: { wareh
             return;
         }
         if (!confirm(totalRefund > 0
-            ? `Post this return and issue a credit of ${money(totalRefund)}? Stock is restored immediately.`
+            ? `Post this return and issue a credit of ${totalMoney(totalRefund)}? Stock is restored immediately.`
             : 'Post this return? Stock is restored immediately. No customer credit will be issued.')) return;
         setSaving(true);
         router.post(route('returns.sales.store'), {
@@ -208,8 +211,8 @@ export default function SalesReturnForm({ warehouse, initialInvoiceId }: { wareh
 
                         <div className="sticky bottom-0 z-10 mt-auto ml-auto w-80 space-y-1 rounded-xl border bg-background p-4 text-base">
                             <div className="flex justify-between text-xl font-bold">
-                                <span>Credit Note Total</span>
-                                <span className="tabular-nums">{money(totalRefund)}</span>
+                                <span>Estimated Credit Note Total</span>
+                                <span className="tabular-nums">{totalMoney(totalRefund)}</span>
                             </div>
                             <p className="text-xs text-muted-foreground">
                                 Both billed and bonus returns restore stock to the original batches. Only billed units generate a customer credit.
@@ -236,7 +239,7 @@ export default function SalesReturnForm({ warehouse, initialInvoiceId }: { wareh
                                     {hit.customer}{hit.city ? ` · ${hit.city}` : ''} · {shortDate(hit.invoice_date)}
                                 </div>
                             </div>
-                            <span className="text-xs tabular-nums text-muted-foreground">{money(hit.total_amount)}</span>
+                            <span className="text-xs tabular-nums text-muted-foreground">{totalMoney(hit.total_amount)}</span>
                         </CommandItem>
                     ))}
                 </CommandList>

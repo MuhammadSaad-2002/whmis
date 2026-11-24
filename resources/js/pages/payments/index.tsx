@@ -3,7 +3,7 @@ import { RecordPaymentDialog } from '@/components/record-payment-dialog';
 import { SearchField } from '@/components/ui/search-field';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { money, pakistanDate, shiftDate, shortDate } from '@/lib/format';
+import { money, pakistanDate, shiftDate, shortDate, totalMoney } from '@/lib/format';
 import { Head, Link, router } from '@inertiajs/react';
 import { Ban, Eye, List, ListFilter, Plus } from 'lucide-react';
 import { type ChangeEvent, useEffect, useRef, useState } from 'react';
@@ -17,6 +17,8 @@ type PaymentRow = {
     direction: Direction;
     method: string;
     amount: string;
+    tendered_paisa?: number | null;
+    received_paisa?: number | null;
     payment_date: string;
     status: string;
     party?: { id: number; name: string } | null;
@@ -48,6 +50,14 @@ function PaymentType({ direction }: { direction: Direction }) {
 
 function PaymentStatus({ status }: { status: string }) {
     return <span className={`st ${status === 'completed' ? 'posted' : 'cancelled'}`}>{status}</span>;
+}
+
+function RecordedAmount({ payment }: { payment: PaymentRow }) {
+    const exact = payment.tendered_paisa == null ? null : payment.tendered_paisa / 100;
+    return <>{totalMoney(payment.amount)}{exact !== null && exact !== Number(payment.amount) &&
+        <small className="block muted">Exact tender: {money(exact)}
+            {payment.received_paisa != null && payment.received_paisa / 100 !== Number(payment.amount)
+                && <> · Received rounded: {totalMoney(payment.received_paisa / 100)}</>}</small>}</>;
 }
 
 function PaymentActions({ payment, canManage, canReview }: { payment: PaymentRow; canManage: boolean; canReview: boolean }) {
@@ -146,7 +156,7 @@ export default function PaymentsIndex({ payments, customers, companies, filters,
             <section className="kpis" aria-label="Payment summary">
                 {kpis.map(({ label, value, tone, note }) => <div key={label} className="card kpi">
                     <div className="lbl"><i style={{ background: tone }} />{label}</div>
-                    <div className="val num" style={{ color: tone }}>{money(value)}</div>
+                    <div className="val num" style={{ color: tone }}>{totalMoney(value)}</div>
                     <div className="foot">{note}</div>
                 </div>)}
             </section>
@@ -192,14 +202,14 @@ export default function PaymentsIndex({ payments, customers, companies, filters,
                                     <td><PaymentType direction={payment.direction} /></td>
                                     <td>{methodLabel(payment.method)}</td>
                                     <td className="date">{shortDate(payment.payment_date.slice(0, 10))}</td>
-                                    <td className="r num number-cell">{money(payment.amount)}</td>
+                                    <td className="r num number-cell"><RecordedAmount payment={payment} /></td>
                                     <td><PaymentStatus status={payment.status} /></td>
                                     {(canManage || canReview) && <td className="acts-cell"><PaymentActions payment={payment} canManage={canManage} canReview={canReview} /></td>}
                                 </tr>)}
                             </tbody>
                             <tfoot><tr>
                                 <td colSpan={5}>Net movement · completed only</td>
-                                <td className={`r num ${summary.net < 0 ? 'neg' : ''}`}>{money(summary.net)}</td>
+                                <td className={`r num ${summary.net < 0 ? 'neg' : ''}`}>{totalMoney(summary.net)}</td>
                                 <td colSpan={canManage || canReview ? 2 : 1} />
                             </tr></tfoot>
                         </table>
@@ -212,7 +222,7 @@ export default function PaymentsIndex({ payments, customers, companies, filters,
                                     <h2>{payment.party?.name ?? '—'}</h2>
                                 </div>
                                 <div className="r">
-                                    <p className="num payment-total">{money(payment.amount)}</p>
+                                    <p className="num payment-total"><RecordedAmount payment={payment} /></p>
                                     <PaymentStatus status={payment.status} />
                                 </div>
                             </div>

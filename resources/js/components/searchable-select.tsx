@@ -25,6 +25,7 @@ interface Props {
     id?: string;
     autoFocus?: boolean;
     touch?: boolean;
+    portalContainer?: HTMLElement | null;
 }
 
 /**
@@ -44,6 +45,7 @@ export function SearchableSelect({
     id,
     autoFocus,
     touch,
+    portalContainer,
 }: Props) {
     const [open, setOpen] = useState(false);
     const triggerRef = useRef<HTMLButtonElement>(null);
@@ -70,7 +72,8 @@ export function SearchableSelect({
                     <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-(--radix-popover-trigger-width) max-w-(--radix-popover-content-available-width) p-0" align="start">
+            <PopoverContent portalContainer={portalContainer} collisionBoundary={portalContainer ?? undefined}
+                className="w-(--radix-popover-trigger-width) max-w-(--radix-popover-content-available-width) p-0" align="start">
                 <Command
                     filter={(itemValue, search) =>
                         itemValue.toLowerCase().includes(search.toLowerCase()) ? 1 : 0

@@ -1,21 +1,20 @@
 import { Paginator, type PaginatedData } from '@/components/paginator';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { shortDate } from '@/lib/format';
+import { shortDate, totalPaisaMoney } from '@/lib/format';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { ArrowLeft, Banknote, Lock, Plus, Search, ShieldCheck, UsersRound } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import type { Account } from './daily-collections';
 import { ApprovalBadge, ApprovalDetail, ApprovalIcon } from './finance-approval-detail';
 import { RequestDialog, type DraftSeed } from './finance-approval-request';
-import { amountText, kindName, statuses, type ApprovalItem, type ApprovalStatus } from './finance-approval-types';
+import { kindName, statuses, type ApprovalItem, type ApprovalStatus, type FinanceAccount } from './finance-approval-types';
 import './finance-approvals.css';
 
 type QueueTab = ApprovalStatus | 'all';
 type Filters = { status: QueueTab; type: string; search: string };
 type Summary = Partial<Record<ApprovalStatus, { count: number; amount_paisa: number }>>;
 type Props = {
-    items: PaginatedData<ApprovalItem>; accounts: Account[]; kinds: string[]; today: string; actorId: number; requestId: number | null;
+    items: PaginatedData<ApprovalItem>; accounts: FinanceAccount[]; kinds: string[]; today: string; actorId: number; requestId: number | null;
     filters: Filters; summary: Summary;
 };
 const tiles = [
@@ -34,7 +33,8 @@ export default function FinanceApprovals({ items, accounts, kinds, today, actorI
     const { can } = usePermissions();
     const { url, props } = usePage<{ auth: { user: { name: string } | null } }>();
     const query = new URL(url, 'http://localhost').searchParams;
-    const creatable = kinds.filter(kind => kind !== 'delivery_correction' && (kind !== 'opening' || can('treasury.manage')));
+    const creatable = kinds.filter(kind => kind !== 'delivery_correction' && (kind !== 'opening' || can('treasury.manage'))
+        && (kind !== 'shortage_receipt_reverse' || can('payments.manage')));
     const canCreate = can('finance.request') && creatable.length > 0;
     const [search, setSearch] = useState(filters.search);
     const hasFilters = Boolean(filters.type || filters.search.trim());
@@ -47,7 +47,8 @@ export default function FinanceApprovals({ items, accounts, kinds, today, actorI
     const requestTrigger = useRef<HTMLButtonElement>(null);
     const selected = items.data.find(item => item.id === selectedId) ?? items.data[0];
     const allCount = Object.values(summary).reduce((sum, bucket) => sum + bucket.count, 0);
-    const tabs: QueueTab[] = ['pending', 'approved', 'posted', 'rejected', ...(summary.cancelled?.count ? ['cancelled' as const] : []), 'all'];
+    const tabs: QueueTab[] = ['pending', 'approved', 'posted', 'rejected', ...(summary.cancelled?.count ? ['cancelled' as const] : []),
+        ...(summary.reversed?.count ? ['reversed' as const] : []), 'all'];
 
     function apply(changes: Partial<Filters>) {
         const next = { ...filters, search: search.trim(), ...changes };
@@ -94,7 +95,7 @@ export default function FinanceApprovals({ items, accounts, kinds, today, actorI
                     {tiles.map(({ status, color, description }) => <button className="finance-card finance-kpi" type="button" key={status} aria-pressed={filters.status === status}
                         style={{ '--kpi-color': color } as CSSProperties} onClick={() => apply({ status })}>
                         <span>{statuses[status]}</span><strong>{summary[status]?.count ?? 0}</strong>
-                        <small>{status === 'rejected' ? description : amountText(summary[status]?.amount_paisa ?? 0) + ' · ' + description}</small>
+                        <small>{status === 'rejected' ? description : totalPaisaMoney(summary[status]?.amount_paisa ?? 0) + ' · ' + description}</small>
                     </button>)}
                 </section>
             </>}
@@ -119,8 +120,8 @@ export default function FinanceApprovals({ items, accounts, kinds, today, actorI
                         {items.data.map(item => <button type="button" className="approval-row" key={item.id} aria-pressed={selected?.id === item.id} onClick={() => choose(item)}>
                             <ApprovalIcon kind={item.kind} />
                             <span className="row-title">#{item.id} · {kindName(item.kind)}{actorId === item.created_by && item.status === 'pending' && <small>Yours</small>}</span>
-                            <span className="row-amount">{amountText(item.amount_paisa)}</span>
-                            <span className="row-summary">{shortDate(typeof item.payload.date === 'string' ? item.payload.date : null)}{item.payload.notes ? ' · ' + item.payload.notes : ''}</span>
+                            <span className="row-amount">{totalPaisaMoney(item.amount_paisa)}</span>
+                            <span className="row-summary">{[shortDate(typeof item.payload.date === 'string' ? item.payload.date : null), item.details.invoice, item.details.employee, item.payload.notes].filter(Boolean).join(' · ')}</span>
                             <span className="row-status"><ApprovalBadge status={item.status} compact /></span>
                         </button>)}
                         {!items.data.length && <div className="finance-empty">

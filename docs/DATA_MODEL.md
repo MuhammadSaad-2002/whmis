@@ -109,6 +109,13 @@ booking date and the timestamp used for dispatch scheduling.
 - Supplier credit increases payable.
 - Payment allocations link payments to sales or purchase invoices morphically.
 - Statements and aging are computed from ledger entries and allocation/payment behavior.
+- New bookings, sales invoices and purchase invoices store a signed
+  rounding adjustment alongside the whole-rupee grand total. A null adjustment
+  means a historical document did not use the rounding policy.
+- New monetary payments store the whole-rupee booked amount, exact tender for
+  Treasury, and rounded physical tender excluding employee shortages. A
+  separate ledger adjustment preserves exact legacy allocations or excludes
+  unbacked credit. See the manual SQL: 2026_11_24_store_monetary_rounding.sql.
 
 ## Number series
 

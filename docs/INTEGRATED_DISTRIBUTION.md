@@ -67,8 +67,12 @@
   reviewer authority, not automatic posting.
 - **Finance Approvals** shows status totals and a searchable request queue
   scoped to the signed-in user. Select a request to inspect its status, review
-  notes and private evidence. The New Request dialog uses the same approval,
-  posting and withdrawal rules as the underlying workflow.
+  notes, projected effects, posted movements, and private evidence. The New
+  Request dialog groups searchable types, uses live scoped pickers and shows
+  what posting changes. A displayed maximum is advisory until validated again
+  under the posting locks. Attach proof for openings, transfers, expenses,
+  statement checks, refund corrections, and waivers. Approval alone never
+  changes a balance.
 - A transfer posts one debit and one credit in the same transaction and changes
   no company-wide cash flow. Account counts and bank statements record expected,
   actual and variance; these do not automatically create a cash adjustment.
@@ -102,6 +106,21 @@
   **Reversal impact** before reversing a receipt or posted return. Withdraw
   pending dependent requests, release applied credits, or approve and record a
   refund recovery/financial correction before undoing a funding transaction.
+- A completed receipt left on account is also an eligible source of credit.
+  Applying it settles a same-customer invoice without cash moving again.
+  **Release customer credit** writes off unused, receipt-backed net credit as
+  other income. **Undo applied customer credit** restores an earlier application
+  instead; it never posts income. A refund recovery represents real money
+  returned; a refund correction restates the original Treasury and customer
+  books without reporting another cash receipt or payout.
+- Categorized Treasury expenses and other income appear separately in **Monthly
+  Sales & Profit**. At reconciliation close, physically counted surplus not
+  applied to customer receipts posts as other income in the approved cash
+  account. An accepted reporting shortfall closes the day but does not deduct
+  cash again or write off unpaid customer invoices. If the employee owes the
+  balance, apply an independently approved **Cash shortage** to the collection.
+  Invoice receipt corrections and reversals of a shortage repayment are
+  separate operations.
 
 ## Commission policies and accounting
 
@@ -140,6 +159,12 @@
   cash movements and never modify base salary. Do not enter the same automatic
   commission manually in payroll. The monthly profitability and executive
   reports show commission expense separately from payroll and product COGS.
+- Approved employee caps apply by role to eligible invoice dates, per invoice
+  or calendar month, without reclaiming already paid amounts. The split preview
+  uses the same calculator as posting, including the actual deliverer and
+  verified-collection basis. A separately approved shortage deduction can use
+  commission already payable. Recovery holds pause automatic offsets; a dated
+  hold resumes from the restart day via the existing Laravel schedule runner.
 - Cash shortage receivables and commission recovery/payable affect Financial
   Position but do not change customer sales revenue or stock. A shortage-backed
   receipt requires Finance's **Request receipt correction** and cannot be

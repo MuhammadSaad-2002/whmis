@@ -22,7 +22,7 @@
                         @if($column['wrap'] ?? false)
                             <span style="white-space: pre-wrap; overflow-wrap: break-word;">{{ $value }}</span>
                         @elseif(in_array($column['format'] ?? '', ['money']))
-                            {{ is_numeric($value) ? number_format((float) $value, 2) : $value }}
+                            {{ is_numeric($value) ? (($column['final'] ?? false) ? \App\Support\MoneyDisplay::total($value) : number_format((float) $value, 2)) : $value }}
                         @elseif(($column['format'] ?? '') === 'pct')
                             {{ $value }}%
                         @elseif(($column['format'] ?? '') === 'date')
@@ -39,7 +39,7 @@
                 @foreach($columns as $index => $column)
                     @php $value = $totals[$column['key']] ?? ($index === 0 ? 'TOTAL' : ''); @endphp
                     <td class="{{ ($column['align'] ?? '') === 'right' ? 'num' : '' }} {{ is_numeric($value) && (float) $value < 0 ? 'negative-value' : '' }}" style="font-weight: bold; border-top: 1.5px solid #10243a;">
-                        {{ is_numeric($value) && ($column['format'] ?? '') === 'money' ? number_format((float) $value, 2) : $value }}
+                        {{ is_numeric($value) && ($column['format'] ?? '') === 'money' ? \App\Support\MoneyDisplay::total($value) : $value }}
                     </td>
                 @endforeach
             </tr>

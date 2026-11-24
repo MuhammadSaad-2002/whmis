@@ -56,6 +56,7 @@ class SaleNetPositionService
             ->where('invoice_id', $invoice->getKey())
             ->whereHas('payment', fn ($q) => $q->where('status', 'completed'))
             ->sum('amount');
+        $received = (float) app(CustomerReceiptReport::class)->byInvoice([$invoice->id])->get($invoice->id, 0);
 
         $snapshot = app(InvoiceBalanceService::class)->sales()->whereKey($invoice->id)->first();
         $balance = $snapshot ? (float) $snapshot->outstanding : 0;
@@ -66,6 +67,8 @@ class SaleNetPositionService
             'returned' => $this->round($returned),
             'net' => $net,
             'payments' => round($payments, 2),
+            'actual_received' => $received,
+            'noncash_settlement' => max(0, round($payments - $received, 2)),
             'final_outstanding' => max($balance, 0.0),
             'refund_due' => app(FinanceApprovalService::class)->refundable($invoice) / 100,
             'applied_credit' => (float) ($snapshot?->applied_credit ?? 0),

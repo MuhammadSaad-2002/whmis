@@ -1,16 +1,13 @@
-import { Paginator, type PaginatedData } from '@/components/paginator';
-import { SummaryBar } from '@/components/summary-bar';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { MasterFilterDate, MasterRegister, RegisterMetric, useMasterFilters } from '@/components/master-register';
+import { type PaginatedData } from '@/components/paginator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { money, shortDate } from '@/lib/format';
+import { shortDate, totalMoney } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
-import { Head, Link, router } from '@inertiajs/react';
-import { Plus, Search, Undo2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Head, Link } from '@inertiajs/react';
+import { Plus, Undo2 } from 'lucide-react';
 
 interface ReturnRow {
     id: number;
@@ -31,81 +28,42 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Purchase Returns', href: '/retu
 
 export default function PurchaseReturnsIndex({ returns, filters, summary }: Props) {
     const { can } = usePermissions();
-    const [search, setSearch] = useState(filters.search ?? '');
+    const state = useMasterFilters('/returns/purchases', filters);
     const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
         rowCount: returns.data.length,
         onActivate: () => {}, // purchase returns have no detail page
     });
 
-    useEffect(() => {
-        const timeout = setTimeout(() => {
-            if ((filters.search ?? '') !== search) {
-                router.get('/returns/purchases', { ...filters, search: search || undefined }, { preserveState: true, replace: true });
-            }
-        }, 350);
-        return () => clearTimeout(timeout);
-    }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
-
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Purchase Returns" />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
-                    <div>
-                        <h1 className="text-4xl font-bold">Purchase Returns</h1>
-                        <p className="text-sm text-muted-foreground">Stock returned to suppliers — debit notes on the supplier ledger</p>
-                    </div>
-                    <div className="flex gap-2">
-                        <Button variant="outline" size="sm" asChild>
-                            <Link href="/returns/sales"><Undo2 className="mr-1 size-4" /> Sales Returns</Link>
-                        </Button>
-                        {can('returns.manage') && (
-                            <Button asChild>
-                                <Link href={route('returns.purchases.create')}>
-                                    <Plus className="mr-1 size-4" /> New Purchase Return
-                                </Link>
-                            </Button>
-                        )}
-                    </div>
-                </div>
-
-                <SummaryBar
-                    items={[
-                        { label: 'Net Debit Notes', value: summary.total, tone: 'negative', hint: `${summary.count} returns` },
-                    ]}
-                />
-
-                <div className="flex flex-wrap gap-2">
-                    <div className="relative w-full sm:w-64">
-                        <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                        <Input ref={searchRef} onKeyDown={onSearchKeyDown} placeholder="Return number…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
-                    </div>
-                    <Input
-                        type="date" className="w-40" value={filters.from ?? ''}
-                        onChange={(e) => router.get('/returns/purchases', { ...filters, from: e.target.value || undefined }, { preserveState: true })}
-                    />
-                    <Input
-                        type="date" className="w-40" value={filters.to ?? ''}
-                        onChange={(e) => router.get('/returns/purchases', { ...filters, to: e.target.value || undefined }, { preserveState: true })}
-                    />
-                </div>
-
-                <div className="rounded-xl border">
-                    <Table>
+            <MasterRegister title="Purchase Returns" description="Stock returned to suppliers · supplier debit notes"
+                label="return" page={returns} state={state} searchRef={searchRef} onSearchKeyDown={onSearchKeyDown} placeholder="Return number…"
+                actions={<div className="register-hero-actions">
+                    <Link className="hbtn" href="/returns/sales"><Undo2 className="i" aria-hidden="true" />Sales Returns</Link>
+                    {can('returns.manage') && <Link className="hbtn pri" href={route('returns.purchases.create')}><Plus className="i" aria-hidden="true" />New Purchase Return</Link>}
+                </div>}
+                summary={<section className="register-stats" aria-label="Return totals"><RegisterMetric label="Net Debit Notes"
+                    value={totalMoney(summary.total)} color="var(--red)" detail={`${summary.count} returns`} /></section>}
+                filters={<>
+                    <MasterFilterDate label="From" value={filters.from} onChange={from => state.change({ from })} />
+                    <MasterFilterDate label="To" value={filters.to} onChange={to => state.change({ to })} />
+                </>}>
+                {dense => <Table className={dense ? 'dense' : undefined}>
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Return #</TableHead>
                                 <TableHead>Supplier</TableHead>
                                 <TableHead>Date</TableHead>
                                 <TableHead>Reason</TableHead>
-                                <TableHead className="text-right">Debit Amount</TableHead>
+                                <TableHead className="r">Debit Amount</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {returns.data.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                                        No purchase returns yet.
+                                    <TableCell colSpan={5} className="empty">
+                                        {state.applied ? 'No returns match these filters.' : 'No purchase returns yet.'}
                                     </TableCell>
                                 </TableRow>
                             )}
@@ -114,15 +72,13 @@ export default function PurchaseReturnsIndex({ returns, filters, summary }: Prop
                                     <TableCell className="font-medium">{row.return_number}</TableCell>
                                     <TableCell>{row.company?.name}</TableCell>
                                     <TableCell>{shortDate(row.return_date)}</TableCell>
-                                    <TableCell className="text-sm text-muted-foreground">{row.reason || '—'}</TableCell>
-                                    <TableCell className="text-right tabular-nums">{money(row.total_amount)}</TableCell>
+                                    <TableCell className="wrap-cell muted">{row.reason || '—'}</TableCell>
+                                    <TableCell className="r num">{totalMoney(row.total_amount)}</TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
-                    </Table>
-                    <Paginator meta={returns} />
-                </div>
-            </div>
+                </Table>}
+            </MasterRegister>
         </AppLayout>
     );
 }

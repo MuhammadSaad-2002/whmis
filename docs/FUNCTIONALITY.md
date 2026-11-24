@@ -40,11 +40,49 @@ likely to matter when changing each module.
   signed-in password settings and account deletion are not self-service.
 - Navigation source: `resources/js/components/nav-config.ts`.
 
+## Monetary totals
+
+New booking, sales and purchase invoice totals are saved to the nearest rupee
+(50 paisa rounds up). The rounding difference is saved separately from prices,
+taxes and line amounts. New cash and bank payments also save whole-rupee totals;
+their exact tender is retained for Cash & Bank and reconciliation. Allocations
+retain paisa, including when paying a fractional legacy balance. A rounding
+difference alone cannot be refunded as customer credit.
+
+Return totals for newly rounded invoices apply rounding to the credit/debit
+note, not the product lines; the last monetary return can settle the remaining
+invoice amount. Historical posted documents are not rewritten. Live reports
+sum the selected data and round the final monetary aggregates for the screen
+and exports, without rounding each detail row or storing stale filter totals.
+
+## Actual customer receipts in reports
+
+- **Actual Customer Receipts** filters completed customer receipts by payment
+  date (PKT) and optionally by customer, including on-account receipts. Salesman
+  reports and counted cash are not receipts until Finance verifies and posts
+  them. Reversed and non-cash payments are excluded; employee shortages are
+  separated from the money received. Amounts are before customer refunds.
+- **Sales Register** filters by invoice date and shows lifetime actual money
+  allocated to those invoices alongside their current outstanding amounts.
+  **Customer Sales**, **Booker Sales / Performance**, **Monthly Sales & Profit**
+  and the **Executive Dashboard** show actual receipts by payment date. Booker
+  reports count only amounts allocated to attributed invoices.
+- **Daily Payment Reconciliation** and **Daily Collection Summary** distinguish
+  money received from amounts settled on invoices, including in PDF and CSV
+  exports. Their day filter is the salesman's reporting day; the receipt may
+  have been posted on a later date. The invoice summary and Net Position PDF
+  also show actual money, non-cash settlement, and applied credit separately.
+- Posted sales, profits, and stock continue to follow invoices and returns.
+  Receipts are not allocated to products or supplier lines. No inventory,
+  accounting, or commission posting rules have changed.
+
 ## Master data
 
 The Products, Customers, Suppliers, and Product Categories lists share the Sales
 Invoices register styling, including a compact-row toggle and filter-aware
-search, pagination, and empty states.
+search, pagination, and empty states. The Sales and Purchase Returns, Incentive
+Rules, and HR registers use the same layout. Booking & Delivery Schedules uses
+the same header and filter tabs while retaining its inline schedule editor.
 
 - Suppliers: `/suppliers`; implemented by `CompanyController` and `Company`.
 - Categories: `/categories`; implemented by `ProductCategoryController`.

@@ -1,4 +1,4 @@
-import { toNumber } from './format';
+import { roundPaisaToRupee, toNumber } from './format';
 
 /**
  * Client mirror of app/Services/MarginCalculator.php.
@@ -71,6 +71,15 @@ export interface TotalsInput {
     gst_percent?: number | string;
 }
 
+export type ReturnRounding = { invoice_paisa: number; prior_paisa: number; prior_line_paisa: number; remaining_units: number };
+
+export function returnTotal(amount: number, units: number, rounding: ReturnRounding | null | undefined): number {
+    if (!rounding || amount <= 0) return r2(amount);
+    const target = units + 0.00001 >= rounding.remaining_units ? rounding.invoice_paisa
+        : Math.min(rounding.invoice_paisa, roundPaisaToRupee(Math.round(amount * 100) + rounding.prior_line_paisa));
+    return Math.max(0, target - rounding.prior_paisa) / 100;
+}
+
 export function computeTotals(lines: LineComputed[], header: TotalsInput) {
     const subtotal = r2(lines.reduce((s, l) => s + l.gross, 0));
     const itemDiscount = r2(lines.reduce((s, l) => s + l.discount_amount, 0));
@@ -81,7 +90,8 @@ export function computeTotals(lines: LineComputed[], header: TotalsInput) {
     const invDiscount = r2((itemNet * toNumber(header.discount_percent)) / 100);
     const afterDiscount = itemNet - invDiscount;
     const invGst = r2((afterDiscount * toNumber(header.gst_percent)) / 100);
-    const total = r2(afterDiscount + invGst);
+    const exact = Math.round((afterDiscount + invGst) * 100);
+    const rounded = roundPaisaToRupee(exact);
 
     return {
         subtotal,
@@ -89,7 +99,8 @@ export function computeTotals(lines: LineComputed[], header: TotalsInput) {
         item_gst_total: itemGst,
         discount_amount: invDiscount,
         gst_amount: invGst,
-        total_amount: total,
+        rounding_amount: (rounded - exact) / 100,
+        total_amount: rounded / 100,
         total_margin: margin,
     };
 }

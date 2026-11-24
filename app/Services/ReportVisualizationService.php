@@ -11,6 +11,8 @@ class ReportVisualizationService
 
     private const PROFIT_COLOR = '#087568';
 
+    private const RECEIPTS_COLOR = '#684ab4';
+
     private const NEGATIVE_COLOR = '#b4232a';
 
     private const GRID_COLOR = '#d3e0e8';
@@ -33,10 +35,14 @@ class ReportVisualizationService
         ]],
         'hr-bookers' => ['labelKey' => 'name', 'metrics' => [
             ['key' => 'net_sales', 'label' => 'Net Sales', 'format' => 'money'],
-            ['key' => 'collections', 'label' => 'Allocated Collections', 'format' => 'money'],
+            ['key' => 'collections', 'label' => 'Actual Allocated Receipts', 'format' => 'money'],
+        ]],
+        CustomerReceiptReport::KEY => ['labelKey' => 'customer', 'metrics' => [
+            ['key' => 'received', 'label' => 'Actual Received', 'format' => 'money'],
         ]],
         'sales-register' => ['labelKey' => 'customer', 'metrics' => [
             ['key' => 'net_amount', 'label' => 'Net Sales', 'format' => 'money'],
+            ['key' => 'received', 'label' => 'Actual Received', 'format' => 'money'],
             ['key' => 'net_profit', 'label' => 'Net Profit', 'format' => 'money'],
             ['key' => 'returns', 'label' => 'Returns', 'format' => 'money'],
         ]],
@@ -59,11 +65,13 @@ class ReportVisualizationService
         ]],
         'customer-sales' => ['labelKey' => 'customer', 'metrics' => [
             ['key' => 'net_revenue', 'label' => 'Net Revenue', 'format' => 'money'],
+            ['key' => 'received', 'label' => 'Actual Received in Period', 'format' => 'money'],
             ['key' => 'net_profit', 'label' => 'Net Profit', 'format' => 'money'],
-            ['key' => 'outstanding', 'label' => 'Outstanding', 'format' => 'money'],
+            ['key' => 'outstanding', 'label' => 'Current Ledger Balance', 'format' => 'money'],
         ]],
         'booker-sales' => ['labelKey' => 'booker', 'metrics' => [
             ['key' => 'net_revenue', 'label' => 'Net Revenue', 'format' => 'money'],
+            ['key' => 'received', 'label' => 'Actual Allocated Receipts', 'format' => 'money'],
             ['key' => 'net_profit', 'label' => 'Net Profit', 'format' => 'money'],
             ['key' => 'invoices', 'label' => 'Invoices', 'format' => 'qty'],
         ]],
@@ -147,10 +155,11 @@ class ReportVisualizationService
         $charts = [];
 
         if (! empty($report['chart'])) {
+            $hasReceipts = collect($report['chart'])->contains(fn ($point) => array_key_exists('received', $point));
             $charts[] = [
                 'title' => 'Sales and Profit Trend',
-                'subtitle' => 'Net sales and net profit over time',
-                ...$this->trendPlot($report['chart']),
+                'subtitle' => $hasReceipts ? 'Net sales, net profit, and actual receipts by payment date' : 'Net sales and net profit over time',
+                ...$this->trendPlot($report['chart'], $hasReceipts),
             ];
         }
 
@@ -207,12 +216,15 @@ class ReportVisualizationService
         return ['image' => $this->svgDataUri(implode('', $parts)), 'height_per_width' => $height / $width, 'labels' => $labels];
     }
 
-    private function trendPlot(array $points): array
+    private function trendPlot(array $points, bool $hasReceipts): array
     {
         $series = [
             ['key' => 'sales', 'label' => 'Net Sales', 'color' => self::SALES_COLOR, 'dash' => ''],
             ['key' => 'profit', 'label' => 'Net Profit', 'color' => self::PROFIT_COLOR, 'dash' => ' stroke-dasharray="6 4"'],
         ];
+        if ($hasReceipts) {
+            $series[] = ['key' => 'received', 'label' => 'Actual Receipts', 'color' => self::RECEIPTS_COLOR, 'dash' => ' stroke-dasharray="2 4"'];
+        }
         $width = 760;
         $height = 220;
         $left = 64;
@@ -260,7 +272,7 @@ class ReportVisualizationService
             $labels[] = $this->plotLabel($this->truncate((string) ($point['label'] ?? ''), 9), $x($index), 151, $width, center: true);
         }
 
-        $legendX = 474;
+        $legendX = $hasReceipts ? 314 : 474;
         foreach ($series as $index => $item) {
             $lx = $legendX + $index * 130;
             $parts[] = "<rect x=\"{$lx}\" y=\"184\" width=\"12\" height=\"12\" rx=\"2\" fill=\"{$item['color']}\"/>";

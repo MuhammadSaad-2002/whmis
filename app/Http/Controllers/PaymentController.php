@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Payment;
 use App\Services\PaymentService;
+use App\Support\Paisa;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -26,8 +27,10 @@ class PaymentController extends Controller
         // Net money movement over the full filtered set (completed only — cancelled
         // payments are reversed, so they don't count).
         $completed = (clone $query)->where('status', 'completed');
-        $receipts = round((float) (clone $completed)->where('direction', 'in')->sum('amount'), 2);
-        $paid = round((float) (clone $completed)->where('direction', 'out')->sum('amount'), 2);
+        $physical = 'COALESCE(tendered_paisa / 100.0, amount)';
+        $totals = $completed->select('direction')->selectRaw("SUM({$physical}) AS total")->groupBy('direction')->pluck('total', 'direction');
+        $received = Paisa::from($totals->get('in', 0));
+        $paid = Paisa::from($totals->get('out', 0));
 
         $payments = $query->latest('payment_date')->latest('id')
             ->paginate(15)
@@ -39,9 +42,9 @@ class PaymentController extends Controller
             'companies' => Company::active()->orderBy('name')->get(['id', 'name']),
             'filters' => $request->only('direction', 'method', 'search', 'from', 'to'),
             'summary' => [
-                'receipts' => $receipts,
-                'payments' => $paid,
-                'net' => round($receipts - $paid, 2),
+                'receipts' => Paisa::roundToRupee($received) / 100,
+                'payments' => Paisa::roundToRupee($paid) / 100,
+                'net' => Paisa::roundToRupee($received - $paid) / 100,
             ],
         ]);
     }
@@ -53,6 +56,7 @@ class PaymentController extends Controller
             'party_id' => ['required', 'integer'],
             'method' => ['required', 'in:cash,bank,cheque,online,adjustment'],
             'amount' => ['required', 'numeric', 'gt:0', 'decimal:0,2', 'max:9999999999999.99'],
+            'apply_rounded_total' => ['sometimes', 'boolean'],
             'payment_date' => ['required', 'date'],
             'financial_account_id' => ['nullable', 'integer'],
             'bank_name' => ['nullable', 'string', 'max:100'],

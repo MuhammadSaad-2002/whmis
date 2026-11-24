@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
-import { money, qty, shortDate } from '@/lib/format';
+import { money, qty, shortDate, totalMoney } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link } from '@inertiajs/react';
 
@@ -13,6 +13,7 @@ interface Kpis {
     today_sales_count: number;
     today_purchases: number;
     month_sales: number;
+    month_received: number;
     month_profit: number;
     month_payroll_expense: number;
     receivable: number;
@@ -171,15 +172,16 @@ export default function Dashboard(props: Props) {
             <Head title="Dashboard" />
             <div className="flex h-full flex-col gap-4 p-4">
                 <div className="grid gap-3 md:grid-cols-4">
-                    <Kpi label="Today's Sales" value={money(fullKpis.today_sales)} hint={`${fullKpis.today_sales_count} invoices`} />
-                    <Kpi label="Today's Purchases" value={money(fullKpis.today_purchases)} />
-                    <Kpi label="This Month — Sales" value={money(fullKpis.month_sales)} />
-                    <Kpi label="This Month — Profit" value={money(fullKpis.month_profit)} />
-                    <Kpi label="This Month — Payroll Expense" value={money(fullKpis.month_payroll_expense)} />
-                    <Kpi label="This Month — Profit after Payroll" value={money(fullKpis.month_profit - fullKpis.month_payroll_expense)} />
-                    <Kpi label="Receivable from Customers" value={money(fullKpis.receivable)} />
-                    <Kpi label="Payable to Suppliers" value={money(fullKpis.payable)} />
-                    <Kpi label="Inventory Value (cost)" value={money(fullKpis.inventory_value)} />
+                    <Kpi label="Today's Sales" value={totalMoney(fullKpis.today_sales)} hint={`${fullKpis.today_sales_count} invoices`} />
+                    <Kpi label="Today's Purchases" value={totalMoney(fullKpis.today_purchases)} />
+                    <Kpi label="This Month — Sales" value={totalMoney(fullKpis.month_sales)} />
+                    <Kpi label="This Month — Actual Receipts" value={totalMoney(fullKpis.month_received)} hint="completed receipts by payment date" />
+                    <Kpi label="This Month — Profit" value={totalMoney(fullKpis.month_profit)} />
+                    <Kpi label="This Month — Payroll Expense" value={totalMoney(fullKpis.month_payroll_expense)} />
+                    <Kpi label="This Month — Profit after Payroll" value={totalMoney(fullKpis.month_profit - fullKpis.month_payroll_expense)} />
+                    <Kpi label="Receivable from Customers" value={totalMoney(fullKpis.receivable)} />
+                    <Kpi label="Payable to Suppliers" value={totalMoney(fullKpis.payable)} />
+                    <Kpi label="Inventory Value (cost)" value={totalMoney(fullKpis.inventory_value)} />
                     <Kpi
                         label="Draft Invoices"
                         value={String(fullKpis.draft_sales + fullKpis.draft_purchases)}
@@ -195,7 +197,7 @@ export default function Dashboard(props: Props) {
 
                 <Card>
                     <CardHeader className="pb-0">
-                        <CardTitle className="text-base">Sales & Profit — last 12 months</CardTitle>
+                        <CardTitle className="text-base">Sales, Profit & Receipts — last 12 months</CardTitle>
                     </CardHeader>
                     <CardContent className="pt-2">
                         <TrendChart data={monthlyTrend ?? []} />
@@ -240,7 +242,7 @@ export default function Dashboard(props: Props) {
                                                     {sale.status}
                                                 </Badge>
                                             </TableCell>
-                                            <TableCell className="text-right tabular-nums">{money(sale.total_amount)}</TableCell>
+                                            <TableCell className="text-right tabular-nums">{totalMoney(sale.total_amount)}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>

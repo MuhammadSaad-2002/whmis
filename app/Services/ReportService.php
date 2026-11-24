@@ -34,7 +34,7 @@ use Illuminate\Support\Collection;
  */
 class ReportService
 {
-    public function __construct(private readonly LedgerService $ledger) {}
+    public function __construct(private readonly LedgerService $ledger, private readonly CustomerReceiptReport $receipts) {}
 
     public static function catalogFor(User $user): array
     {
@@ -45,13 +45,13 @@ class ReportService
     public static function catalog(): array
     {
         return [
-            'sales-register' => ['title' => 'Sales Register', 'category' => 'Sales', 'description' => 'Every posted sales invoice in a period', 'filters' => ['date_range', 'customer']],
+            'sales-register' => ['title' => 'Sales Register', 'category' => 'Sales', 'description' => 'Posted invoices by invoice date, with actual receipts and current balances', 'filters' => ['date_range', 'customer']],
             'product-sales' => ['title' => 'Product Sales & Profitability', 'category' => 'Sales', 'description' => 'Sales invoices dated in the period, net of every valid return against those invoices, with return COGS shown separately', 'filters' => ['date_range', 'supplier']],
             'all-time-product-cogs' => ['title' => 'All-Time Product Sales & COGS', 'category' => 'Sales', 'description' => 'Lifetime quantities sold and cost of goods sold per product, net of posted returns', 'filters' => ['supplier']],
             SupplierPurchaseValueReport::KEY => ['title' => 'Supplier Purchase Value & Net Sales', 'category' => 'Sales', 'description' => 'All-time purchase value of sold and bonus units, followed by the sales invoices for each supplier.', 'filters' => ['supplier']],
             'product-sales-daily' => ['title' => 'Daily Product Sales', 'category' => 'Sales', 'description' => 'Per product, per day: qty, bonus given, revenue, cost and profit (net of returns). Cost includes the bonus units shipped free, so profit is true.', 'filters' => ['date_range', 'supplier', 'product']],
-            'customer-sales' => ['title' => 'Customer Sales & Profitability', 'category' => 'Sales', 'description' => 'Revenue, profit, and outstanding per pharmacy', 'filters' => ['date_range']],
-            'booker-sales' => ['title' => 'Booker Sales', 'category' => 'Sales', 'description' => 'Sales attributed to each booker via assigned customers', 'filters' => ['date_range']],
+            'customer-sales' => ['title' => 'Customer Sales & Profitability', 'category' => 'Sales', 'description' => 'Posted sales, profit, actual receipts and current balances per pharmacy', 'filters' => ['date_range']],
+            'booker-sales' => ['title' => 'Booker Sales', 'category' => 'Sales', 'description' => 'Posted sales and actual allocated receipts attributed to each Booker', 'filters' => ['date_range']],
             'incentives-given' => ['title' => 'Incentives Given', 'category' => 'Sales', 'description' => 'Incentive rules granted to customers: times applied, invoices, and Rs value', 'filters' => ['date_range', 'customer']],
             'purchase-register' => ['title' => 'Purchase Register', 'category' => 'Purchases', 'description' => 'Every posted purchase invoice in a period', 'filters' => ['date_range', 'supplier']],
             'supplier-purchases' => ['title' => 'Supplier Purchases', 'category' => 'Purchases', 'description' => 'Purchase volume and margin per supplier', 'filters' => ['date_range']],
@@ -72,8 +72,9 @@ class ReportService
             'slow-fast-moving' => ['title' => 'Slow / Fast Moving', 'category' => 'Inventory', 'description' => 'Products ranked by quantity sold in a period', 'filters' => ['date_range', 'order']],
             'stock-on-loan' => ['title' => 'Stock on Loan', 'category' => 'Loans', 'description' => 'Loans dated in the period, with received/sent quantities, dated returns and current balances', 'filters' => ['date_range', 'direction', 'supplier', 'product']],
             'outstanding' => ['title' => 'Outstanding & Aging', 'category' => 'Financial', 'description' => 'Receivables per customer with aging buckets', 'filters' => []],
+            CustomerReceiptReport::KEY => ['title' => 'Actual Customer Receipts', 'category' => 'Financial', 'description' => 'Completed customer cash and bank receipts, excluding non-cash settlement and employee shortages', 'filters' => ['date_range', 'customer']],
             'supplier-payables' => ['title' => 'Supplier Payables', 'category' => 'Financial', 'description' => 'What you owe each supplier', 'filters' => []],
-            'profit-by-month' => ['title' => 'Monthly Sales & Profit', 'category' => 'Financial', 'description' => '12-month trend of sales, cost, and profit', 'filters' => []],
+            'profit-by-month' => ['title' => 'Monthly Sales & Profit', 'category' => 'Financial', 'description' => '12-month trend of posted sales, costs, operating expenses, profit and actual receipts', 'filters' => []],
         ] + HrReportService::catalog();
     }
 
@@ -85,7 +86,7 @@ class ReportService
         if (isset(HrReportService::catalog()[$key])) return app(HrReportService::class)->build($key, $filters);
         [$from, $to] = $this->range($filters);
 
-        return match ($key) {
+        $data = match ($key) {
             'sales-register' => $this->salesRegister($from, $to, $filters),
             'product-sales' => $this->productSales($from, $to, $filters),
             'all-time-product-cogs' => $this->allTimeProductCogs($filters),
@@ -107,16 +108,25 @@ class ReportService
             'slow-fast-moving' => $this->slowFastMoving($from, $to, $filters),
             'stock-on-loan' => $this->stockOnLoan($from, $to, $filters),
             'outstanding' => $this->outstanding(),
+            CustomerReceiptReport::KEY => $this->receipts->build($from, $to, isset($filters['customer_id']) ? (int) $filters['customer_id'] : null),
             'supplier-payables' => $this->supplierPayables(),
             'profit-by-month' => $this->profitByMonth(),
         };
+
+        if (in_array($key, ['product-sales', 'product-sales-daily', 'all-time-product-cogs', 'stock-position', 'stock-movement', 'all-time-purchases-stock'], true)) {
+            $data['notes'][] = 'Sales quantities, stock and product costs follow posted transactions and returns. Customer receipts are recorded separately and are not allocated to individual products.';
+        }
+
+        return $data;
     }
 
     private function range(array $filters): array
     {
+        $today = now('Asia/Karachi');
+
         return [
-            ! empty($filters['from']) ? Carbon::parse($filters['from']) : now()->startOfMonth(),
-            ! empty($filters['to']) ? Carbon::parse($filters['to']) : now(),
+            ! empty($filters['from']) ? Carbon::parse($filters['from'], 'Asia/Karachi') : $today->copy()->startOfMonth(),
+            ! empty($filters['to']) ? Carbon::parse($filters['to'], 'Asia/Karachi') : $today,
         ];
     }
 
@@ -184,11 +194,14 @@ class ReportService
 
     private function salesRegister(Carbon $from, Carbon $to, array $filters): array
     {
-        $invoices = $this->postedSales($from, $to)
-            ->when($filters['customer_id'] ?? null, fn ($q, $id) => $q->where('customer_id', $id))
+        $invoices = app(InvoiceBalanceService::class)->sales()
+            ->where('sales_invoices.invoice_date', '>=', $from->toDateString())
+            ->where('sales_invoices.invoice_date', '<', $to->copy()->addDay()->toDateString())
+            ->when($filters['customer_id'] ?? null, fn ($q, $id) => $q->where('sales_invoices.customer_id', $id))
             ->with('customer:id,name,city')
-            ->orderBy('invoice_date')->orderBy('id')
+            ->orderBy('sales_invoices.invoice_date')->orderBy('sales_invoices.id')
             ->get();
+        $receipts = $this->receipts->byInvoice($invoices->modelKeys());
 
         // Net each listed invoice by all of its valid returns (regardless of the
         // return's own date) so the register shows the true final sale.
@@ -197,7 +210,7 @@ class ReportService
             ->get()
             ->groupBy('sales_invoice_id');
 
-        $rows = $invoices->map(function ($invoice) use ($returns) {
+        $rows = $invoices->map(function ($invoice) use ($returns, $receipts) {
             $ret = $returns[$invoice->id] ?? collect();
             $retAmount = (float) $ret->sum('total_amount');
             $retCost = (float) $ret->sum('total_cost');
@@ -212,6 +225,8 @@ class ReportService
                 'returns' => round($retAmount, 2),
                 'net_amount' => round($gross - $retAmount, 2),
                 'net_profit' => round((float) $invoice->total_profit - ($retAmount - $retCost), 2),
+                'received' => (float) $receipts->get($invoice->id, 0),
+                'outstanding' => max(0, (float) $invoice->outstanding),
             ];
         });
 
@@ -225,6 +240,8 @@ class ReportService
                 ['key' => 'returns', 'label' => 'Returns', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'net_amount', 'label' => 'Net', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'net_profit', 'label' => 'Net Profit', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'received', 'label' => 'Actual Received', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'outstanding', 'label' => 'Outstanding Now', 'align' => 'right', 'format' => 'money'],
             ],
             'rows' => $rows->all(),
             'totals' => [
@@ -232,6 +249,12 @@ class ReportService
                 'returns' => (float) $rows->sum('returns'),
                 'net_amount' => (float) $rows->sum('net_amount'),
                 'net_profit' => (float) $rows->sum('net_profit'),
+                'received' => round($rows->sum('received'), 2),
+                'outstanding' => round($rows->sum('outstanding'), 2),
+            ],
+            'notes' => [
+                'The date filter selects invoices. Actual Received is all completed money allocated to those invoices, even if received later. Outstanding Now reflects all posted settlements, returns, and applied credits.',
+                CustomerReceiptReport::NOTE,
             ],
         ];
     }
@@ -505,13 +528,14 @@ class ReportService
             ->selectRaw('customer_id, SUM(total_amount) AS revenue, SUM(total_cost) AS cost')
             ->groupBy('customer_id')->toBase()->get()->keyBy('customer_id');
 
-        $customerIds = $invoices->keys()->merge($returns->keys())->filter()->unique();
-        $customers = Customer::whereIntegerInRaw('id', $customerIds->all())->get(['id', 'name', 'city'])->keyBy('id');
+        $receipts = $includeOutstanding ? $this->receipts->byCustomer($from, $to) : collect();
+        $customerIds = $invoices->keys()->merge($returns->keys())->merge($receipts->keys())->filter()->unique();
+        $customers = Customer::withTrashed()->whereIntegerInRaw('id', $customerIds->all())->get(['id', 'name', 'city'])->keyBy('id');
         $balances = $includeOutstanding
             ? $this->ledger->customerBalances($customerIds->all())
             : collect();
 
-        return $customerIds->map(function ($customerId) use ($invoices, $returns, $customers, $balances, $includeOutstanding) {
+        return $customerIds->map(function ($customerId) use ($invoices, $returns, $customers, $balances, $receipts, $includeOutstanding) {
             $invGroup = $invoices[$customerId] ?? null;
             $retGroup = $returns[$customerId] ?? null;
             $customer = $customers[$customerId] ?? null;
@@ -528,7 +552,10 @@ class ReportService
                 'returns' => round($retRev, 2),
                 'net_revenue' => round($grossRev - $retRev, 2),
                 'net_profit' => round((float) ($invGroup->profit ?? 0) - ($retRev - $retCost), 2),
-            ] + ($includeOutstanding ? ['outstanding' => (float) ($balances[$customerId] ?? 0)] : []);
+            ] + ($includeOutstanding ? [
+                'received' => (float) $receipts->get($customerId, 0),
+                'outstanding' => (float) ($balances[$customerId] ?? 0),
+            ] : []);
         })->sortByDesc('net_revenue')->values();
     }
 
@@ -545,7 +572,8 @@ class ReportService
                 ['key' => 'returns', 'label' => 'Returns', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'net_revenue', 'label' => 'Net Revenue', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'net_profit', 'label' => 'Net Profit', 'align' => 'right', 'format' => 'money'],
-                ['key' => 'outstanding', 'label' => 'Outstanding', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'received', 'label' => 'Actual Received in Period', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'outstanding', 'label' => 'Current Ledger Balance', 'align' => 'right', 'format' => 'money'],
             ],
             'rows' => $rows->all(),
             'totals' => [
@@ -554,15 +582,17 @@ class ReportService
                 'returns' => (float) $rows->sum('returns'),
                 'net_revenue' => (float) $rows->sum('net_revenue'),
                 'net_profit' => (float) $rows->sum('net_profit'),
+                'received' => round($rows->sum('received'), 2),
                 'outstanding' => (float) $rows->sum('outstanding'),
             ],
+            'notes' => [CustomerReceiptReport::NOTE, 'Receipts in the period can pay older invoices or remain on account. Outstanding is the current customer ledger balance, not only the unpaid portion of sales in this period.'],
         ];
     }
 
     private function bookerSales(Carbon $from, Carbon $to): array
     {
-        $invoices = $this->postedSales($from, $to)->with('customer:id,name,booker_id')->get();
-        $returns = $this->postedReturns($from, $to)->with(['customer:id,booker_id', 'invoice:id,booker_id'])->get();
+        $invoices = $this->postedSales($from, $to)->with('customer:id,name,booker_id')->get()->toBase();
+        $returns = $this->postedReturns($from, $to)->with(['customer:id,booker_id', 'invoice:id,booker_id'])->get()->toBase();
 
         // Credit each invoice to its own booker when one was set (an admin may
         // enter an order on a booker's behalf), else fall back to the customer's
@@ -570,14 +600,15 @@ class ReportService
         $invKey = fn ($invoice) => $invoice->booker_id ?? $invoice->customer?->booker_id ?? 0;
         $retKey = fn ($return) => $return->invoice?->booker_id ?? $return->customer?->booker_id ?? 0;
 
+        $receipts = $this->receipts->byBooker($from, $to, customerFallback: true);
         $bookerIds = $invoices->map($invKey)
-            ->merge($returns->map($retKey))->filter()->unique();
+            ->merge($returns->map($retKey))->merge($receipts->keys())->filter()->unique();
         $bookers = User::whereIn('id', $bookerIds)->pluck('name', 'id');
 
         $invByBooker = $invoices->groupBy($invKey);
         $retByBooker = $returns->groupBy($retKey);
 
-        $rows = $invByBooker->keys()->merge($retByBooker->keys())->unique()->map(function ($bookerId) use ($invByBooker, $retByBooker, $bookers) {
+        $rows = $invByBooker->keys()->merge($retByBooker->keys())->merge($receipts->keys())->unique()->map(function ($bookerId) use ($invByBooker, $retByBooker, $bookers, $receipts) {
             $invGroup = $invByBooker[$bookerId] ?? collect();
             $retGroup = $retByBooker[$bookerId] ?? collect();
 
@@ -592,6 +623,7 @@ class ReportService
                 'returns' => round($retRev, 2),
                 'net_revenue' => round($grossRev - $retRev, 2),
                 'net_profit' => round((float) $invGroup->sum('total_profit') - ($retRev - $retCost), 2),
+                'received' => (float) $receipts->get($bookerId, 0),
             ];
         })->sortByDesc('net_revenue')->values();
 
@@ -603,6 +635,7 @@ class ReportService
                 ['key' => 'returns', 'label' => 'Returns', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'net_revenue', 'label' => 'Net Revenue', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'net_profit', 'label' => 'Net Profit', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'received', 'label' => 'Actual Allocated Receipts', 'align' => 'right', 'format' => 'money'],
             ],
             'rows' => $rows->all(),
             'totals' => [
@@ -611,7 +644,9 @@ class ReportService
                 'returns' => (float) $rows->sum('returns'),
                 'net_revenue' => (float) $rows->sum('net_revenue'),
                 'net_profit' => (float) $rows->sum('net_profit'),
+                'received' => round($rows->sum('received'), 2),
             ],
+            'notes' => [CustomerReceiptReport::NOTE, 'Only amounts allocated to posted invoices are attributed to a Booker. Unallocated customer receipts are not assigned to a Booker.'],
         ];
     }
 
@@ -1504,7 +1539,11 @@ class ReportService
 
     public function profitByMonth(): array
     {
-        $start = now()->subMonths(11)->startOfMonth();
+        $today = now('Asia/Karachi');
+        $start = $today->copy()->startOfMonth()->subMonths(11);
+        $receipts = $this->receipts->byDay($start, $today)
+            ->groupBy(fn ($amount, $day) => substr($day, 0, 7))
+            ->map(fn ($values) => round($values->sum(), 2));
 
         $invoices = SalesInvoice::where('status', 'posted')
             ->whereDate('invoice_date', '>=', $start)
@@ -1516,7 +1555,7 @@ class ReportService
             ->get(['return_date', 'total_amount', 'total_cost'])
             ->groupBy(fn ($return) => $return->return_date->format('Y-m'));
 
-        $rows = collect(range(0, 11))->map(function ($offset) use ($start, $invoices, $returns) {
+        $rows = collect(range(0, 11))->map(function ($offset) use ($start, $invoices, $returns, $receipts) {
             $month = $start->copy()->addMonths($offset);
             $key = $month->format('Y-m');
             $group = $invoices[$key] ?? collect();
@@ -1530,6 +1569,7 @@ class ReportService
             $netProfit = round((float) $group->sum('total_profit') - ($retSales - $retCost), 2);
             $payrollExpense = app(HrReportService::class)->totals($month->copy()->startOfMonth(), $month->copy()->endOfMonth())['expense'];
             $commissionExpense = app(CommissionService::class)->totals($month->copy()->startOfMonth(), $month->copy()->endOfMonth())['expense'];
+            $operating = app(TreasuryService::class)->operatingAdjustments($month->copy()->startOfMonth(), $month->copy()->endOfMonth());
 
             return [
                 'month' => $month->format('M Y'),
@@ -1537,9 +1577,13 @@ class ReportService
                 'profit_after_payroll' => round($netProfit - $payrollExpense, 2),
                 'commission_expense' => $commissionExpense,
                 'profit_after_staff' => round($netProfit - $payrollExpense - $commissionExpense, 2),
+                'operating_expenses' => $operating['expenses'],
+                'other_income' => $operating['other_income'],
+                'operating_profit' => round($netProfit - $payrollExpense - $commissionExpense - $operating['expenses'] + $operating['other_income'], 2),
                 'sales' => round($grossSales, 2),
                 'returns' => round($retSales, 2),
                 'net_sales' => $netSales,
+                'received' => (float) $receipts->get($key, 0),
                 'cost' => round((float) $group->sum('total_cost') - $retCost, 2),
                 'profit' => $netProfit,
                 'margin_pct' => $netSales > 0 ? round($netProfit / $netSales * 100, 1) : 0,
@@ -1553,9 +1597,13 @@ class ReportService
                 ['key' => 'profit_after_payroll', 'label' => 'Profit after Payroll', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'commission_expense', 'label' => 'Commission Expense', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'profit_after_staff', 'label' => 'Profit after Payroll & Commission', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'operating_expenses', 'label' => 'Treasury Expenses', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'other_income', 'label' => 'Other Income', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'operating_profit', 'label' => 'Operating Profit', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'sales', 'label' => 'Gross Sales', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'returns', 'label' => 'Returns', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'net_sales', 'label' => 'Net Sales', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'received', 'label' => 'Actual Received', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'cost', 'label' => 'Net Cost', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'profit', 'label' => 'Net Profit', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'margin_pct', 'label' => 'Margin %', 'align' => 'right', 'format' => 'pct'],
@@ -1565,18 +1613,24 @@ class ReportService
                 'sales' => (float) $rows->sum('sales'),
                 'returns' => (float) $rows->sum('returns'),
                 'net_sales' => (float) $rows->sum('net_sales'),
+                'received' => round($rows->sum('received'), 2),
                 'cost' => (float) $rows->sum('cost'),
                 'profit' => (float) $rows->sum('profit'),
                 'payroll_expense' => (float) $rows->sum('payroll_expense'),
                 'profit_after_payroll' => (float) $rows->sum('profit_after_payroll'),
                 'commission_expense' => (float) $rows->sum('commission_expense'),
+                'operating_expenses' => (float) $rows->sum('operating_expenses'),
+                'other_income' => (float) $rows->sum('other_income'),
+                'operating_profit' => (float) $rows->sum('operating_profit'),
                 'profit_after_staff' => (float) $rows->sum('profit_after_staff'),
             ],
             'chart' => $rows->map(fn ($row) => [
                 'label' => $row['month'],
                 'sales' => $row['net_sales'],
                 'profit' => $row['profit'],
+                'received' => $row['received'],
             ])->all(),
+            'notes' => [CustomerReceiptReport::NOTE, 'Receipts are shown separately and do not change sales, cost of goods, or profit.'],
         ];
     }
 
@@ -1596,6 +1650,9 @@ class ReportService
         // Aggregate by date in SQL, then group into the selected chart buckets.
         // date() is common to SQLite and MySQL; the range predicates can use indexes.
         $bucket = fn ($row) => $daily ? $row->activity_day : substr($row->activity_day, 0, 7);
+        $receipts = $this->receipts->byDay($from, $to)
+            ->groupBy(fn ($amount, $day) => $daily ? $day : substr($day, 0, 7))
+            ->map(fn ($values) => round($values->sum(), 2));
 
         $invoices = SalesInvoice::where('status', 'posted')
             ->where('invoice_date', '>=', $startDate)->where('invoice_date', '<', $nextDate)
@@ -1631,6 +1688,7 @@ class ReportService
                 'label' => $cursor->format($labelFormat),
                 'sales' => round((float) $sales->sum('amount') - $returnedRevenue, 2),
                 'profit' => round((float) $sales->sum('profit') - ($returnedRevenue - $returnedCost), 2),
+                'received' => (float) $receipts->get($key, 0),
                 'cogs' => round((float) $sales->sum('cost') - $returnedCost, 2),
                 'purchases' => round((float) ($purchases[$key] ?? collect())->sum('amount') - (float) ($purchaseReturns[$key] ?? collect())->sum('amount'), 2),
                 'invoice_count' => (int) $sales->sum('invoice_count'),

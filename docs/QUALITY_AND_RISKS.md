@@ -50,6 +50,10 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
   generation without duplicate tasks, and daily PDF pagination.
 - Integrated distribution tests cover verified-collection commission for separate
   Booker/Salesman employees, partial verification, and payouts scoped to an invoice award.
+  Finance approval regressions cover two-person posting, private evidence,
+  transfers and statement checks, actual surplus, shortage repayment reversals,
+  available invoice/receipt credit, refund corrections, commission cap and hold
+  policies, and same-calculator split projections.
 
 - Money math: `MarginCalculator` and `resources/js/lib/invoice-math.ts` must stay aligned.
 - Stock mutation: `InventoryService` should remain the single mutation path.
@@ -83,6 +87,12 @@ descriptions, list summaries, morph maps, and HTTP smoke coverage.
   recalculate or replace server-authoritative financial values. Ranked chart
   definitions are supplied by `ReportVisualizationService` to both Inertia and
   PDF exports, while PDF SVGs are generated server-side for Dompdf compatibility.
+- `CustomerReceiptReport` separates completed incoming money from allocations
+  that settle invoices. Never sum salesman-reported or counted cash, count
+  applied credit twice, or treat an employee shortage as money received. Receipt
+  reports use payment dates; Sales Register receipts follow the selected invoice
+  cohort regardless of receipt date. Tests cover shortages, reversed receipts,
+  linked credits, on-account receipts and historical opening matches.
 - Generic report PDFs reserve a real page margin and draw the footer on the
   PDF canvas after pagination. Don't reset the HTML root margins in report
   CSS; `ReportPdfLayoutTest` checks separation in portrait and landscape.

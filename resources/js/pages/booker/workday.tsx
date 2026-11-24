@@ -1,7 +1,7 @@
 import { fieldAction as action, fieldCard as card, FieldCompletedDeliveries, FieldDatePicker, fieldGrid as routeGrid, FieldHeading as SectionHeading, fieldHero, fieldHeroAction as heroButton, fieldPage, FieldPager as PageControls, fieldPrimary, FieldTile as Tile } from '@/components/field-work-ui';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
-import { amount, money, shortDate, weekdayDate } from '@/lib/format';
+import { shortDate, totalAmount, totalMoney, totalPaisaMoney as collectionsMoney, weekdayDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { Banknote, Check, ClipboardList, MapPin, Navigation, Phone, Plus, RotateCcw, Store, Truck } from 'lucide-react';
@@ -18,7 +18,6 @@ type Props = {
 const customerGrid = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,320px),1fr))] gap-3';
 const tones = ['bg-chart-1 text-brand-paper', 'bg-chart-2 text-brand-paper', 'bg-chart-5 text-brand-paper', 'bg-primary text-primary-foreground', 'bg-chart-4 text-brand-paper'];
 const initials = (name: string) => name.replace(/phaa?rmacy|chemist/ig, '').trim().split(/\s+/).slice(0, 2).map(word => word[0] ?? '').join('').toUpperCase() || name.slice(0, 2).toUpperCase();
-const collectionsMoney = (paisa: number) => money(Number(paisa) / 100);
 
 export default function Workday(p: Props) {
     const { auth } = usePage<{ auth: { user: { name: string } | null } }>().props;
@@ -73,7 +72,7 @@ function Hero(p: Props & { name?: string; changeDate: (date: string) => void }) 
         ...(p.visits ? [{ label: 'Visits planned', value: p.visits.total, description: (p.bookerStats?.completedVisits ?? 0) + ' done' }] : []),
         ...(p.collections ? [{ label: 'Collected', value: collectionsMoney(p.collections.cash + p.collections.online), description: p.collections.pending ? p.collections.pending + ' awaiting Finance' : p.collections.entryCount ? 'Reported collections' : 'Nothing reported' }] : []),
         ...(p.bookerStats ? [
-            { label: 'Due from customers', value: money(p.bookerStats.dueAmount), description: p.bookerStats.due + (p.bookerStats.due === 1 ? ' customer' : ' customers') },
+            { label: 'Due from customers', value: totalMoney(p.bookerStats.dueAmount), description: p.bookerStats.due + (p.bookerStats.due === 1 ? ' customer' : ' customers') },
             { label: date === p.today ? 'Orders today' : 'Orders', value: p.bookerStats.orders, description: 'Bookings created' },
         ] : []),
     ];
@@ -124,7 +123,7 @@ function DeliveryCard({ task, date, today }: { task: Delivery; date: string; tod
             {[
                 ['Invoice', task.total_amount], ['Paid', task.paid_amount], ['Outstanding', outstanding],
             ].map(([label, value]) => <div key={label} className="min-w-0 px-2 py-2 sm:px-3"><dt className="text-xs text-muted-foreground">{label}</dt>
-                <dd className={cn('break-words text-sm font-bold tabular-nums', label === 'Outstanding' && (outstanding > 0 ? 'text-destructive' : 'text-chart-2'))}>{amount(value)}</dd></div>)}
+                <dd className={cn('break-words text-sm font-bold tabular-nums', label === 'Outstanding' && (outstanding > 0 ? 'text-destructive' : 'text-chart-2'))}>{totalAmount(value)}</dd></div>)}
         </dl>
         {task.pending_paisa > 0 && <p className="flex items-start gap-1.5 rounded-lg bg-accent/60 px-2.5 py-2 text-xs font-semibold text-accent-foreground"><Banknote className="size-4 shrink-0" />{collectionsMoney(task.pending_paisa)} reported · awaiting Finance</p>}
         <div className="mt-auto flex min-w-0 flex-wrap gap-1.5">
@@ -221,7 +220,7 @@ function CustomerCard({ customer, date, today }: { customer: DirectoryCustomer; 
 function Balance({ balance }: { balance: number }) {
     return <div className={cn('flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 rounded-xl bg-muted/65 px-3 py-2 text-sm text-muted-foreground',
         balance > 0 ? 'bg-destructive/8 text-destructive' : balance < 0 && 'bg-accent text-accent-foreground')}>
-        <span>{balance > 0 ? 'Balance due' : balance < 0 ? 'Customer credit' : 'Account balance'}</span><strong className="text-base tabular-nums">{money(balance)}</strong>
+        <span>{balance > 0 ? 'Balance due' : balance < 0 ? 'Customer credit' : 'Account balance'}</span><strong className="text-base tabular-nums">{totalMoney(balance)}</strong>
     </div>;
 }
 

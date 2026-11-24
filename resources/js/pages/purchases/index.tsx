@@ -4,7 +4,7 @@ import { WorkspaceRecordLink } from '@/components/workspace/record-link';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { money, shiftDate, shortDate } from '@/lib/format';
+import { money, shiftDate, shortDate, totalMoney } from '@/lib/format';
 import { Head, Link, router } from '@inertiajs/react';
 import { Building2, Eye, List, ListFilter, Plus, Printer } from 'lucide-react';
 import { type ChangeEvent, type ReactNode, useEffect, useRef, useState } from 'react';
@@ -58,7 +58,7 @@ function countLabel(count: number, label: string) {
 function Kpi({ title, value, color, tone, children }: { title: string; value: number; color: string; tone?: string; children: ReactNode }) {
     return <div className="card kpi">
         <div className="lbl"><i style={{ background: color }} />{title}</div>
-        <div className="val num" style={{ color: tone }}>{money(value)}</div>
+        <div className="val num" style={{ color: tone }}>{totalMoney(value)}</div>
         <div className="foot">{children}</div>
     </div>;
 }
@@ -195,8 +195,8 @@ export default function PurchasesIndex({ invoices, companies, filters, summary, 
                                     <td className="cust"><b>{invoice.company?.name ?? '—'}</b></td>
                                     <td className="date">{shortDate(invoice.invoice_date.slice(0, 10))}<small className="muted">{relativeDate(invoice.invoice_date, today)}</small></td>
                                     <td><span className={`type ${type}`}><i />{type}</span></td>
-                                    <td className="r num number-cell">{money(invoice.total_amount)}</td>
-                                    <td className={`r num ${Number(invoice.total_margin) < 0 ? 'neg' : ''}`}>{money(invoice.total_margin)}</td>
+                                    <td className="r num number-cell">{totalMoney(invoice.total_amount)}</td>
+                                    <td className={`r num ${Number(invoice.total_margin) < 0 ? 'neg' : ''}`}>{totalMoney(invoice.total_margin)}</td>
                                     <td><span className={`st ${invoice.status}`}>{invoice.status}</span></td>
                                     <td className="acts-cell"><div className="acts">
                                         <Link className="ib" title="Open invoice" aria-label={`Open ${invoice.invoice_number}`} href={href}><Eye className="i" /></Link>
@@ -206,7 +206,7 @@ export default function PurchasesIndex({ invoices, companies, filters, summary, 
                             })}
                         </tbody>
                         {invoices.total > 0 && <tfoot><tr>
-                            <td colSpan={5}>Gross total · {countLabel(invoices.total, 'invoice')}</td><td className="r num">{money(summary.gross)}</td><td colSpan={3} />
+                            <td colSpan={5}>Gross total · {countLabel(invoices.total, 'invoice')}</td><td className="r num">{totalMoney(summary.gross)}</td><td colSpan={3} />
                         </tr></tfoot>}
                     </table>
                 </div>

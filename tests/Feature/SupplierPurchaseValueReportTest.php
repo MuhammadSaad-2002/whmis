@@ -84,14 +84,14 @@ class SupplierPurchaseValueReportTest extends TestCase
                 ->where('sections.0.rows.0.remarks', self::REMARKS)
                 ->where('sections.0.rows.0.invoice_number', 'SI-MIXED')
                 ->where('sections.0.rows.0.invoice_date', '2023-09-10')
-                ->where('sections.0.rows.0.invoice_total', 564.3)
+                ->where('sections.0.rows.0.invoice_total', 564)
                 ->where('sections.0.totals.purchase_value', 90)
-                ->where('sections.0.totals.net_sale_value', 177.3)
+                ->where('sections.0.totals.net_sale_value', 177)
                 ->where('sections.1.title', 'Summary')
                 ->where('sections.1.rows.0.amount', 90)
-                ->where('sections.1.rows.1.amount', 177.3)
+                ->where('sections.1.rows.1.amount', 177)
                 ->where('sections.1.rows.2.metric', 'Gross Profit')
-                ->where('sections.1.rows.2.amount', 87.3)
+                ->where('sections.1.rows.2.amount', 87)
                 ->missing('sections.0.totals.invoice_total'));
 
         $all = app(ReportService::class)->build(SupplierPurchaseValueReport::KEY, []);
@@ -102,8 +102,8 @@ class SupplierPurchaseValueReportTest extends TestCase
         $this->assertSame([self::REMARKS, self::REMARKS], array_column($all['sections'][0]['rows'], 'remarks'));
         $this->assertEquals(240, $all['totals']['purchase_value']);
         $this->assertEquals(240, $all['sections'][0]['totals']['purchase_value']);
-        $this->assertEquals(474.30, $all['sections'][0]['totals']['net_sale_value']);
-        $this->assertEquals(234.30, $all['sections'][1]['rows'][2]['amount']);
+        $this->assertEquals(474, $all['sections'][0]['totals']['net_sale_value']);
+        $this->assertEquals(234, $all['sections'][1]['rows'][2]['amount']);
     }
 
     public function test_purchase_value_rounds_once_for_both_sections_and_totals_reconcile(): void
@@ -154,7 +154,7 @@ class SupplierPurchaseValueReportTest extends TestCase
         $this->assertSame('Summary', $values[count($values) - 5][0]);
         $lastRows = array_slice($values, -3);
         $this->assertSame(['Total Purchase Value', 'Total Net Sale Value', 'Gross Profit'], array_column($lastRows, 0));
-        $this->assertEquals([120, 267.3, 147.3], array_column($lastRows, 1));
+        $this->assertEquals([120, 267, 147], array_column($lastRows, 1));
 
         $data = app(SupplierPurchaseValueReport::class)->build($this->supplier->id);
         $pdf = app(ReportPdfRenderer::class)->render($data + [

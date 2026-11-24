@@ -147,7 +147,8 @@ class DeliveryCollectionService
                 }
             }
             foreach ($pending as $row) {
-                $this->record($row->id, $actor, ['amount' => Paisa::rupees((int) $row->reported_paisa), 'account_id' => $accountId]);
+                $this->record($row->id, $actor, ['amount' => Paisa::rupees((int) $row->reported_paisa), 'account_id' => $accountId,
+                    '_keep_exact_allocation' => true]);
             }
             $this->treasury->event('collection_day', $id, 'matching_cash_recorded', $actor, ['collection_ids' => $actual, 'account_id' => $accountId]);
 
@@ -217,11 +218,19 @@ class DeliveryCollectionService
                     $payment = \App\Models\Payment::where('status','completed')->findOrFail($row->payment_id);
                     if (! $row->included_in_opening) $this->treasury->entry($account, 'receipt', 'opening_collection', $id, $amount, $date, $actor, $reference ?: null);
                 } else {
+                    $settlement = $amount + $shortage;
+                    $due = Paisa::from($this->balances->sales()->whereKey($invoice->id)->first()?->outstanding);
+                    if ($due <= 0 || ($settlement > $due && ($shortage || $settlement - $due > 50))) {
+                        $this->treasury->fail('The verified collection exceeds the remaining invoice balance.');
+                    }
+                    $allocation = ! empty($data['_keep_exact_allocation']) || $settlement >= $due
+                        ? min($settlement, $due) : min($due, Paisa::roundToRupee($settlement));
                     $payment = $this->payments->recordManual($invoice->customer, [
-                    'method' => $method, 'amount' => Paisa::rupees($amount + $shortage), 'payment_date' => $date, 'reference_no' => $reference ?: null,
-                    '_verified_cash_paisa' => $row->included_in_opening ? 0 : $amount,
-                    'notes' => $notes ?: "Verified delivery collection #{$id}", 'financial_account_id' => $account->id,
-                    ], [['invoice_type' => $invoice->getMorphClass(), 'invoice_id' => $invoice->id, 'amount' => Paisa::rupees($amount + $shortage)]], recalculateCommissions: false);
+                        'method' => $method, 'amount' => Paisa::rupees($settlement), 'payment_date' => $date, 'reference_no' => $reference ?: null,
+                        '_verified_cash_paisa' => $row->included_in_opening ? 0 : $amount,
+                        'apply_rounded_total' => true,
+                        'notes' => $notes ?: "Verified delivery collection #{$id}", 'financial_account_id' => $account->id,
+                    ], [['invoice_type' => $invoice->getMorphClass(), 'invoice_id' => $invoice->id, 'amount' => Paisa::rupees($allocation)]], recalculateCommissions: false);
                 }
             }
             DB::table('delivery_collections')->where('id', $id)->update(['verified_paisa' => $amount, 'payment_id' => $payment?->id,
@@ -247,13 +256,18 @@ class DeliveryCollectionService
             $count = (int) $day->counted_cash_paisa;
             if ($reported !== $count || $verified !== $count) {
                 $approval = FinanceWorkItem::where('kind', 'close_variance')->where('status', 'approved')
-                    ->where('payload->day_id', $id)->latest('id')->first();
+                    ->where('payload->day_id', $id)->latest('id')->lockForUpdate()->first();
                 if (trim($note) === '' || ! $approval || $approval->payload['reported'] !== $reported
                     || $approval->payload['counted'] !== $count || $approval->payload['verified'] !== $verified) {
                     $this->treasury->fail('A matching independently approved variance and an explanation are required.');
                 }
+                $surplus = max(0, $count - $verified);
+                if ($surplus > 0) {
+                    $account = $this->treasury->account((int) ($approval->payload['account_id'] ?? 0), $actor, 'cash');
+                    $this->treasury->entry($account, 'reconciliation_surplus', 'approval', $approval->id, $surplus, now('Asia/Karachi')->toDateString(), $actor, 'Collection day #'.$id);
+                }
                 $approval->update(['status' => 'posted', 'posted_by' => $actor->id, 'posted_at' => now()]);
-                $this->treasury->event('approval', $approval->id, 'posted', $actor);
+                $this->treasury->event('approval', $approval->id, 'posted', $actor, ['surplus_paisa' => $surplus]);
             }
             DB::table('collection_days')->where('id', $id)->update(['closed_at' => now(), 'closed_by' => $actor->id, 'variance_note' => $note ?: null, 'updated_at' => now()]);
             $this->treasury->event('collection_day', $id, 'closed', $actor, compact('reported', 'verified', 'count', 'note'));

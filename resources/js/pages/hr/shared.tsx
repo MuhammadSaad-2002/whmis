@@ -1,3 +1,5 @@
+import { MasterStatus, RegisterLayout, RegisterList } from '@/components/master-register';
+import { type PaginatedData } from '@/components/paginator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,15 +20,12 @@ export const nameOf = (value: unknown) => (value as Option | null)?.name ?? '—
 export const textOf = (value: unknown) => value == null ? '—' : String(value);
 export const fieldLabel = (key: string) => key.replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase());
 
-export function HrLayout({title,children,actions}:{title:string;children:ReactNode;actions?:ReactNode}) {
+export function HrLayout({ title, description, children, actions }: { title: string; description?: ReactNode; children: ReactNode; actions?: ReactNode }) {
     return <AppLayout breadcrumbs={[{title:'Human Resources',href:'/hr/employees'},{title,href:'#'}]}>
-        <Head title={title}/><div className="flex flex-col gap-5 p-4 md:p-6">
-            <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
-                <h1 className="text-3xl font-bold">{title}</h1>
-                {actions}
-            </header>
+        <Head title={title}/>
+        <RegisterLayout title={title} description={description} actions={actions}>
             {children}
-        </div>
+        </RegisterLayout>
     </AppLayout>;
 }
 
@@ -51,6 +50,36 @@ export function Editor({title,url,method='post',fields,initial,onClose,descripti
     </DialogContent></Dialog>;
 }
 
-export function Grid({columns,rows,actions}:{columns:{key:string;label:string;render?:(row:Row)=>ReactNode}[];rows:Row[];actions?:(row:Row)=>ReactNode}) {
-    return <div className="overflow-auto rounded-xl border"><table className="w-full text-sm"><thead className="bg-muted/60 text-left"><tr>{columns.map(c=><th key={c.key} className="whitespace-nowrap px-4 py-3 font-medium">{fieldLabel(c.label)}</th>)}{actions&&<th className="px-4 py-3">Actions</th>}</tr></thead><tbody>{rows.length===0&&<tr><td colSpan={columns.length+(actions?1:0)} className="p-8 text-center text-muted-foreground">No records found.</td></tr>}{rows.map(row=><tr key={row.id} className="border-t hover:bg-muted/20">{columns.map(c=><td key={c.key} className="whitespace-nowrap px-4 py-3 tabular-nums">{c.render?c.render(row):textOf(row[c.key])}</td>)}{actions&&<td className="px-4 py-3"><div className="flex gap-2">{actions(row)}</div></td>}</tr>)}</tbody></table></div>;
+type HrColumn = { key: string; label: string; render?: (row: Row) => ReactNode };
+const numericColumns = new Set(['overtime_hours', 'days', 'annual_days', 'items_count', 'items_sum_net_pay', 'expense', 'payable', 'advance', 'cash_out',
+    'base', 'overtime', 'bonus', 'commission', 'deductions', 'recovery', 'net_pay', 'due', 'basic', 'allowances', 'overtime_rate', 'sales_target']);
+export function HrStatus({ value }: { value: unknown }) {
+    const status = textOf(value);
+    const tone = ['active', 'present', 'approved', 'posted'].includes(status) ? 'positive'
+        : ['left', 'absent', 'rejected', 'cancelled'].includes(status) ? 'negative'
+        : ['on_leave', 'pending', 'draft', 'half_day'].includes(status) ? 'attention' : 'neutral';
+    return <MasterStatus status={status.replaceAll('_', ' ')} tone={tone} />;
+}
+
+export function Grid({ title, columns, rows, actions, page, controls, compactTable, empty = 'No records found.' }: {
+    title: string; columns: HrColumn[]; rows: Row[]; actions?: (row: Row) => ReactNode;
+    page?: PaginatedData<unknown>; controls?: ReactNode; compactTable?: boolean; empty?: string;
+}) {
+    return <RegisterList title={title} page={page} controls={controls}>
+        {dense => <table className={`${compactTable ? 'register-short-table' : 'hr-table'}${dense ? ' dense' : ''}`}>
+            <thead><tr>
+                {columns.map(column => <th scope="col" key={column.key} className={numericColumns.has(column.key) ? 'r' : undefined}>{fieldLabel(column.label)}</th>)}
+                {actions && <th scope="col" className="r">Actions</th>}
+            </tr></thead>
+            <tbody>
+                {!rows.length && <tr><td colSpan={columns.length + (actions ? 1 : 0)} className="empty">{empty}</td></tr>}
+                {rows.map(row => <tr key={row.id}>
+                    {columns.map(column => <td key={column.key} className={numericColumns.has(column.key) ? 'r num' : ['notes', 'reason', 'name'].includes(column.key) ? 'wrap-cell' : undefined}>
+                        {column.render ? column.render(row) : column.key === 'status' ? <HrStatus value={row.status} /> : textOf(row[column.key])}
+                    </td>)}
+                    {actions && <td><div className="acts">{actions(row)}</div></td>}
+                </tr>)}
+            </tbody>
+        </table>}
+    </RegisterList>;
 }

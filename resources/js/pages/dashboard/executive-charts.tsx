@@ -23,6 +23,7 @@ export type ActivityPoint = {
     label: string;
     sales: number;
     profit: number;
+    received: number;
     cogs: number;
     purchases: number;
     invoice_count: number;

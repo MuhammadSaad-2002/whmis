@@ -222,6 +222,7 @@ class ReturnController extends Controller
                 'invoice_number' => $sale->invoice_number,
                 'customer' => $sale->customer->name,
                 'invoice_date' => $sale->invoice_date->toDateString(),
+                'rounding' => $this->returns->roundingContext($sale),
             ],
             'lines' => $sale->items->map(function ($item) use ($returned) {
                 $alreadyReturned = (float) ($returned->get($item->id)?->billed ?? 0);
@@ -291,6 +292,7 @@ class ReturnController extends Controller
                 'invoice_number' => $purchase->invoice_number,
                 'supplier' => $purchase->company->name,
                 'invoice_date' => $purchase->invoice_date->toDateString(),
+                'rounding' => $this->returns->roundingContext($purchase),
             ],
             'lines' => $purchase->items
                 ->filter(fn ($item) => $item->batch_id) // only lines with a batch can be returned

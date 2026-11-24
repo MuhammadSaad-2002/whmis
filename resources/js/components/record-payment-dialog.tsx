@@ -1,7 +1,7 @@
 import '../../css/financial-position.css';
 import { useOpenInvoices } from '@/hooks/use-open-invoices';
 import { useTreasuryPayment } from '@/hooks/use-treasury-payment';
-import { amount, money, shortDate } from '@/lib/format';
+import { amount, money, roundPaisaToRupee, shortDate, totalMoney, totalAmount } from '@/lib/format';
 import { ageBucket, allocateOldestFirst, cents, invoiceAge, invoiceKey, type OpenInvoice, type PaymentParties, paymentMethods, paymentToday, type PartyType } from '@/lib/payment-allocation';
 import { useForm } from '@inertiajs/react';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -46,18 +46,20 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
     const docLabel = receipt ? 'invoices' : 'bills';
     const lookup = useOpenInvoices(data.party_type, data.party_id, revision);
     const invoices = lookup.status === 'ready' ? lookup.invoices : noInvoices;
-    const total = cents(data.amount);
-    const auto = useMemo(() => allocateOldestFirst(invoices, total), [invoices, total]);
+    const tendered = cents(data.amount);
+    const total = data.method === 'adjustment' ? tendered : roundPaisaToRupee(tendered);
+    const due = invoices.reduce((sum, row) => sum + cents(row.outstanding), 0);
+    const autoBudget = total < due && tendered >= due ? due : total;
+    const auto = useMemo(() => allocateOldestFirst(invoices, autoBudget), [invoices, autoBudget]);
     const allocations = manual ?? auto;
     const allocated = Object.values(allocations).reduce((sum, value) => sum + cents(value), 0);
-    const unapplied = total - allocated;
-    const due = invoices.reduce((sum, row) => sum + cents(row.outstanding), 0);
+    const unapplied = Math.min(total, tendered) - allocated;
     const overdue = invoices.reduce((sum, row) => sum + (invoiceAge(row.invoice_date, today) > 90 ? cents(row.outstanding) : 0), 0);
     const oldest = invoices[0];
     const oldestDue = oldest ? cents(oldest.outstanding) : 0;
-    const settledBalance = lookup.status === 'ready' ? cents(lookup.balance) - total : null;
+    const settledBalance = lookup.status === 'ready' ? cents(lookup.balance) - Math.max(allocated, Math.min(tendered, total)) : null;
     const canSubmit = !!parties?.[data.party_type].some((party) => String(party.id) === data.party_id)
-        && lookup.status === 'ready' && !form.processing && unapplied >= 0;
+        && lookup.status === 'ready' && !form.processing && allocated <= Math.max(tendered, total);
     const errors = [...new Set(Object.values(form.errors))];
 
     function chooseParty(type: PartyType, id = '') {
@@ -88,12 +90,13 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
 
     function submit(event: FormEvent) {
         event.preventDefault();
-        if (!canSubmit || total <= 0) return;
+        if (!canSubmit || tendered <= 0) return;
 
         form.transform((values) => ({
             ...values,
             party_id: Number(values.party_id),
-            amount: (total / 100).toFixed(2),
+            amount: (tendered / 100).toFixed(2),
+            apply_rounded_total: true,
             ...(values.method !== 'cheque' ? { bank_name: '', cheque_number: '', cheque_date: '' } : {}),
             allocations: invoices.flatMap((invoice) => {
                 const value = cents(allocations[invoiceKey(invoice)] ?? 0);
@@ -200,7 +203,7 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
                             <div className="alloc">
                                 <div className="ah">
                                     <b>Allocate to open {docLabel}</b>
-                                    <span className="allocation-meta">Allocated <b className="num">{amount(allocated / 100)}</b> / {amount(total / 100)}</span>
+                                    <span className="allocation-meta">Allocated <b className="num">{totalAmount(allocated / 100)}</b> / {totalAmount(total / 100)}</span>
                                     <div className="sp" />
                                     <span className={manual ? 'mode man' : 'mode'}>{manual ? 'Manual' : 'Auto · oldest first'}</span>
                                     <button className="lnk" type="button" disabled={!oldest} onClick={() => setManual(null)}>Auto-allocate</button>
@@ -230,19 +233,20 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
                             </div>
 
                             <div className="msum">
-                                <div><small>Amount</small><b className="num">{money(total / 100)}</b></div>
-                                <div><small>Allocated</small><b className="num">{money(allocated / 100)}</b></div>
-                                <div className={unapplied < 0 ? 'err' : unapplied > 0 ? 'warn' : ''}><small>{unapplied < 0 ? 'Over-allocated' : 'Unallocated'}</small><b className="num">{money(Math.abs(unapplied) / 100)}</b></div>
-                                <div><small>Balance after</small><b className={`num ${settledBalance == null ? '' : settledBalance < 0 ? 'credit' : settledBalance === 0 ? 'good' : receipt ? '' : 'debt'}`}>{settledBalance == null ? '—' : money(settledBalance / 100)}</b></div>
+                                <div><small>Amount recorded</small><b className="num">{totalMoney(total / 100)}</b></div>
+                                <div><small>Allocated</small><b className="num">{totalMoney(allocated / 100)}</b></div>
+                                <div className={allocated > Math.max(tendered, total) ? 'err' : unapplied > 0 ? 'warn' : ''}><small>Unallocated</small><b className="num">{totalMoney(Math.max(0, unapplied) / 100)}</b></div>
+                                <div><small>Balance after</small><b className={`num ${settledBalance == null ? '' : settledBalance < 0 ? 'credit' : settledBalance === 0 ? 'good' : receipt ? '' : 'debt'}`}>{settledBalance == null ? '—' : totalMoney(settledBalance / 100)}</b></div>
                             </div>
                             {unapplied < 0 && <p className="merr" role="alert">Allocations exceed the amount. Reduce an allocation or raise the amount.</p>}
+                            {tendered !== total && <p className="merr unapplied">Entered {money(tendered / 100)} · rounding {total > tendered ? '+' : '−'}{money(Math.abs(total - tendered) / 100)}. The exact tender is retained for reconciliation.</p>}
                             {lookup.status === 'ready' && unapplied > 0 && <p className="merr unapplied">{money(unapplied / 100)} will be kept as on-account credit, not allocated to a document.</p>}
                             {errors.length > 0 && <div className="merr" role="alert">{errors.map((error) => <p key={error}>{error}</p>)}</div>}
                         </div>
                         <div className="mf" data-popup-section="footer">
                             <span className="muted keyboard-hint">Esc to close · Ctrl+Enter to record</span><div className="sp" />
                             <Dialog.Close type="button" className="btn" data-popup-action="secondary" disabled={form.processing}>Cancel</Dialog.Close>
-                            <button className="btn pri" data-popup-action="primary" type="submit" disabled={!canSubmit || total <= 0}>{form.processing ? 'Recording…' : receipt ? 'Record receipt' : 'Record payment'}</button>
+                            <button className="btn pri" data-popup-action="primary" type="submit" disabled={!canSubmit || tendered <= 0}>{form.processing ? 'Recording…' : receipt ? 'Record receipt' : 'Record payment'}</button>
                         </div>
                     </form>
                 </Dialog.Content>

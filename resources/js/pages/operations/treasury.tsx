@@ -6,7 +6,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { shortDate } from '@/lib/format';
+import { shortDate, totalPaisaMoney as cashTotal } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Head, Link, router } from '@inertiajs/react';
 import { ArrowDown, ArrowLeftRight, ArrowUp, CheckSquare, Download, Info, Plus, Search, Wallet } from 'lucide-react';
@@ -104,7 +104,7 @@ export default function Treasury({ accounts, account, entries, accountStats, fil
                             className={cn('grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1 rounded-xl border bg-card px-3 py-3 text-left transition-colors hover:border-ring/60', focusRing, item.id === account?.id && 'border-ring/70 bg-accent/55 ring-2 ring-ring/10')}>
                             <AccountGlyph kind={item.kind} className="row-span-2 size-9" />
                             <span className="min-w-0 break-words text-sm font-bold">{item.name}</span>
-                            <span className="text-right text-sm font-bold tabular-nums">{cash(item.balance_paisa)}</span>
+                            <span className="text-right text-sm font-bold tabular-nums">{cashTotal(item.balance_paisa)}</span>
                             <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground"><KindBadge kind={item.kind} /> <span>Opening {cash(item.opening_paisa)}</span></span>
                             <span className="flex justify-end -space-x-1.5">
                                 {item.operators.slice(0, 4).map((user) => <Avatar key={user.id} name={user.name} className="size-5 border-2 border-card" />)}
@@ -113,7 +113,7 @@ export default function Treasury({ accounts, account, entries, accountStats, fil
                         {!accounts.length && <p className="px-3 py-5 text-center text-sm text-muted-foreground">No accounts available.</p>}
                         {canManage && <button type="button" aria-haspopup="dialog" onClick={(event) => openAdd(event.currentTarget)} className={cn('flex min-h-11 items-center justify-center gap-2 rounded-xl border border-dashed border-input/60 px-3 py-2.5 text-sm font-semibold text-muted-foreground transition-colors hover:border-ring hover:bg-accent hover:text-accent-foreground', focusRing)}><Plus className="size-4" /> Add account</button>}
                     </div>
-                    <div className="flex justify-between gap-3 border-t px-4 py-3 text-sm text-muted-foreground"><span>Total across accounts</span><strong className="text-right text-foreground tabular-nums">{cash(totals.closing)}</strong></div>
+                    <div className="flex justify-between gap-3 border-t px-4 py-3 text-sm text-muted-foreground"><span>Total across accounts</span><strong className="text-right text-foreground tabular-nums">{cashTotal(totals.closing)}</strong></div>
                 </PaneCard>
 
                 <section ref={detailRef} className="min-w-0 scroll-mt-20">
@@ -170,13 +170,13 @@ function TreasuryKpis({ accounts, totals }: { accounts: Account[]; totals: Total
         {kpis.map(({ label, value, foot, icon: Icon, tone }) => <PaneCard key={label} className="flex items-start gap-2 p-3 sm:gap-3 sm:px-4 sm:py-3.5">
             <span className={cn('grid size-8 shrink-0 place-items-center rounded-lg sm:size-9', tone)}><Icon className="size-4" /></span>
             <div className="min-w-0"><p className="text-sm leading-snug font-medium text-muted-foreground">{label}</p>
-                <p className="mt-0.5 break-words text-lg leading-tight font-bold tracking-tight tabular-nums sm:text-xl">{cash(value)}</p>
+                <p className="mt-0.5 break-words text-lg leading-tight font-bold tracking-tight tabular-nums sm:text-xl">{cashTotal(value)}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{foot}</p></div>
         </PaneCard>)}
         <PaneCard className="brand-panel col-span-2 flex items-start gap-3 border-transparent p-3 text-brand-paper sm:col-span-1 sm:px-4 sm:py-3.5">
             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-paper/15 text-brand-mint"><Wallet className="size-4" /></span>
             <div className="min-w-0 flex-1"><p className="text-sm font-medium text-brand-paper/85">Current balance</p>
-                <p className="mt-0.5 break-words text-xl leading-tight font-bold tracking-tight tabular-nums">{cash(totals.closing)}</p>
+                <p className="mt-0.5 break-words text-xl leading-tight font-bold tracking-tight tabular-nums">{cashTotal(totals.closing)}</p>
                 <p className="mt-1 text-xs text-brand-paper/80">Bank {cash(bank)} · Cash {cash(cashBalance)}</p>
                 <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-brand-paper/20" aria-hidden="true">{bankShare !== null && <><span className="bg-brand-paper/65" style={{ width: (bankShare * 100) + '%' }} /><span className="flex-1 bg-brand-mint" /></>}</div></div>
         </PaneCard>
@@ -203,13 +203,13 @@ function AccountDetail({ account, stats, entries, filters, canManage, locked, st
                 <h2 id="treasury-account-title" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-lg font-bold tracking-tight sm:text-xl">{account.name} <KindBadge kind={account.kind} /></h2>
                 <p className="mt-0.5 text-sm text-muted-foreground">{account.operators.length} {account.operators.length === 1 ? 'operator' : 'operators'}{stats.opened ? ' · Opened ' + shortDate(stats.opened) : ' · Opening not posted'}</p>
             </div>
-            <div className="text-right"><p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Balance</p><p className="text-xl font-bold tracking-tight tabular-nums sm:text-2xl">{cash(account.balance_paisa)}</p></div>
+            <div className="text-right"><p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Balance</p><p className="text-xl font-bold tracking-tight tabular-nums sm:text-2xl">{cashTotal(account.balance_paisa)}</p></div>
         </div>
         <dl className="grid grid-cols-2 border-b min-[1201px]:grid-cols-4">
             {[
                 { label: 'Opening', value: cash(stats.opening) },
-                { label: 'Receipts', value: cash(stats.receipts), tone: 'text-chart-2' },
-                { label: 'Payouts', value: cash(stats.payouts), tone: 'text-destructive' },
+                { label: 'Receipts', value: cashTotal(stats.receipts), tone: 'text-chart-2' },
+                { label: 'Payouts', value: cashTotal(stats.payouts), tone: 'text-destructive' },
                 { label: 'Entries', value: stats.entries.toLocaleString('en-PK') },
             ].map(({ label, value, tone }, index) => <div key={label} className={cn('min-w-0 px-4 py-2.5', index < 2 && 'max-[1201px]:border-b', index % 2 === 0 && 'border-r', index === 1 && 'min-[1201px]:border-r')}>
                 <dt className="text-xs text-muted-foreground">{label}</dt><dd className={cn('text-base font-bold tabular-nums', tone)}>{value}</dd>

@@ -1,5 +1,5 @@
 import AppLayout from '@/layouts/app-layout';
-import { money, qty, shiftDate } from '@/lib/format';
+import { qty, shiftDate, totalMoney } from '@/lib/format';
 import { Head, Link, router } from '@inertiajs/react';
 import { ArrowUpRight, Banknote, CalendarDays, ChevronLeft, ChevronRight, Clipboard, DollarSign, TrendingUp, Truck, type LucideIcon } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -42,7 +42,7 @@ type Props = {
     canViewCommissions: boolean;
 };
 
-const cash = (paisa: number) => money(paisa / 100);
+const cash = (paisa: number) => totalMoney(paisa / 100);
 const count = (n: number, noun: string) => `${qty(n)} ${noun}${n === 1 ? '' : 's'}`;
 const dateLabel = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 

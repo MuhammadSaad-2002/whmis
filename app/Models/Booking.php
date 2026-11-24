@@ -36,6 +36,7 @@ class Booking extends Model implements AuditableContract
             'item_discount_total' => 'decimal:2',
             'item_gst_total' => 'decimal:2',
             'total_amount' => 'decimal:2',
+            'rounding_amount' => 'decimal:2',
         ];
     }
 

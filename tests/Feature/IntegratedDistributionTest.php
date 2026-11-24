@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\{Booking, Company, Customer, Dispatch, Employee, Payment, Product, PurchaseInvoice, SalesInvoice, User};
-use App\Services\{BookingService, DeliveryCollectionService, DeliveryPlanningService, DispatchService, FinanceApprovalService, InvoiceBalanceService, InvoicePostingService, PaymentService, ReturnService};
+use App\Services\{BookingService, CustomerReceiptReport, DeliveryCollectionService, DeliveryPlanningService, DispatchService, FinanceApprovalService, InvoiceBalanceService, InvoicePostingService, PaymentService, ReportService, ReturnService, SaleNetPositionService};
 use Database\Seeders\{RolePermissionSeeder, SystemSeeder};
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -401,6 +401,7 @@ class IntegratedDistributionTest extends TestCase
         $this->assertSame(1, $audit['breakdown'][1000]);
         $this->post($batch, ['account_id' => $till, 'collection_ids' => [$ids[0]]])->assertSessionHasErrors('finance');
         $this->assertDatabaseCount('payments', 0);
+        $this->assertEquals(0, app(ReportService::class)->build(CustomerReceiptReport::KEY, ['from' => $this->date, 'to' => $this->date])['totals']['received']);
         $balance = fn (SalesInvoice $invoice) => app(InvoiceBalanceService::class)->sales()->whereKey($invoice->id)->value('outstanding');
         $this->assertEquals(1000, $balance($first));
         $this->assertEquals(2000, $balance($second));
@@ -408,6 +409,7 @@ class IntegratedDistributionTest extends TestCase
         $this->post($batch, ['account_id' => $till, 'collection_ids' => $ids])->assertSessionHasNoErrors();
         $this->post($batch, ['account_id' => $till, 'collection_ids' => $ids])->assertSessionHasNoErrors();
         $this->assertDatabaseCount('payments', 2);
+        $this->assertEquals(1500, app(ReportService::class)->build(CustomerReceiptReport::KEY, ['from' => $this->date, 'to' => $this->date])['totals']['received']);
         $this->assertEquals(0, $balance($first));
         $this->assertEquals(1500, $balance($second));
         $this->assertEquals(1500, app(\App\Services\LedgerService::class)->outstanding($this->customer));
@@ -654,6 +656,27 @@ class IntegratedDistributionTest extends TestCase
         $this->assertEquals(0, app(InvoiceBalanceService::class)->sales()->whereKey($sale->id)->value('outstanding'));
         $this->assertEquals(500, app(\App\Services\TreasuryService::class)->shortageReceivable());
         $this->assertEquals(2050000, DB::table('treasury_entries')->sum('paisa'));
+        $filters = ['from' => $this->date, 'to' => $this->date];
+        $reports = app(ReportService::class);
+        $position = app(SaleNetPositionService::class)->positionFor($sale);
+        $this->assertEquals(19500, $position['actual_received']);
+        $this->assertEquals(500, $position['noncash_settlement']);
+        $this->assertEquals(0, $position['final_outstanding']);
+        $receipts = $reports->build(CustomerReceiptReport::KEY, $filters);
+        $this->assertEquals(['settled' => 20000, 'shortage' => 500, 'received' => 19500], $receipts['totals']);
+        $register = $reports->build('sales-register', $filters);
+        $this->assertEquals(19500, $register['totals']['received']);
+        $this->assertEquals(0, $register['totals']['outstanding']);
+        $this->assertEquals(20000, $register['totals']['net_amount']);
+        $this->get(route('distribution.reconcile', $filters + ['date' => $this->date]))
+            ->assertInertia(fn (Assert $page) => $page->where('rows.1.actual_received_paisa', 1950000)->where('rows.1.invoice_settled_paisa', 2000000));
+        $repay = $this->makeApproval('shortage_repayment', ['collection_id' => $row->id, 'account_id' => $till, 'amount' => 200]);
+        $this->assertEquals(300, app(\App\Services\TreasuryService::class)->shortageReceivable());
+        $repayReverse = $this->makeApproval('shortage_repayment_reverse', ['credit_id' => $repay->id]);
+        $finance->post($repayReverse->id, $this->admin, 'Retry');
+        $this->assertEquals(500, app(\App\Services\TreasuryService::class)->shortageReceivable());
+        $this->assertDatabaseHas('finance_work_items', ['id' => $repay->id, 'status' => 'reversed']);
+        $this->assertEquals(2050000, DB::table('treasury_entries')->sum('paisa'));
         $reverse = $finance->request($this->admin,'shortage_receipt_reverse',['date'=>$this->date,'request_key'=>(string) Str::uuid(),
             'collection_id'=>$row->id,'notes'=>'Verified receipt was entered against the wrong invoice'],'proof.pdf');
         $finance->approve($reverse->id, $this->reviewer, 'Checked the source receipt', true);
@@ -661,6 +684,8 @@ class IntegratedDistributionTest extends TestCase
         $this->assertEquals(20000, app(InvoiceBalanceService::class)->sales()->whereKey($sale->id)->value('outstanding'));
         $this->assertEquals(0, app(\App\Services\TreasuryService::class)->shortageReceivable());
         $this->assertEquals(100000, DB::table('treasury_entries')->sum('paisa'));
+        $this->assertEquals(0, $reports->build(CustomerReceiptReport::KEY, $filters)['totals']['received']);
+        $this->assertEquals(0, $reports->build('sales-register', $filters)['totals']['received']);
     }
 
     public function test_opening_commission_and_collection_import_do_not_replay_historical_cash(): void
@@ -689,6 +714,9 @@ class IntegratedDistributionTest extends TestCase
         $this->assertEquals(1000000, DB::table('treasury_entries')->sum('paisa'));
         $this->assertEquals(10000, DB::table('commission_entries')->sum('payable_paisa'));
         $this->assertEquals(0, DB::table('commission_entries')->sum('expense_paisa'));
+        $reports = app(ReportService::class);
+        $this->assertEquals(10000, $reports->build(CustomerReceiptReport::KEY, ['from' => $older, 'to' => $this->date])['totals']['received']);
+        $this->assertEquals(0, $reports->build(CustomerReceiptReport::KEY, ['from' => $this->date, 'to' => $this->date])['totals']['received']);
     }
 
     public function test_linked_credit_allocation_releases_without_duplicate_cash_or_ledger_entries(): void
@@ -709,6 +737,10 @@ class IntegratedDistributionTest extends TestCase
         $ledgerRows = DB::table('ledger_entries')->count();
         $finance->post($credit->id,$this->admin,null);
         $this->assertEquals(5000, app(InvoiceBalanceService::class)->sales()->whereKey($target->id)->value('outstanding'));
+        $position = app(SaleNetPositionService::class)->positionFor($target);
+        $this->assertEquals(0, $position['actual_received']);
+        $this->assertEquals(5000, $position['applied_credit']);
+        $this->assertEquals(20000, app(ReportService::class)->build(CustomerReceiptReport::KEY, ['from' => $this->date, 'to' => $this->date])['totals']['received']);
         $this->assertEquals(0, $finance->refundable($source));
         $this->expectFinanceError(fn () => app(PaymentService::class)->cancel($receipt),'dependent refunds or credit');
         $release = $finance->request($this->admin,'credit_release',['request_key'=>(string) Str::uuid(),'credit_id'=>$credit->id]+$base,null);
@@ -718,5 +750,282 @@ class IntegratedDistributionTest extends TestCase
         $this->assertEquals(500000,$finance->refundable($source));
         $this->assertEquals($cashRows,DB::table('treasury_entries')->count());
         $this->assertEquals($ledgerRows,DB::table('ledger_entries')->count());
+    }
+
+    private function makeApproval(string $kind, array $payload, ?string $evidence = null): \App\Models\FinanceWorkItem
+    {
+        $finance = app(FinanceApprovalService::class);
+        $item = $finance->request($this->admin, $kind, $payload + ['date' => $this->date, 'request_key' => (string) Str::uuid(), 'notes' => 'Checked supporting records.'], $evidence);
+        $finance->approve($item->id, $this->reviewer, 'Independently verified.', true);
+        $finance->post($item->id, $this->admin, 'FIN-TX-123');
+        return $item->refresh();
+    }
+
+    public function test_final_rupee_rounding_keeps_exact_invoice_lines_cash_and_reversal(): void
+    {
+        $account = $this->opening();
+        $booking = $this->booking(1);
+        $booking->items()->first()->update(['trade_price' => '1250.50']);
+        $sale = app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($booking));
+        $this->assertSame('1251.00', $sale->total_amount);
+        $this->assertSame('0.50', $sale->rounding_amount);
+        $this->assertSame('1250.50', $sale->items()->first()->net_amount);
+        $this->assertEquals(1251, app(\App\Services\LedgerService::class)->outstanding($this->customer));
+
+        $receipt = app(PaymentService::class)->recordManual($this->customer, ['method' => 'cash', 'amount' => '1250.50',
+            'payment_date' => $this->date, 'financial_account_id' => $account, 'apply_rounded_total' => true],
+            [['invoice_type' => 'sales_invoice', 'invoice_id' => $sale->id, 'amount' => 1251]]);
+        $this->assertSame('1251.00', $receipt->amount);
+        $this->assertSame(125050, $receipt->tendered_paisa);
+        $this->assertSame(125100, $receipt->received_paisa);
+        $this->assertEquals(0, app(InvoiceBalanceService::class)->sales()->whereKey($sale->id)->first()->outstanding);
+        $this->assertDatabaseHas('treasury_entries', ['source_type' => 'payment', 'source_id' => $receipt->id, 'paisa' => 125050]);
+        $rows = app(ReportService::class)->build(CustomerReceiptReport::KEY, ['from' => $this->date, 'to' => $this->date])['rows'];
+        $this->assertEquals(1250.5, $rows[0]['received']);
+        $this->assertEquals(0, $rows[0]['shortage']);
+        $this->get(route('reports.show', ['key' => CustomerReceiptReport::KEY, 'from' => $this->date, 'to' => $this->date]))
+            ->assertInertia(fn (Assert $page) => $page->where('rows.0.received', 1250.5)->where('totals.received', 1251));
+
+        app(PaymentService::class)->cancel($receipt);
+        $this->assertEquals(1251, app(\App\Services\LedgerService::class)->outstanding($this->customer));
+        $this->assertEquals(100000, DB::table('treasury_entries')->where('account_id', $account)->sum('paisa'));
+    }
+
+    public function test_split_returns_refund_the_persisted_invoice_total_without_rounding_lines(): void
+    {
+        $booking = $this->booking(2);
+        $booking->items()->first()->update(['trade_price' => '10.49']);
+        $sale = app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($booking));
+        $this->assertSame('21.00', $sale->total_amount);
+
+        $returns = app(\App\Services\ReturnService::class);
+        $line = [['sales_invoice_item_id' => $sale->items()->first()->id, 'quantity' => 1]];
+        $first = $returns->createSalesReturn($sale, $line, $this->date);
+        $second = $returns->createSalesReturn($sale, $line, $this->date);
+        $this->assertSame('10.00', $first->total_amount);
+        $this->assertSame('11.00', $second->total_amount);
+        $this->assertEquals(0, app(\App\Services\LedgerService::class)->outstanding($this->customer));
+    }
+
+    public function test_reconciliation_preserves_the_cash_count_and_rounds_the_saved_receipt_and_due(): void
+    {
+        $account = $this->opening();
+        $invoice = app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($this->booking(1)));
+        $this->deliver($invoice);
+        $collections = app(DeliveryCollectionService::class);
+        $collections->report($invoice, $this->salesman, ['method' => 'cash', 'amount' => '400.50', 'request_key' => (string) Str::uuid()]);
+        $report = DB::table('delivery_collections')->where('method', 'cash')->firstOrFail();
+        $collections->submit($report->collection_day_id, $this->salesman);
+        $this->actingAs($this->admin);
+        $collections->countCash($report->collection_day_id, $this->admin, 40050);
+        $collections->record($report->id, $this->admin, ['amount' => '400.50', 'account_id' => $account]);
+        foreach (DB::table('delivery_collections')->where('collection_day_id', $report->collection_day_id)->where('method', 'none')->pluck('id') as $noPaymentId) {
+            $collections->record($noPaymentId, $this->admin, ['amount' => 0]);
+        }
+        $collections->close($report->collection_day_id, $this->admin, '');
+
+        $payment = Payment::firstOrFail();
+        $this->assertSame('401.00', $payment->amount);
+        $this->assertSame(40100, $payment->received_paisa);
+        $this->assertSame(40050, $payment->tendered_paisa);
+        $this->assertEquals(599, app(InvoiceBalanceService::class)->sales()->whereKey($invoice->id)->first()->outstanding);
+        $this->assertDatabaseHas('delivery_collections', ['id' => $report->id, 'verified_paisa' => 40050, 'payment_id' => $payment->id]);
+        $this->assertDatabaseHas('treasury_entries', ['kind' => 'receipt', 'source_id' => $payment->id, 'paisa' => 40050]);
+    }
+
+    public function test_fractional_legacy_allocations_settle_exactly_without_changing_stored_invoice_or_inventing_refund_credit(): void
+    {
+        $account = $this->opening();
+        $sale = SalesInvoice::create(['invoice_number' => 'SI-FRACTIONAL-LEGACY', 'customer_id' => $this->customer->id,
+            'warehouse_id' => 1, 'invoice_date' => $this->date, 'status' => 'posted', 'sale_type' => 'credit', 'total_amount' => '19.49']);
+        $ledger = app(\App\Services\LedgerService::class);
+        $ledger->post($this->customer, 'sale', $this->date, 19.49, 0, $sale);
+        $receipt = app(PaymentService::class)->recordManual($this->customer, ['method' => 'cash', 'amount' => '19.49',
+            'payment_date' => $this->date, 'financial_account_id' => $account],
+            [['invoice_type' => 'sales_invoice', 'invoice_id' => $sale->id, 'amount' => 19.49]]);
+        $this->assertSame('19.00', $receipt->amount);
+        $this->assertSame('19.49', $sale->refresh()->total_amount);
+        $this->assertEquals(0, $ledger->outstanding($this->customer));
+        $this->assertDatabaseHas('ledger_entries', ['entry_type' => 'adjustment', 'credit' => 0.49]);
+        $this->assertDatabaseHas('payment_allocations', ['payment_id' => $receipt->id, 'invoice_id' => $sale->id, 'amount' => '19.49']);
+        $this->assertSame(0, app(FinanceApprovalService::class)->unappliedReceiptCredit($receipt));
+        app(PaymentService::class)->cancel($receipt);
+        $this->assertEquals(19.49, $ledger->outstanding($this->customer));
+        $this->assertEquals(100000, DB::table('treasury_entries')->where('account_id', $account)->sum('paisa'));
+    }
+
+    public function test_finance_options_expense_transfer_and_checkpoint_post_with_independent_review(): void
+    {
+        $till = $this->opening();
+        $finance = app(FinanceApprovalService::class);
+        $bank = $finance->saveAccount($this->admin, ['name' => 'Bank A', 'kind' => 'bank'])->id;
+        $this->getJson('/finance-approvals/options?kind=statement&date='.$this->date)->assertOk()->assertJsonPath("statement.$till", 100000);
+        $this->getJson('/finance-approvals/options?kind=opening')->assertOk()->assertJsonPath('locked', true);
+        $payload = ['kind' => 'expense', 'account_id' => $till, 'category' => 'Fuel & transport', 'payee' => 'Fuel station',
+            'amount' => 100, 'request_key' => (string) Str::uuid(), 'notes' => 'Actual fuel bill', 'date' => $this->date];
+        $this->post('/finance-approvals', $payload)->assertSessionHasErrors('finance');
+        \Illuminate\Support\Facades\Storage::fake('local');
+        $this->post('/finance-approvals', $payload + ['evidence' => \Illuminate\Http\UploadedFile::fake()->image('receipt.jpg')])->assertSessionHas('success');
+        $expense = \App\Models\FinanceWorkItem::where('request_key', $payload['request_key'])->firstOrFail();
+        $this->assertEquals(100000, DB::table('treasury_entries')->sum('paisa'));
+        $this->actingAs($this->reviewer)->post("/finance-approvals/{$expense->id}/approve", ['approve' => true, 'note' => 'Matches paid bill'])->assertSessionHas('success');
+        $this->assertEquals(100000, DB::table('treasury_entries')->sum('paisa'));
+        $this->actingAs($this->admin)->post("/finance-approvals/{$expense->id}/post", ['reference' => 'Fuel receipt'])->assertSessionHas('success');
+        $this->makeApproval('transfer', ['account_id' => $till, 'target_id' => $bank, 'amount' => 250], 'bank.pdf');
+        $statement = $this->makeApproval('statement', ['account_id' => $till, 'amount' => 645], 'count.pdf');
+        $this->assertEquals(90000, DB::table('treasury_entries')->sum('paisa'));
+        $this->get('/finance-approvals?request_id='.$statement->id)->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('items.data.0.outcomes.0.action', 'reconciled')->where('items.data.0.outcomes.0.data.variance', -500));
+        $month = app(ReportService::class)->profitByMonth()['rows'][11];
+        $this->assertEquals(100, $month['operating_expenses']);
+        $this->assertEquals(-100, $month['operating_profit']);
+        $field = User::factory()->create()->assignRole('Booker');
+        $this->actingAs($field)->getJson('/finance-approvals/options?kind=commission_payout')->assertForbidden();
+    }
+
+    public function test_unapplied_receipt_can_settle_an_open_invoice_once_without_moving_cash(): void
+    {
+        $account = $this->opening();
+        $invoice = app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($this->booking(10)));
+        $receipt = app(PaymentService::class)->recordManual($this->customer, ['amount' => 3000, 'method' => 'cash',
+            'payment_date' => $this->date, 'financial_account_id' => $account], [])->refresh();
+        $cash = DB::table('treasury_entries')->sum('paisa');
+        $this->getJson('/finance-approvals/options?kind=credit_apply&customer_id='.$this->customer->id)
+            ->assertOk()->assertJsonPath('invoices.0.source_payment_id', $receipt->id)->assertJsonPath('invoices.0.max', 300000);
+        $applied = $this->makeApproval('credit_apply', ['source_payment_id' => $receipt->id, 'target_id' => $invoice->id, 'amount' => 2000]);
+        $this->assertEquals(8000, app(InvoiceBalanceService::class)->openSales()->whereKey($invoice->id)->first()->outstanding);
+        $this->assertSame(100000, app(FinanceApprovalService::class)->unappliedReceiptCredit($receipt));
+        $this->expectFinanceError(fn () => app(PaymentService::class)->cancel($receipt), 'against this receipt');
+        $this->makeApproval('credit_release', ['credit_id' => $applied->id]);
+        $this->assertSame(300000, app(FinanceApprovalService::class)->unappliedReceiptCredit($receipt));
+        $this->assertEquals(10000, app(InvoiceBalanceService::class)->openSales()->whereKey($invoice->id)->first()->outstanding);
+        $this->assertEquals($cash, DB::table('treasury_entries')->sum('paisa'));
+    }
+
+    public function test_reconciliation_variance_posts_real_undeclared_cash_only_after_approval_and_close(): void
+    {
+        $account = $this->opening();
+        $invoice = app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($this->booking(10)));
+        $this->deliver($invoice);
+        $collections = app(DeliveryCollectionService::class);
+        $collections->report($invoice, $this->salesman, ['method'=>'cash', 'amount'=>5000, 'request_key'=>(string) Str::uuid()]);
+        $row = DB::table('delivery_collections')->where('method','cash')->firstOrFail();
+        $collections->submit($row->collection_day_id, $this->salesman);
+        $this->actingAs($this->admin);
+        $collections->countCash($row->collection_day_id, $this->admin, 510000);
+        $collections->record($row->id, $this->admin, ['amount'=>5000, 'account_id'=>$account]);
+        foreach (DB::table('delivery_collections')->where('collection_day_id',$row->collection_day_id)->where('method','none')->pluck('id') as $id) {
+            $collections->record($id, $this->admin, ['amount'=>0]);
+        }
+        $this->getJson('/finance-approvals/options?kind=close_variance')->assertOk()->assertJsonPath('days.0.counted', 510000);
+        $finance = app(FinanceApprovalService::class);
+        $approval = $finance->request($this->admin, 'close_variance', ['request_key'=>(string) Str::uuid(), 'day_id'=>$row->collection_day_id,
+            'account_id'=>$account, 'notes'=>'Unallocated counted cash', 'date'=>$this->date], null);
+        $finance->approve($approval->id, $this->reviewer, 'Checked the count.', true);
+        $this->assertEquals(600000, DB::table('treasury_entries')->sum('paisa'));
+        $collections->close($row->collection_day_id, $this->admin, 'Unallocated counted cash verified');
+        $this->assertEquals(610000, DB::table('treasury_entries')->sum('paisa'));
+        $this->assertDatabaseHas('treasury_entries', ['kind'=>'reconciliation_surplus','source_id'=>$approval->id,'paisa'=>10000]);
+        $this->assertEquals(5000, app(InvoiceBalanceService::class)->openSales()->whereKey($invoice->id)->first()->outstanding);
+    }
+
+    public function test_refund_correction_restates_books_and_writeoff_recognizes_other_income_without_cash(): void
+    {
+        $account = $this->opening();
+        $sale = app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($this->booking(20)));
+        $this->pay($sale, $account, 20000);
+        app(ReturnService::class)->createSalesReturn($sale, [['sales_invoice_item_id' => $sale->items()->first()->id, 'quantity' => 5]], $this->date);
+        $this->getJson('/finance-approvals/options?kind=refund')->assertOk()->assertJsonPath('customers.0.max', 500000);
+        $refund = $this->makeApproval('refund', ['invoice_id' => $sale->id, 'amount' => 3000, 'account_id' => $account, 'method' => 'cash']);
+        $this->getJson('/finance-approvals/options?kind=refund_correction')->assertOk()->assertJsonPath('references.0.correction_max', 500000);
+        $this->makeApproval('refund_correction', ['credit_id' => $refund->id, 'corrected_amount' => 2000], 'proof.pdf');
+        $finance = app(FinanceApprovalService::class);
+        $this->assertSame(200000, $finance->remainingRefund($refund));
+        $this->assertEquals(-3000, app(\App\Services\LedgerService::class)->outstanding($this->customer));
+        $this->assertDatabaseHas('treasury_entries', ['kind' => 'refund_correction', 'paisa' => 100000]);
+        $this->makeApproval('credit_writeoff', ['invoice_id' => $sale->id, 'amount' => 750]);
+        $this->assertEquals(-2250, app(\App\Services\LedgerService::class)->outstanding($this->customer));
+        $this->assertEquals(1900000, DB::table('treasury_entries')->sum('paisa'));
+        $this->assertEquals(750, app(ReportService::class)->profitByMonth()['rows'][11]['other_income']);
+    }
+
+    public function test_commission_cap_does_not_reclaim_paid_amounts_and_recovery_hold_expires(): void
+    {
+        $account = $this->opening();
+        $this->post('/commissions/rules', ['source'=>'booking','role'=>'booker','basis'=>'invoice','mode'=>'percent','rate'=>10,'effective_from'=>$this->date])->assertSessionHas('success');
+        $sale = app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($this->booking(10)));
+        $this->deliver($sale);
+        $this->pay($sale, $account, 10000);
+        $commissions = app(\App\Services\CommissionService::class);
+        $this->assertSame(100000, $commissions->employeeFinance($this->employee->id)['due']);
+        $this->makeApproval('commission_payout', ['employee_id'=>$this->employee->id,'account_id'=>$account,'amount'=>500]);
+        $this->makeApproval('commission_cap', ['employee_id'=>$this->employee->id,'commission_role'=>'booker','cap_period'=>'invoice','amount'=>300]);
+        $this->assertSame(0, $commissions->employeeFinance($this->employee->id)['due']);
+        $this->assertSame(0, $commissions->employeeFinance($this->employee->id)['recovery']);
+        $this->assertEquals(50000, DB::table('commission_entries')->where('kind','commission_payout')->sum('cash_out_paisa'));
+        $award = DB::table('commission_awards')->where('employee_id', $this->employee->id)->first();
+        DB::table('commission_entries')->insert(['employee_id'=>$this->employee->id,'commission_award_id'=>$award->id,'kind'=>'recovery_created',
+            'recovery_paisa'=>55000,'expense_paisa'=>0,'payable_paisa'=>0,'cash_out_paisa'=>0,'business_date'=>$this->date,'reason'=>'Fixture existing recovery']);
+        $tomorrow = now('Asia/Karachi')->addDay()->toDateString();
+        $this->makeApproval('recovery_hold', ['employee_id'=>$this->employee->id,'hold_until'=>$tomorrow]);
+        $this->assertTrue($commissions->employeeFinance($this->employee->id)['held']);
+        DB::table('commission_entries')->insert(['employee_id'=>$this->employee->id,'commission_award_id'=>$award->id,'kind'=>'entitlement',
+            'recovery_paisa'=>0,'expense_paisa'=>20000,'payable_paisa'=>20000,'cash_out_paisa'=>0,'business_date'=>$this->date,'reason'=>'Fixture new earnings during hold']);
+        $cash = DB::table('treasury_entries')->sum('paisa');
+        $this->makeApproval('recovery_repayment', ['employee_id'=>$this->employee->id,'repayment_via'=>'commission','amount'=>50]);
+        $this->assertSame(50000, $commissions->employeeFinance($this->employee->id)['recovery']);
+        $this->assertSame(15000, $commissions->employeeFinance($this->employee->id)['due']);
+        $this->travel(1)->days();
+        $commissions->resumeExpiredHolds();
+        $this->assertFalse($commissions->employeeFinance($this->employee->id)['held']);
+        $this->assertSame(35000, $commissions->employeeFinance($this->employee->id)['recovery']);
+        $this->assertSame(0, $commissions->employeeFinance($this->employee->id)['due']);
+        $this->assertEquals($cash, DB::table('treasury_entries')->sum('paisa'));
+    }
+
+    public function test_monthly_commission_cap_is_shared_across_invoice_splits(): void
+    {
+        $account = $this->opening();
+        $this->post('/commissions/rules', ['source'=>'booking','role'=>'booker','basis'=>'invoice','mode'=>'percent','rate'=>10,'effective_from'=>$this->date])->assertSessionHas('success');
+        $this->makeApproval('commission_cap', ['employee_id'=>$this->employee->id,'commission_role'=>'booker','cap_period'=>'month','amount'=>1500]);
+        $booking = $this->booking(20);
+        $bookings = app(BookingService::class);
+        $posting = app(InvoicePostingService::class);
+        $split = [['id'=>$booking->items()->first()->id,'quantity'=>10,'bonus_quantity'=>0]];
+        $first = $posting->postSale($bookings->convertToSale($booking, $split));
+        $second = $posting->postSale($bookings->convertToSale($booking->refresh(), $split));
+        foreach ([$first,$second] as $sale) {
+            $this->deliver($sale);
+            $this->pay($sale, $account, 10000);
+        }
+        $this->assertDatabaseHas('commission_awards', ['sales_invoice_id'=>$first->id,'role'=>'booker','earned_paisa'=>100000]);
+        $this->assertDatabaseHas('commission_awards', ['sales_invoice_id'=>$second->id,'role'=>'booker','earned_paisa'=>50000]);
+        $this->assertSame(150000, app(\App\Services\CommissionService::class)->employeeFinance($this->employee->id)['due']);
+    }
+
+    public function test_commission_share_preview_uses_actual_deliverer_and_matches_posted_awards(): void
+    {
+        $account = $this->opening();
+        $replacement = User::factory()->create(['is_active'=>true])->assignRole('Salesman');
+        $employee = Employee::create(['employee_number'=>'EMP-REPLACEMENT', 'name'=>'Actual deliverer', 'user_id'=>$replacement->id,
+            'joining_date'=>$this->date, 'employment_type'=>'permanent', 'weekly_off_days'=>[0]]);
+        $this->post('/commissions/rules', ['source'=>'booking','role'=>'salesman','basis'=>'invoice','mode'=>'percent','rate'=>10,'effective_from'=>$this->date])->assertSessionHas('success');
+        $invoice = app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($this->booking(10)));
+        $line = app(DispatchService::class)->pickupProgress($invoice)[0];
+        $this->action($invoice,'pickup',['pickup_lines'=>[['id'=>$line->id,'quantity'=>10]]]);
+        $this->action($invoice,'confirm_pickup');
+        $this->action($invoice,'request_handover',['assigned_to'=>$replacement->id,'notes'=>'New route'], $this->admin);
+        $this->action($invoice,'accept_handover', [], $replacement);
+        $this->action($invoice,'dispatched', [], $replacement);
+        $this->action($invoice,'delivered',['receiver_name'=>'Customer', 'items'=>[['sales_invoice_item_id'=>$invoice->items()->first()->id,'quantity'=>10]]], $replacement);
+        $this->pay($invoice, $account, 10000);
+        $this->getJson('/finance-approvals/options?kind=commission_share')->assertOk()->assertJsonPath('invoices.0.share.delivered', $employee->name);
+        $this->getJson('/finance-approvals/share-preview?invoice_id='.$invoice->id.'&share=25')
+            ->assertOk()->assertJsonFragment(['name'=>$this->employee->name, 'calculated'=>25000, 'earned'=>25000])
+            ->assertJsonFragment(['name'=>$employee->name, 'calculated'=>75000, 'earned'=>75000]);
+        $this->assertDatabaseMissing('commission_awards', ['employee_id'=>$this->employee->id, 'earned_paisa'=>25000]);
+        $this->makeApproval('commission_share', ['invoice_id'=>$invoice->id,'share'=>25]);
+        $this->assertDatabaseHas('commission_awards', ['sales_invoice_id'=>$invoice->id,'employee_id'=>$this->employee->id,'earned_paisa'=>25000]);
+        $this->assertDatabaseHas('commission_awards', ['sales_invoice_id'=>$invoice->id,'employee_id'=>$employee->id,'earned_paisa'=>75000]);
     }
 }

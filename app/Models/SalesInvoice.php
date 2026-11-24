@@ -41,6 +41,7 @@ class SalesInvoice extends Model implements AuditableContract
             'gst_percent' => 'decimal:2',
             'gst_amount' => 'decimal:2',
             'total_amount' => 'decimal:2',
+            'rounding_amount' => 'decimal:2',
             'total_cost' => 'decimal:2',
             'total_profit' => 'decimal:2',
             'profit_percent' => 'decimal:2',

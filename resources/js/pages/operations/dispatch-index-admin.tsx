@@ -2,7 +2,7 @@ import { Paginator, type PaginatedData } from '@/components/paginator';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import AppLayout from '@/layouts/app-layout';
-import { money, shortDate } from '@/lib/format';
+import { shortDate, totalMoney } from '@/lib/format';
 import { Head, Link, router } from '@inertiajs/react';
 import { ArrowRight, ArrowUpDown, CalendarDays, Columns3, GripVertical, Info, List, Printer, Search, Truck } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
@@ -41,7 +41,6 @@ const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map(word
 const completed = (row: Invoice) => ['delivered', 'closed'].includes(row.dispatch_status);
 const eligibleForPick = (row: Invoice) => ['pending', 'picking'].includes(row.dispatch_status);
 const overdue = (row: Invoice, today: string) => Boolean(row.planned_date && row.planned_date < today && !completed(row));
-const compactMoney = (value: number | string) => 'Rs ' + Number(value).toLocaleString('en-PK', { maximumFractionDigits: 0 });
 function elapsed(date: string | null, end = Date.now()): string {
     if (!date) return '—';
     const minutes = Math.max(0, Math.floor((end - new Date(date).getTime()) / 60000));
@@ -139,7 +138,7 @@ export function AdminDispatchIndex({ invoices, filters, staff, canPlan, canManag
                         onClick={() => updateFilters({ stage: stageKey === stage.key ? undefined : stage.key, status: undefined })}>
                         <span className="stage-title"><i />{stage.label}</span>
                         <strong className="stage-count">{totals.count}</strong>
-                        <span className="stage-value">{compactMoney(totals.value)}{totals.overdue > 0 && <> · <b className="late">{totals.overdue} overdue</b></>}</span>
+                        <span className="stage-value">{totalMoney(totals.value)}{totals.overdue > 0 && <> · <b className="late">{totals.overdue} overdue</b></>}</span>
                         <span className="stage-arrow" aria-hidden="true" />
                     </button>;
                 })}
@@ -167,7 +166,7 @@ export function AdminDispatchIndex({ invoices, filters, staff, canPlan, canManag
                     ? 'Drag an invoice or use its Move button. You’ll be asked for the details required before the stage changes.'
                     : 'Untracked invoices have no recorded delivery history. Open a delivery to view its assignment and activity.'}</p>
                 {selection.length > 0 && <div className="bulk">
-                    <strong>{selection.length} selected</strong><span>· {compactMoney(selection.reduce((sum, row) => sum + Number(row.total_amount), 0))}</span>
+                    <strong>{selection.length} selected</strong><span>· {totalMoney(selection.reduce((sum, row) => sum + Number(row.total_amount), 0))}</span>
                     {pickable.length > 0 && pickable.length <= 30 ? <a href={pickHref(pickable.map(row => row.id))} target="_blank" rel="noopener">Print selected pick list</a>
                         : <span>{pickable.length > 30 ? 'Select at most 30 pending or picking invoices to print.' : 'Only pending or picking invoices have a pick list.'}</span>}
                     {pickable.length > 0 && pickable.length < selection.length && <span>Only {pickable.length} {pickable.length === 1 ? 'invoice needs' : 'invoices need'} picking.</span>}
@@ -208,7 +207,7 @@ export function AdminDispatchIndex({ invoices, filters, staff, canPlan, canManag
                                     }} onDragEnd={clearDrag}>
                                     <div className="card-top">
                                         <input type="checkbox" checked={selected.has(row.id)} aria-label={'Select ' + row.invoice_number} onChange={event => selectRows([row], event.target.checked)} />
-                                        <button type="button" onClick={event => showPreview(row, event.currentTarget)}>{row.invoice_number}</button><span>{compactMoney(row.total_amount)}</span>
+                                        <button type="button" onClick={event => showPreview(row, event.currentTarget)}>{row.invoice_number}</button><span>{totalMoney(row.total_amount)}</span>
                                     </div>
                                     <div className="customer">{row.customer?.name ?? 'Customer'}</div>
                                     <div className="card-meta">
@@ -241,7 +240,7 @@ export function AdminDispatchIndex({ invoices, filters, staff, canPlan, canManag
                                 <td><input type="checkbox" checked={selected.has(row.id)} aria-label={'Select ' + row.invoice_number} onChange={event => selectRows([row], event.target.checked)} /></td>
                                 <td><button type="button" className="invoice-link" onClick={event => showPreview(row, event.currentTarget)}>{row.invoice_number}</button></td>
                                 <td className="customer-cell"><b>{row.customer?.name ?? 'Customer'}</b><small>{row.customer?.city}</small></td>
-                                <td>{shortDate(row.invoice_date)}</td><td className="numeric">{money(row.total_amount)}</td><td>{row.items_count}</td>
+                                <td>{shortDate(row.invoice_date)}</td><td className="numeric">{totalMoney(row.total_amount)}</td><td>{row.items_count}</td>
                                 <td><StageBadge row={row} /></td><td><StageProgress row={row} /></td>
                                 <td>{row.assignee ? <span className="staff-cell"><Avatar name={row.assignee} />{row.assignee}</span> : '—'}</td>
                                 <td title={row.last_activity_at ? stamp(row.last_activity_at) : undefined} className={overdue(row, today) ? 'late' : 'muted'}>{overdue(row, today) ? 'Overdue · ' : ''}{lastActivity(row)}</td>
@@ -315,7 +314,7 @@ function InvoicePreview({ row, today }: { row: Invoice; today: string }) {
         <div className="drawer-body">
             <StageProgress row={row} labelled />
             <dl className="drawer-metrics">
-                <div><dt>Invoice value</dt><dd>{money(row.total_amount)}</dd></div>
+                <div><dt>Invoice value</dt><dd>{totalMoney(row.total_amount)}</dd></div>
                 <div><dt>Items</dt><dd>{row.items_count} lines</dd></div>
                 <div><dt>Last update</dt><dd>{lastActivity(row)}</dd></div>
                 <div><dt>Since tracking began</dt><dd>{elapsed(data?.first_event_at ?? null, completed(row) && row.last_activity_at ? new Date(row.last_activity_at).getTime() : undefined)}</dd></div>

@@ -12,6 +12,7 @@
     .tblwrap table.loan-table { min-width: 1080px; }
     .tblwrap table.loan-table-out { min-width: 1380px; }
     .tblwrap table.audit-table { min-width: 890px; }
+    .tblwrap table.incentive-table { min-width: 760px; }
     .tblwrap table.register-short-table { min-width: 0; }
     .tblwrap th.r { text-align: right; }
     th { height: auto; }
@@ -32,6 +33,10 @@
     .register-stats { display: grid; gap: 10px; margin-top: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .register-panel { margin-top: 14px; }
     .register-panel h2 { font-size: 17px; font-weight: 700; }
+    .hr-filters { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+    .hr-settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 365px), 1fr)); align-items: start; gap: 0 14px; }
+    .register-filter-action { display: inline-flex; align-items: center; gap: 6px; min-height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--ink); font-weight: 600; }
+    .register-filter-action:hover { background: var(--tealbg); color: var(--teal); }
     .register-group { position: static; background: var(--tealbg); color: var(--teal); }
     .audit-toggle-row { cursor: pointer; }
     .audit-detail { background: var(--bg); }
@@ -43,6 +48,7 @@
         .filters .choice select { max-width: none; }
         .filters .choice { max-width: 100%; }
         .filters .choice select, .filters .register-date input { font-size: 16px; }
+        .hr-filters .fld input { font-size: 16px; }
         .register-stats { gap: 6px; }
         .register-stats .kpi { padding: 10px; }
         .acts .ib { width: 36px; height: 40px; }

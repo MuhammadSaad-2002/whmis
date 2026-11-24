@@ -2,6 +2,7 @@
 
 namespace App\Exports;
 
+use App\Support\MoneyDisplay;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
@@ -66,35 +67,52 @@ class ReportExport extends DefaultValueBinder implements FromArray, ShouldAutoSi
 
     public function styles(Worksheet $sheet): void
     {
-        if ($this->sectionTitle === null) return;
-
         $last = Coordinate::stringFromColumnIndex(count($this->columns));
         $headingCount = count($this->headings());
-        for ($i = 1; $i <= $headingCount - 3; $i++) {
+        $header = $this->sectionTitle === null ? 1 : $headingCount;
+        for ($i = 1; $i <= $header - 3; $i++) {
             $range = "A{$i}:{$last}{$i}";
             $sheet->mergeCells($range)->getStyle($range)->getAlignment()->setWrapText(true);
             $sheet->getRowDimension($i)->setRowHeight($i === 1 ? 18 : 28);
         }
 
-        $header = $headingCount;
         foreach ([['columns' => $this->columns, 'rows' => $this->rows, 'totals' => $this->totals], ...$this->sections] as $section) {
-            $total = $header + count($section['rows']) + (int) ($section['totals'] !== []);
+            $dataEnd = $header + count($section['rows']);
+            $hasTotals = $section['totals'] !== [];
+            $total = $dataEnd + (int) $hasTotals;
             $sectionLast = Coordinate::stringFromColumnIndex(count($section['columns']));
-            $sheet->getStyle('A'.($header - 1).":{$sectionLast}{$header}")->getFont()->setBold(true);
-            $sheet->getStyle("A{$total}:{$sectionLast}{$total}")->getFont()->setBold(true);
+            $firstHeading = $this->sectionTitle !== null || $header !== 1 ? $header - 1 : $header;
+            $sheet->getStyle("A{$firstHeading}:{$sectionLast}{$header}")->getFont()->setBold(true);
+            if ($hasTotals) $sheet->getStyle("A{$total}:{$sectionLast}{$total}")->getFont()->setBold(true);
             foreach ($section['columns'] as $index => $column) {
                 $letter = Coordinate::stringFromColumnIndex($index + 1);
                 if (($column['wrap'] ?? false) && $section['rows'] !== []) {
-                    $dataEnd = $header + count($section['rows']);
                     $sheet->getColumnDimension($letter)->setAutoSize(false)->setWidth(36);
                     $sheet->getStyle($letter.($header + 1).":{$letter}{$dataEnd}")->getAlignment()->setWrapText(true);
                 }
-                if (($column['format'] ?? null) === 'money' && $total !== $header) {
-                    $sheet->getStyle($letter.($header + 1).":{$letter}{$total}")->getNumberFormat()->setFormatCode('#,##0.00');
+                if (($column['format'] ?? null) === 'money') {
+                    if ($dataEnd > $header) {
+                        $sheet->getStyle($letter.($header + 1).":{$letter}{$dataEnd}")->getNumberFormat()->setFormatCode('#,##0.00');
+                    }
+                    if ($column['final'] ?? false) {
+                        foreach ($section['rows'] as $rowIndex => $row) {
+                            $this->styleTotal($sheet, $letter.($header + $rowIndex + 1), $row[$column['key']] ?? null);
+                        }
+                    }
+                    $value = $section['totals'][$column['key']] ?? null;
+                    if ($hasTotals) $this->styleTotal($sheet, "{$letter}{$total}", $value);
                 }
             }
             $header = $total + 3;
         }
+    }
+
+    private function styleTotal(Worksheet $sheet, string $cell, mixed $value): void
+    {
+        if (! is_numeric($value)) return;
+        // The cell remains numeric for Excel formulas and sorting.
+        $sheet->getStyle($cell)->getNumberFormat()
+            ->setFormatCode(str_contains(MoneyDisplay::total($value), '.') ? '#,##0.00' : '#,##0');
     }
 
     private function tableRows(array $columns, array $rows, array $totals): array

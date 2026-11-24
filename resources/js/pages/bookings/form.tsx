@@ -19,7 +19,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { draftWasSaved, useDraftLeave } from '@/hooks/use-draft-leave';
 import AppLayout from '@/layouts/app-layout';
 import type { VisitOptions } from '@inertiajs/core';
-import { amount, dec2, money, pakistanDate, qty, toNumber } from '@/lib/format';
+import { amount, dec2, money, pakistanDate, qty, toNumber, totalMoney } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { combineEffects } from '@/lib/incentive';
 import { computeLine, computeTotals, effectiveDiscountPercent } from '@/lib/invoice-math';
@@ -55,6 +55,7 @@ interface BookingDto extends BookingTimestamps {
     status: string;
     notes: string | null;
     total_amount: string;
+    rounding_amount?: string | null;
     sales_invoice_id: number | null;
     customer?: { id: number; name: string; city: string | null };
     booker?: { id: number; name: string };
@@ -268,6 +269,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
         () => computeTotals(computed.filter((_, i) => rows[i].product_id), {}),
         [computed, rows],
     );
+    const rounding = toNumber(readonly ? booking?.rounding_amount : totals.rounding_amount);
 
     const grid = useKeyboardGrid({
         rowCount: rows.length,
@@ -1047,12 +1049,13 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                             <span className="inline-flex items-center gap-1.5 font-medium text-muted-foreground">
                                 Total <ChevronDown aria-hidden="true" className="size-4 group-open:rotate-180" />
                             </span>
-                            <span className="break-words text-right text-lg font-bold tabular-nums">{money(totals.total_amount)}</span>
+                            <span className="break-words text-right text-lg font-bold tabular-nums">{totalMoney(readonly && booking ? booking.total_amount : totals.total_amount)}</span>
                         </summary>
                         <dl className="mb-2 grid grid-cols-3 gap-2 rounded-lg bg-muted px-2.5 py-2 text-xs tabular-nums">
                             <div><dt className="text-muted-foreground">Subtotal</dt><dd>{amount(totals.subtotal)}</dd></div>
                             <div><dt className="text-muted-foreground">Discounts</dt><dd>−{amount(totals.item_discount_total)}</dd></div>
                             <div><dt className="text-muted-foreground">GST</dt><dd>+{amount(totals.item_gst_total)}</dd></div>
+                            {rounding !== 0 && <div><dt className="text-muted-foreground">Rounding</dt><dd>{amount(rounding)}</dd></div>}
                         </dl>
                     </details>
                     {hasMobileErrors && <p role="alert" className="mb-1.5 text-xs font-medium text-destructive">{ALERT_FIX}</p>}
@@ -1062,7 +1065,8 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                         <span>Subtotal <span className="ml-1">{amount(totals.subtotal)}</span></span>
                         <span>Discounts <span className="ml-1">−{amount(totals.item_discount_total)}</span></span>
                         <span>GST <span className="ml-1">+{amount(totals.item_gst_total)}</span></span>
-                        <span className="ml-auto text-lg text-primary sm:text-2xl">Total <span className="ml-1">{money(totals.total_amount)}</span></span>
+                        {rounding !== 0 && <span>Rounding <span className="ml-1">{amount(rounding)}</span></span>}
+                        <span className="ml-auto text-lg text-primary sm:text-2xl">Total <span className="ml-1">{totalMoney(readonly && booking ? booking.total_amount : totals.total_amount)}</span></span>
                     </div>
                 </div>}
             </div>

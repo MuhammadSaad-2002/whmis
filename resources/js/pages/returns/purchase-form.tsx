@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useInvoiceHotkeys } from '@/hooks/use-keyboard-grid';
 import AppLayout from '@/layouts/app-layout';
-import { money, shortDate, toNumber } from '@/lib/format';
+import { shortDate, toNumber, totalMoney } from '@/lib/format';
+import { returnTotal, type ReturnRounding } from '@/lib/invoice-math';
 import { ALERT_FIX } from '@/lib/form-validation';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
@@ -37,6 +38,7 @@ interface LoadedInvoice {
     invoice_number: string;
     supplier: string;
     invoice_date: string;
+    rounding?: ReturnRounding | null;
 }
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -105,8 +107,9 @@ export default function PurchaseReturnForm({ warehouse }: { warehouse: { id: num
 
     const lineById = useMemo(() => new Map(lines.map((l) => [String(l.line_id), l])), [lines]);
     const total = useMemo(
-        () => rows.reduce((sum, r) => sum + toNumber(r.qty) * (lineById.get(r.line_id)?.unit_amount ?? 0), 0),
-        [rows, lineById],
+        () => returnTotal(rows.reduce((sum, r) => sum + toNumber(r.qty) * (lineById.get(r.line_id)?.unit_amount ?? 0), 0),
+            rows.reduce((sum, r) => sum + (r.line_id ? toNumber(r.qty) : 0), 0), invoice?.rounding),
+        [rows, lineById, invoice],
     );
 
     const submit = () => {
@@ -130,7 +133,7 @@ export default function PurchaseReturnForm({ warehouse }: { warehouse: { id: num
             toast.error('One or more return quantities exceed the returnable amount.');
             return;
         }
-        if (!confirm(`Post this return for ${money(total)}? Stock and the supplier ledger update immediately.`)) return;
+        if (!confirm(`Post this return for ${totalMoney(total)}? Stock and the supplier ledger update immediately.`)) return;
         setSaving(true);
         router.post(route('returns.purchases.store'), {
             purchase_invoice_id: invoice.id,
@@ -194,8 +197,8 @@ export default function PurchaseReturnForm({ warehouse }: { warehouse: { id: num
 
                         <div className="sticky bottom-0 z-10 mt-auto ml-auto w-80 space-y-1 rounded-xl border bg-background p-4 text-base">
                             <div className="flex justify-between text-xl font-bold">
-                                <span>Debit Note Total</span>
-                                <span className="tabular-nums">{money(total)}</span>
+                                <span>Estimated Debit Note Total</span>
+                                <span className="tabular-nums">{totalMoney(total)}</span>
                             </div>
                             <p className="text-xs text-muted-foreground">
                                 The dropdown lists only this invoice's products. Posting withdraws stock from the received batch and issues a supplier debit note.
@@ -222,7 +225,7 @@ export default function PurchaseReturnForm({ warehouse }: { warehouse: { id: num
                                     {hit.supplier} · {shortDate(hit.invoice_date)}
                                 </div>
                             </div>
-                            <span className="text-xs tabular-nums text-muted-foreground">{money(hit.total_amount)}</span>
+                            <span className="text-xs tabular-nums text-muted-foreground">{totalMoney(hit.total_amount)}</span>
                         </CommandItem>
                     ))}
                 </CommandList>

@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\LedgerEntry;
 use App\Models\PurchaseInvoice;
 use App\Models\SalesInvoice;
+use App\Services\CustomerReceiptReport;
 use App\Services\DashboardService;
 use App\Services\ReportPdfRenderer;
 use App\Services\ReportService;
@@ -49,6 +50,7 @@ class DashboardController extends Controller
         $todaySales = $reports->salesPeriodTotals(now()->startOfDay(), now());
         $todayPurchases = $reports->purchasePeriodTotals(now()->startOfDay(), now());
         $monthSales = $reports->salesPeriodTotals(now()->startOfMonth(), now());
+        $receiptDate = now('Asia/Karachi');
 
         $receivable = (float) LedgerEntry::where('party_type', 'customer')
             ->selectRaw('COALESCE(SUM(debit - credit), 0) as v')->value('v');
@@ -61,6 +63,7 @@ class DashboardController extends Controller
                 'today_sales_count' => SalesInvoice::where('status', 'posted')->whereDate('invoice_date', $today)->count(),
                 'today_purchases' => $todayPurchases['net_purchases'],
                 'month_sales' => $monthSales['net_sales'],
+                'month_received' => app(CustomerReceiptReport::class)->total($receiptDate->copy()->startOfMonth(), $receiptDate),
                 'month_profit' => $monthSales['net_profit'],
                 'month_payroll_expense' => app(\App\Services\HrReportService::class)->totals(now()->startOfMonth(), now())['expense'],
                 'receivable' => $receivable,

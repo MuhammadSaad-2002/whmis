@@ -32,6 +32,7 @@ class PurchaseInvoice extends Model implements AuditableContract
             'gst_percent' => 'decimal:2',
             'gst_amount' => 'decimal:2',
             'total_amount' => 'decimal:2',
+            'rounding_amount' => 'decimal:2',
             'total_margin' => 'decimal:2',
             'margin_percent' => 'decimal:2',
         ];

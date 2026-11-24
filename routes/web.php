@@ -86,6 +86,12 @@ Route::middleware(['auth', 'licensed'])->group(function () {
             Route::get('finance-reversals/{kind}/{id}', 'reversalPreview')->whereIn('kind', ['receipt', 'return']);
         });
         Route::post('finance-approvals', 'createApproval')->middleware(AuthorizeOperations::class.':finance.request');
+        Route::get('finance-approvals/options', 'approvalOptions')->middleware([
+            AuthorizeOperations::class.':finance.request', AuthorizeOperations::class.':finance.review',
+        ])->name('finance.approvals.options');
+        Route::get('finance-approvals/share-preview', 'approvalSharePreview')->middleware([
+            AuthorizeOperations::class.':finance.request', AuthorizeOperations::class.':finance.review',
+        ])->name('finance.approvals.share-preview');
         Route::post('finance-approvals/{id}/approve', 'approve')->middleware(AuthorizeOperations::class.':finance.approve');
         Route::post('finance-approvals/{id}/post', 'postApproval')->middleware(AuthorizeOperations::class.':finance.post');
         Route::post('finance-approvals/{id}/withdraw', 'withdraw')->middleware(AuthorizeOperations::class.':finance.request');

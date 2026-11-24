@@ -39,8 +39,8 @@
             @foreach(['Monthly basic' => $s['basic'], 'Monthly allowances' => $s['allowances'], 'Unpaid-day deduction (included in proration)' => $s['unpaid_deduction'], 'Salary after proration and absence' => $item->base, 'Overtime' => $item->overtime, 'Bonus' => $item->bonus, 'Commission' => $item->commission, 'Other deductions' => $item->deductions, 'Advance recovery' => $item->recovery] as $label => $value)
                 <tr><td>{{ $label }}</td><td class="num">{{ number_format($value, 2) }}</td></tr>
             @endforeach
-            <tr class="subtotal"><td>Net Salary</td><td class="num">{{ number_format($item->net_pay, 2) }}</td></tr>
-            <tr><td>Current Unpaid Balance</td><td class="num">{{ number_format($due, 2) }}</td></tr>
+            <tr class="subtotal"><td>Net Salary</td><td class="num">{{ \App\Support\MoneyDisplay::total($item->net_pay) }}</td></tr>
+            <tr><td>Current Unpaid Balance</td><td class="num">{{ \App\Support\MoneyDisplay::total($due) }}</td></tr>
         </tbody>
     </table>
 

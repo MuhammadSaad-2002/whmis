@@ -2,7 +2,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { SearchField } from '@/components/ui/search-field';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { money, qty, toNumber } from '@/lib/format';
+import { money, qty, toNumber, totalMoney } from '@/lib/format';
 import { type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { AlertTriangle, ArrowDownLeft, ArrowDownUp, ArrowUpRight, CalendarDays, Check, CheckCircle2, ChevronDown, Clock, FileDown, FileText, LayoutGrid, Pencil, RefreshCw, TrendingUp } from 'lucide-react';
@@ -13,6 +13,8 @@ import './executive.css';
 interface Kpis {
     sales: number;
     sales_delta: number | null;
+    received: number;
+    received_delta: number | null;
     profit: number;
     profit_delta: number | null;
     margin_pct: number;
@@ -193,13 +195,13 @@ const RecentSales = memo(function RecentSales({ sales }: { sales: RecentSale[] }
                         <td>{row.customer?.name?.toUpperCase() ?? '—'}</td>
                         <td className="exec-muted">{dateText(row.invoice_date)}</td>
                         <td><span className={`exec-status ${row.status}`}>{row.status}</span></td>
-                        <td className="right exec-num"><b>{money(row.total_amount)}</b></td>
+                        <td className="right exec-num"><b>{totalMoney(row.total_amount)}</b></td>
                     </tr>)}
                     {!rows.length && <tr><td colSpan={5} className="exec-empty">No invoices match.</td></tr>}
                 </tbody>
             </table>
         </div>
-        <p className="exec-note" aria-live="polite">{rows.length} {rows.length === 1 ? 'invoice' : 'invoices'} · total {money(billTotal(rows))}</p>
+        <p className="exec-note" aria-live="polite">{rows.length} {rows.length === 1 ? 'invoice' : 'invoices'} · total {totalMoney(billTotal(rows))}</p>
     </section>;
 });
 
@@ -435,16 +437,16 @@ export default function ExecutiveDashboard({ asOf, filterValues, kpis, financial
         <main className="executive">
             <Header asOf={asOf} filterValues={filterValues} visibleSections={visibleSections} onSectionChange={changeSection} />
             <section className="exec-grid" aria-label="Key performance indicators">
-                <Kpi title="Net Sales" color={colors.sales} value={money(kpis.sales)} foot={<Delta value={kpis.sales_delta} />}><Spark values={monthlyTrend.map((point) => point.sales)} color={colors.sales} /></Kpi>
-                <Kpi title="Net Profit" color={colors.profit} value={money(kpis.profit)} foot={<Delta value={kpis.profit_delta} />}><Spark values={monthlyTrend.map((point) => point.profit)} color={colors.profit} /></Kpi>
+                <Kpi title="Net Sales" color={colors.sales} value={totalMoney(kpis.sales)} foot={<><Delta value={kpis.sales_delta} /> · {kpis.invoice_count} posted{kpis.average_invoice !== null && <span title="Average posted invoice value"> · avg {totalMoney(kpis.average_invoice)}</span>}</>}><Spark values={monthlyTrend.map((point) => point.sales)} color={colors.sales} /></Kpi>
+                <Kpi title="Actual Receipts" color="#087568" value={totalMoney(kpis.received)} foot={<><Delta value={kpis.received_delta} /> · by payment date</>}>
+                    <Spark values={monthlyTrend.map((point) => point.received)} color="#087568" />
+                </Kpi>
+                <Kpi title="Net Profit" color={colors.profit} value={totalMoney(kpis.profit)} foot={<Delta value={kpis.profit_delta} />}><Spark values={monthlyTrend.map((point) => point.profit)} color={colors.profit} /></Kpi>
                 <Kpi title="Net Margin" color="#64748b" value={kpis.sales > 0 ? percent(kpis.margin_pct) : '—'}
                     foot={<Delta value={kpis.prev_margin_pct === null || kpis.sales <= 0 ? null : kpis.margin_pct - kpis.prev_margin_pct} points />}>
                     <Spark values={monthlyTrend.map((point) => share(point.profit, point.sales))} color="#64748b" />
                 </Kpi>
-                <Kpi title="Net Purchases" color={colors.purchases} value={money(kpis.purchases)} foot={<Delta value={kpis.purchases_delta} invert />}><Spark values={monthlyTrend.map((point) => point.purchases)} color={colors.purchases} /></Kpi>
-                <Kpi title="Invoices · Avg value" color={colors.cogs} value={<>{kpis.invoice_count}{kpis.average_invoice !== null && <small>· {money(kpis.average_invoice)}</small>}</>} foot="posted sales invoices in period">
-                    <Spark values={monthlyTrend.map((point) => point.invoice_count)} color={colors.cogs} />
-                </Kpi>
+                <Kpi title="Net Purchases" color={colors.purchases} value={totalMoney(kpis.purchases)} foot={<Delta value={kpis.purchases_delta} invert />}><Spark values={monthlyTrend.map((point) => point.purchases)} color={colors.purchases} /></Kpi>
                 <Kpi title="Net Position" color={colors.danger} value={money(financials.net_position)} negative={financials.net_position < 0} foot="receivables − payables ± staff">
                     <Meter parts={[{ width: arBar, color: colors.profit }, { width: ap > 0 ? 100 - arBar : 0, color: '#f3b1b1' }]} />
                     <div className="exec-meta"><span title={money(financials.receivable)}>AR {compact(financials.receivable)}</span><span title={money(financials.payable)}>AP {compact(financials.payable)}</span></div>
@@ -485,7 +487,7 @@ export default function ExecutiveDashboard({ asOf, filterValues, kpis, financial
             <div className="exec-grid">
                 <section className="exec-card exec-c4">
                     <CardHead title="Receivables Aging" tag="as of now" />
-                    <div className="exec-donut-layout"><Donut slices={agingSlices} label="Outstanding" value={money(agingTotal)} /><Breakdown slices={agingSlices} renderValue={(slice) => money(slice.value)} base={agingTotal} /></div>
+                    <div className="exec-donut-layout"><Donut slices={agingSlices} label="Outstanding" value={totalMoney(agingTotal)} /><Breakdown slices={agingSlices} renderValue={(slice) => money(slice.value)} base={agingTotal} /></div>
                     <p className="exec-note">{agingTotal > 0 ? <><b className="exec-red">{percent(share(agingSlices[3].value, agingTotal))}</b> is past 90 days · {percent(share(agingSlices[1].value, agingTotal), 0)} sits in the 31–60 day bucket.</> : 'No aged receivables.'}</p>
                 </section>
                 <ProductsCard rows={topProducts} total={rankingTotals.products} />

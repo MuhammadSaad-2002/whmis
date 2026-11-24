@@ -6,7 +6,7 @@ import { WorkspaceRecordLink } from '@/components/workspace/record-link';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { money, shiftDate, shortDate } from '@/lib/format';
+import { shiftDate, shortDate, totalMoney } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Head, Link, router } from '@inertiajs/react';
 import { ArrowRight, Check, ChevronDown, ChevronRight, Eye, List, Plus, SlidersHorizontal, UserRound, X } from 'lucide-react';
@@ -189,13 +189,13 @@ export default function BookingsIndex({ bookings, customers, filters, statusSumm
                                         <td>{booking.booker?.name ?? '—'}</td>
                                         <td>{shortDate(booking.booking_date)}</td>
                                         <td className="date">{bookingDateTime(booking.created_at)}<small className="muted">Updated: {bookingDateTime(booking.updated_at)}</small></td>
-                                        <td className="r num number-cell">{money(booking.total_amount)}</td>
+                                        <td className="r num number-cell">{totalMoney(booking.total_amount)}</td>
                                         <td className="date"><StatusPill status={booking.status} />{statusTimestamp(booking) && <small className="muted">{bookingDateTime(statusTimestamp(booking))}</small>}</td>
                                         <td className="acts-cell"><div className="acts"><BookingActions booking={booking} {...access} /><Link className="ib" title="Open booking" aria-label={`Open ${booking.booking_number}`} href={href}><Eye className="i" /></Link></div></td>
                                     </tr>;
                                 })}
                             </tbody>
-                            <tfoot><tr><td colSpan={5}>Total · {countLabel(bookings.total)}</td><td className="r num">{money(shownValue)}</td><td colSpan={2} /></tr></tfoot>
+                            <tfoot><tr><td colSpan={5}>Total · {countLabel(bookings.total)}</td><td className="r num">{totalMoney(shownValue)}</td><td colSpan={2} /></tr></tfoot>
                         </table>
                     </div>
                 </>}
@@ -219,7 +219,7 @@ export default function BookingsIndex({ bookings, customers, filters, statusSumm
 }
 
 function BookingKpi({ title, value, color, note }: { title: string; value: number; color: string; note: string }) {
-    return <div className="card kpi"><div className="lbl"><i style={{ background: color }} />{title}</div><div className="val num">{money(value)}</div><div className="foot">{note}</div></div>;
+    return <div className="card kpi"><div className="lbl"><i style={{ background: color }} />{title}</div><div className="val num">{totalMoney(value)}</div><div className="foot">{note}</div></div>;
 }
 
 type BookingActionsProps = { booking: BookingRow; canApprove: boolean; canConvert: boolean; canViewSale: boolean; mobile?: boolean };
@@ -238,7 +238,7 @@ function BookingCard(props: BookingActionsProps) {
             </div>
             <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-xs">
                 <time dateTime={booking.booking_date} className="muted">{shortDate(booking.booking_date)}</time>
-                <span className="num text-sm font-bold">{money(booking.total_amount)}</span>
+                <span className="num text-sm font-bold">{totalMoney(booking.total_amount)}</span>
             </div>
         </Link>
         <details className="booking-card-details group">

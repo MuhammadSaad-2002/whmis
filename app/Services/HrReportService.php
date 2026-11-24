@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\{Employee, EmployeeAttendance, EmployeeLeave, HrLeaveType, HrTransaction, PayrollItem, SalesInvoice, SalesReturn, PaymentAllocation};
+use App\Models\{Employee, EmployeeAttendance, EmployeeLeave, HrLeaveType, HrTransaction, PayrollItem, SalesInvoice, SalesReturn};
 use Illuminate\Support\Carbon;
 
 class HrReportService
@@ -16,7 +16,7 @@ class HrReportService
             'hr-payroll'=>['Payroll Register','Posted payroll by payroll month, earnings, deductions and current unpaid salaries',['date_range']],
             'hr-balances'=>['Employee Balances','Current salary payable and recoverable employee advances',[]],
             'hr-ledger'=>['Employee Ledger','Append-only HR expense, payable, advance and cash movements',['date_range']],
-            'hr-bookers'=>['Booker Performance','Employee Bookers: explicitly attributed sales, returns, collected allocations and monthly targets',['date_range']],
+            'hr-bookers'=>['Booker Performance','Employee Bookers: explicitly attributed sales, returns, actual allocated receipts and monthly targets',['date_range']],
             'hr-operating-profit'=>['Profit after Payroll','Sales contribution less posted payroll expense; excludes other operating expenses',['date_range']],
         ];
         $result=[];
@@ -44,8 +44,9 @@ class HrReportService
 
     public function build(string $key, array $filters): array
     {
-        $from=Carbon::parse($filters['from']??now()->startOfMonth()->toDateString())->startOfDay();
-        $to=Carbon::parse($filters['to']??now()->toDateString())->endOfDay();
+        $today = now('Asia/Karachi');
+        $from = Carbon::parse($filters['from'] ?? $today->copy()->startOfMonth()->toDateString(), 'Asia/Karachi')->startOfDay();
+        $to = Carbon::parse($filters['to'] ?? $today->toDateString(), 'Asia/Karachi')->endOfDay();
         if($key==='hr-employees') return $this->result(['number'=>'Employee #','name'=>'Employee','department'=>'Department','designation'=>'Designation','joined'=>['Joined','date'],'left'=>['Last Day','date'],'status'=>'Status','booker'=>'Booker'],Employee::with('department','designation')->orderBy('name')->get()->map(fn($e)=>['number'=>$e->employee_number,'name'=>$e->name,'department'=>$e->department?->name,'designation'=>$e->designation?->name,'joined'=>$e->joining_date->toDateString(),'left'=>$e->leaving_date?->toDateString(),'status'=>$e->status,'booker'=>$e->is_booker?'Yes':'No'])->all());
         if($key==='hr-attendance') {
             $employees=Employee::pluck('name','id');
@@ -65,18 +66,22 @@ class HrReportService
         if($key==='hr-ledger') return $this->result(['date'=>['Date','date'],'number'=>'Transaction','name'=>'Employee','kind'=>'Type','expense'=>['Expense','money'],'payable'=>['Payable Change','money'],'advance'=>['Advance Change','money'],'cash_out'=>['Cash Out / (In)','money'],'notes'=>'Notes'],HrTransaction::with('employee:id,name')->whereDate('date','>=',$from)->whereDate('date','<=',$to)->orderBy('date')->orderBy('id')->get()->map(fn($t)=>['date'=>$t->date->toDateString(),'number'=>$t->number,'name'=>$t->employee->name,'kind'=>$t->kind,'expense'=>(float)$t->expense,'payable'=>(float)$t->payable,'advance'=>(float)$t->advance,'cash_out'=>(float)$t->cash_out,'notes'=>$t->notes])->all());
         if($key==='hr-bookers') {
             $rows=[];
+            $receipts = app(CustomerReceiptReport::class)->byBooker($from, $to, customerFallback: false);
             foreach(Employee::where('is_booker',true)->whereNotNull('user_id')->with('salaries')->get() as $e) {
                 $sales=(float)SalesInvoice::where('booker_id',$e->user_id)->where('status','posted')->whereDate('invoice_date','>=',$from)->whereDate('invoice_date','<=',$to)->sum('total_amount');
                 $returns=(float)SalesReturn::where('status','posted')->whereHas('invoice',fn($q)=>$q->where('booker_id',$e->user_id)->where('status','posted'))->whereDate('return_date','>=',$from)->whereDate('return_date','<=',$to)->sum('total_amount');
-                $collected=(float)PaymentAllocation::where('invoice_type','sales_invoice')->whereIn('invoice_id',SalesInvoice::where('booker_id',$e->user_id)->where('status','posted')->select('id'))->whereHas('payment',fn($q)=>$q->where('status','completed')->whereDate('payment_date','>=',$from)->whereDate('payment_date','<=',$to))->sum('amount');
+                $collected = (float) $receipts->get($e->user_id, 0);
                 $target=0;
                 for($month=$from->copy()->startOfMonth();$month->lte($to);$month->addMonth()) {
-                    if($e->joining_date->gt($month->copy()->endOfMonth()) || ($e->leaving_date && $e->leaving_date->lt($month))) continue;
-                    $s=$e->salaries->first(fn($s)=>$s->effective_from->lte($month)); $target+=(float)($s?->sales_target??0);
+                    $monthStart = $month->toDateString();
+                    if ($e->joining_date->toDateString() > $month->copy()->endOfMonth()->toDateString() || ($e->leaving_date && $e->leaving_date->toDateString() < $monthStart)) continue;
+                    $s = $e->salaries->first(fn ($s) => $s->effective_from->toDateString() <= $monthStart);
+                    $target += (float) ($s?->sales_target ?? 0);
                 }
                 $rows[]=['name'=>$e->name,'sales'=>$sales,'returns'=>$returns,'net_sales'=>round($sales-$returns,2),'collections'=>$collected,'target'=>$target];
             }
-            return $this->result(['name'=>'Booker','sales'=>['Sales','money'],'returns'=>['Returns','money'],'net_sales'=>['Net Sales','money'],'collections'=>['Allocated Collections','money'],'target'=>['Targets (Full Months)','money']],$rows);
+            return $this->result(['name'=>'Booker','sales'=>['Sales','money'],'returns'=>['Returns','money'],'net_sales'=>['Net Sales','money'],'collections'=>['Actual Allocated Receipts','money'],'target'=>['Targets (Full Months)','money']],$rows)
+                + ['notes' => [CustomerReceiptReport::NOTE, 'Receipts are attributed by invoice allocation and payment date, not by invoice date.']];
         }
         $sales=app(ReportService::class)->salesPeriodTotals($from,$to);
         $expense=$this->totals($from,$to)['expense'];

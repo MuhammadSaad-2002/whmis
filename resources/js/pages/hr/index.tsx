@@ -1,20 +1,60 @@
-import { Paginator, type PaginatedData } from '@/components/paginator';
+import { MasterStatus } from '@/components/master-register';
+import { type PaginatedData } from '@/components/paginator';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { SearchField } from '@/components/ui/search-field';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useTreasuryPayment } from '@/hooks/use-treasury-payment';
 import { money, shortDate } from '@/lib/format';
-import { Link, router } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
+import { CalendarDays, Plus, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Editor, Grid, HrLayout, choices, nameOf, options, selectClass, today, type Field, type Option, type Row, type Values } from './shared';
+import { Editor, Grid, HrLayout, choices, nameOf, options, today, type Field, type Option, type Row, type Values } from './shared';
 
 interface Props {section:string;records:PaginatedData<Row>;employees:Option[];departments:Row[];designations:Row[];leaveTypes:Row[];users:Option[];payslips:{id:number;employee_id:number;name:string;due:number}[];filters:{month:string;employee_id?:string;search?:string}}
 type Edit = { title:string;url:string;fields:Field[];initial:Values;method?:'post'|'put';description?:string };
 const titles:Record<string,string>={employees:'Employees',attendance:'Attendance',leave:'Leave Requests',payroll:'Monthly Payroll',finance:'Employee Finance',settings:'HR Settings'};
+const descriptions: Record<string, string> = {
+    employees: 'Employee records, job details, and system access',
+    attendance: 'Attendance, working hours, and approved overtime',
+    leave: 'Leave requests, approvals, and working days',
+    payroll: 'Generate, review, and post monthly payroll',
+    finance: 'Salary payments, employee advances, and repayments',
+    settings: 'Departments, designations, and leave types',
+};
+
+function HrFilters({ section, applied, employees }: { section: string; applied: Props['filters']; employees: Option[] }) {
+    const [filters, setFilters] = useState(applied);
+    const { url } = usePage();
+    const monthly = ['attendance', 'leave', 'finance'].includes(section);
+    const hasFilters = Boolean(section === 'employees' ? applied.search?.trim() : applied.employee_id || new URLSearchParams(url.split('?')[1]).has('month'));
+    return <form className="hr-filters"
+        onSubmit={event => {
+            event.preventDefault();
+            const query = section === 'employees' ? { search: filters.search?.trim() || undefined }
+                : { month: filters.month || undefined, employee_id: filters.employee_id || undefined };
+            router.get(`/hr/${section}`, query, { preserveScroll: true, preserveState: true });
+        }}>
+        {section === 'employees' && <SearchField aria-label="Search employees" placeholder="Employee name or number…" maxLength={100}
+            value={filters.search ?? ''} onChange={event => setFilters({ ...filters, search: event.target.value })} />}
+        {monthly && <>
+            <label className="fld"><CalendarDays className="i" aria-hidden="true" /><input aria-label="Month" type="month"
+                required value={filters.month} onChange={event => setFilters({ ...filters, month: event.target.value })} /></label>
+            <label className="fld choice"><UserRound className="i" aria-hidden="true" /><select aria-label="Employee" value={filters.employee_id ?? ''}
+                onChange={event => setFilters({ ...filters, employee_id: event.target.value })}>
+                <option value="">All employees</option>{employees.map(person => <option value={person.id} key={person.id}>{person.name}</option>)}
+            </select></label>
+        </>}
+        <button className="register-filter-action" type="submit">Apply</button>
+        {hasFilters && <button className="clear" type="button" onClick={() => router.get(`/hr/${section}`, {}, {
+            preserveScroll: true, preserveState: true, onSuccess: page => setFilters((page.props as unknown as Props).filters),
+        })}>Clear filters</button>}
+    </form>;
+}
+
 export default function HrIndex(p:Props) {
     const treasury=useTreasuryPayment();
-    const {can}=usePermissions(); const [edit,setEdit]=useState<Edit|null>(null); const [filters,setFilters]=useState(p.filters);
+    const {can}=usePermissions(); const [edit,setEdit]=useState<Edit|null>(null);
     const employeeField:Field={key:'employee_id',label:'Employee',required:true,options:options(p.employees)};
     const error=(errors:Record<string,string>)=>toast.error(Object.values(errors)[0]);
     const action=(url:string,data:Values)=>router.post(url,data,{preserveScroll:true,onError:error});
@@ -32,20 +72,30 @@ export default function HrIndex(p:Props) {
     const manage:Record<string,string>={employees:'employees.manage',attendance:'hr.attendance.manage',leave:'hr.leave.manage',payroll:'hr.payroll.manage',finance:'hr.payroll.pay'};
     const employeeName=(r:Row)=>p.employees.find(e=>e.id===Number(r.employee_id))?.name??'—';
     const cols:Record<string,{key:string;label:string;render?:(row:Row)=>React.ReactNode}[]>={
-        employees:[{key:'employee_number',label:'Employee #',render:r=><Link className="font-medium underline" href={`/hr/employees/${r.id}`}>{String(r.employee_number)}</Link>},{key:'name',label:'Name'},{key:'department',label:'Department',render:r=>nameOf(r.department)},{key:'designation',label:'Designation',render:r=>nameOf(r.designation)},{key:'is_booker',label:'Booker',render:r=>r.is_booker?'Yes':'—'},{key:'user',label:'Login',render:r=>nameOf(r.user)},{key:'status',label:'Status'}],
+        employees:[{key:'employee_number',label:'Employee #',render:r=><Link className="inv hover:underline" href={`/hr/employees/${r.id}`}>{String(r.employee_number)}</Link>},{key:'name',label:'Name'},{key:'department',label:'Department',render:r=>nameOf(r.department)},{key:'designation',label:'Designation',render:r=>nameOf(r.designation)},{key:'is_booker',label:'Booker',render:r=>r.is_booker?'Yes':'—'},{key:'user',label:'Login',render:r=>nameOf(r.user)},{key:'status',label:'Status'}],
         attendance:[{key:'date',label:'Date',render:r=>shortDate(String(r.date))},{key:'employee_id',label:'Employee',render:employeeName},{key:'status',label:'Status'},{key:'clock_in',label:'In'},{key:'clock_out',label:'Out'},{key:'overtime_hours',label:'OT Hours'}],
         leave:[{key:'employee',label:'Employee',render:r=>nameOf(r.employee)},{key:'leave_type',label:'Type',render:r=>nameOf(r.leave_type)},{key:'from_date',label:'From',render:r=>shortDate(String(r.from_date))},{key:'to_date',label:'To',render:r=>shortDate(String(r.to_date))},{key:'days',label:'Working Days'},{key:'is_paid',label:'Paid',render:r=>r.is_paid?'Yes':'No'},{key:'status',label:'Status'},{key:'reason',label:'Reason'}],
-        payroll:[{key:'number',label:'Payroll',render:r=><Link className="underline font-medium" href={`/hr/payroll/${r.id}`}>{String(r.number)}</Link>},{key:'period',label:'Month',render:r=>String(r.period).slice(0,7)},{key:'status',label:'Status'},{key:'items_count',label:'Employees'},{key:'items_sum_net_pay',label:'Net Salary',render:r=>money(Number(r.items_sum_net_pay))}],
+        payroll:[{key:'number',label:'Payroll',render:r=><Link className="inv hover:underline" href={`/hr/payroll/${r.id}`}>{String(r.number)}</Link>},{key:'period',label:'Month',render:r=>String(r.period).slice(0,7)},{key:'status',label:'Status'},{key:'items_count',label:'Employees'},{key:'items_sum_net_pay',label:'Net Salary',render:r=>money(Number(r.items_sum_net_pay))}],
         finance:[{key:'number',label:'Transaction'},{key:'date',label:'Date',render:r=>shortDate(String(r.date))},{key:'employee',label:'Employee',render:r=>nameOf(r.employee)},{key:'kind',label:'Type'},...['expense','payable','advance','cash_out'].map(key=>({key,label:key.replace('_',' '),render:(r:Row)=>money(Number(r[key]))})),{key:'notes',label:'Notes'}],
     };
-    return <HrLayout title={titles[p.section]} actions={manage[p.section]&&can(manage[p.section])?<Button onClick={add}>{p.section==='payroll'?'Generate Payroll':p.section==='finance'?'Record Transaction':p.section==='attendance'?'Record Attendance':p.section==='leave'?'Request Leave':'New Employee'}</Button>:null}>
-        {p.section!=='settings'&&<form className="flex flex-wrap gap-2" onSubmit={e=>{e.preventDefault();router.get(`/hr/${p.section}`,filters,{preserveState:true});}}>{p.section==='employees'?<Input placeholder="Search employees…" className="w-64" value={filters.search??''} onChange={e=>setFilters({...filters,search:e.target.value})}/>:p.section!=='payroll'&&<Input aria-label="Month" type="month" className="w-44" value={filters.month} onChange={e=>setFilters({...filters,month:e.target.value})}/>} {['attendance','leave','finance'].includes(p.section)&&<select aria-label="Employee" className={`${selectClass} max-w-64`} value={filters.employee_id??''} onChange={e=>setFilters({...filters,employee_id:e.target.value})}><option value="">All employees</option>{p.employees.map(e=><option value={e.id} key={e.id}>{e.name}</option>)}</select>}<Button variant="outline" type="submit">Apply</Button></form>}
-        {p.section==='settings'?<div className="grid gap-5 lg:grid-cols-3">{([['departments',p.departments],['designations',p.designations],['leave-types',p.leaveTypes]] as const).map(([type,rows])=><section className="space-y-3" key={type}><div className="flex justify-between items-center"><h2 className="font-semibold capitalize">{type.replace('-',' ')}</h2><Button size="sm" onClick={()=>openSetting(type)}>Add</Button></div><Grid rows={rows} columns={[{key:'name',label:'Name'},{key:'is_active',label:'Active',render:r=>r.is_active?'Yes':'No'},...(type==='leave-types'?[{key:'annual_days',label:'Days'}]:[])]} actions={r=><Button size="sm" variant="outline" onClick={()=>openSetting(type,r)}>Edit</Button>}/></section>)}</div>:<><Grid columns={cols[p.section]??[]} rows={p.records.data} actions={r=><>
+    const showActions = (p.section === 'employees' && can('employees.manage')) || (p.section === 'attendance' && can('hr.attendance.manage'))
+        || (p.section === 'leave' && can('hr.leave.approve')) || (p.section === 'finance' && can('hr.payroll.cancel'));
+    const settings = [['departments', 'Departments', p.departments], ['designations', 'Designations', p.designations], ['leave-types', 'Leave types', p.leaveTypes]] as const;
+    return <HrLayout title={titles[p.section]} description={p.section === 'settings' ? descriptions[p.section] : `${descriptions[p.section]} · ${p.records.total.toLocaleString()} records`}
+        actions={manage[p.section]&&can(manage[p.section])?<button type="button" className="hbtn pri" onClick={add}><Plus className="i" aria-hidden="true" />{p.section==='payroll'?'Generate Payroll':p.section==='finance'?'Record Transaction':p.section==='attendance'?'Record Attendance':p.section==='leave'?'Request Leave':'New Employee'}</button>:null}>
+        {p.section === 'settings' ? <div className="hr-settings-grid">
+            {settings.map(([type, label, rows]) => <Grid key={type} title={label} compactTable rows={rows}
+                controls={<><h2 className="font-bold">{label}</h2><button type="button" className="register-filter-action" aria-label={`Add to ${label.toLowerCase()}`} onClick={() => openSetting(type)}><Plus className="i" aria-hidden="true" />Add</button></>}
+                columns={[{ key: 'name', label: 'Name' }, { key: 'is_active', label: 'Status', render: row => <MasterStatus status={row.is_active ? 'active' : 'inactive'} /> }, ...(type === 'leave-types' ? [{ key: 'annual_days', label: 'Days' }] : [])]}
+                actions={row => <Button size="sm" variant="outline" onClick={() => openSetting(type, row)}>Edit</Button>} />)}
+        </div> : <Grid title={titles[p.section]} columns={cols[p.section] ?? []} rows={p.records.data} page={p.records}
+            controls={p.section !== 'payroll' && <HrFilters key={`${p.section}:${JSON.stringify(p.filters)}`} section={p.section} applied={p.filters} employees={p.employees} />}
+            actions={showActions ? r => <>
             {p.section==='employees'&&can('employees.manage')&&<Button size="sm" variant="outline" onClick={()=>openEmployee(r)}>Edit</Button>}
             {p.section==='attendance'&&can('hr.attendance.manage')&&<><Button size="sm" variant="outline" onClick={()=>openAttendance(r)}>Edit</Button><Button size="sm" variant="ghost" onClick={()=>{if(confirm('Remove this attendance entry?'))router.delete(`/hr/attendance/${r.id}`,{preserveScroll:true,onError:error});}}>Remove</Button></>}
             {p.section==='leave'&&can('hr.leave.approve')&&<>{r.status==='pending'&&['approved','rejected'].map(status=><Button key={status} variant="outline" size="sm" onClick={()=>action(`/hr/leave/${r.id}/decision`,{status})}>{status==='approved'?'Approve':'Reject'}</Button>)}{r.status==='approved'&&<Button variant="outline" size="sm" onClick={()=>{if(confirm('Cancel approved leave?'))action(`/hr/leave/${r.id}/decision`,{status:'cancelled'});}}>Cancel</Button>}</>}
             {p.section==='finance'&&can('hr.payroll.cancel')&&!r.reversal&&['salary_payment','advance','advance_repayment'].includes(String(r.kind))&&<Button variant="outline" size="sm" onClick={()=>setEdit({title:'Reverse Employee Transaction',url:`/hr/finance/${r.id}/reverse`,fields:[{key:'date',label:'Reversal Date',type:'date',required:true},{key:'reason',label:'Reason',required:true}],initial:{date:today(),reason:''}})}>Reverse</Button>}
-        </>}/><Paginator meta={p.records}/></>}
+        </> : undefined} />}
         {edit&&<Editor key={`${edit.url}-${edit.initial.id??''}`} {...edit} onClose={()=>setEdit(null)}/>}
     </HrLayout>;
 }

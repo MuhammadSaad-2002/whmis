@@ -73,11 +73,27 @@ class CommissionService
 
     public function recalculate(SalesInvoice $invoice): void
     {
+        $this->evaluate($invoice);
+    }
+
+    public function previewShare(SalesInvoice $invoice, int $share): array
+    {
+        $desired = $this->evaluate($invoice, $share);
+        $names = Employee::whereKey(collect($desired)->pluck('employee_id')->all())->pluck('name', 'id');
+
+        return collect($desired)->filter(fn ($row) => $row['sales_invoice_id'] === $invoice->id && $row['role'] === 'salesman')
+            ->map(fn ($row) => ['name' => $names[$row['employee_id']], 'calculated' => $row['calculated_paisa'], 'earned' => $row['earned_paisa']])
+            ->filter(fn ($row) => $row['calculated'] > 0)->values()->all();
+    }
+
+    /** Calculate the identical awards for posting and for a read-only proposed split. */
+    private function evaluate(SalesInvoice $invoice, ?int $sharePreview = null): array
+    {
         $key = $invoice->booking_id ? "booking:{$invoice->booking_id}" : "direct:{$invoice->id}";
-        $scope = DB::table('commission_scopes')->where('source_key', $key)->lockForUpdate()->first();
+        $scope = DB::table('commission_scopes')->where('source_key', $key)->when($sharePreview === null, fn ($q) => $q->lockForUpdate())->first();
         if (! $scope) {
-            $this->recalculateOpening($invoice);
-            return;
+            if ($sharePreview === null) $this->recalculateOpening($invoice);
+            return [];
         }
         $rules = json_decode($scope->rules, true, flags: JSON_THROW_ON_ERROR);
         $snapshots = json_decode($scope->snapshots, true, flags: JSON_THROW_ON_ERROR);
@@ -102,6 +118,7 @@ class CommissionService
                 } elseif ($role === 'salesman') {
                     $approvedShare = DB::table('finance_work_items')->where('kind','commission_share')->where('status','posted')->where('payload->invoice_id', $sale->id)->latest('id')->value('payload');
                     $share = $approvedShare ? (int) json_decode($approvedShare, true, flags: JSON_THROW_ON_ERROR)['share_bp'] : (int) $rule['dispatch_share_bp'];
+                    if ($sharePreview !== null && $sale->id === $invoice->id) $share = $sharePreview;
                     $weights = $this->salesmanWeights($facts, $origins, (int) $scope->original_salesman_id, $share, $base);
                     if (! $weights && ! $facts['ready'] && $origins->has($scope->original_salesman_id)) $weights[(int) $origins[$scope->original_salesman_id]] = $base;
                 }
@@ -110,7 +127,14 @@ class CommissionService
             }
         }
 
+        $existing = DB::table('commission_awards')->where('commission_scope_id', $scope->id)->get()
+            ->keyBy(fn ($r) => $r->sales_invoice_id.':'.$r->role.':'.$r->employee_id);
+        $employees = collect($candidates)->flatten(1)->flatMap(fn ($row) => array_keys($row['weights']))
+            ->merge($existing->pluck('employee_id'))->filter()->unique()->sort()->values();
+        if ($sharePreview === null) Employee::whereKey($employees->all())->orderBy('id')->lockForUpdate()->get(['id']);
+        $scopeInvoices = $invoices->keyBy('id');
         $desired = [];
+        $monthly = [];
         foreach ($candidates as $role => $rows) {
             $rule = $rules[$role];
             $fixed = $rule['mode'] !== 'percent';
@@ -145,6 +169,8 @@ class CommissionService
                     $collected = $fixed ? $rule['basis'] === self::VERIFIED_BASIS : $usesVerified[$employee];
                     if ($fixed && $collected) $amount = $this->scaled($amount, $facts['verified'], $facts['due_total']);
                     $due = $facts['ready'] && ($rule['mode'] !== 'full_fixed' || $readyBooking);
+                    $saleDate = $scopeInvoices[$row['invoice']]->invoice_date->toDateString();
+                    $amount = $this->cappedAmount((int) $employee, $role, (int) $row['invoice'], $saleDate, $amount, $due, $scopeInvoices->keys()->all(), $monthly);
                     $desired[$keyPrefix.$employee] = ['sales_invoice_id' => $row['invoice'], 'employee_id' => $employee,
                         'role' => $role, 'calculated_paisa' => $amount, 'earned_paisa' => $due ? $amount : 0,
                         'accrued_paisa' => $collected ? $amount : $this->scaled($amount, min($facts['paid'], $facts['due_total']), $facts['due_total']),
@@ -152,10 +178,7 @@ class CommissionService
                 }
             }
         }
-        $existing = DB::table('commission_awards')->where('commission_scope_id', $scope->id)->get()
-            ->keyBy(fn ($r) => $r->sales_invoice_id.':'.$r->role.':'.$r->employee_id);
-        $employees = collect($desired)->pluck('employee_id')->merge($existing->pluck('employee_id'))->unique()->sort()->values();
-        Employee::whereKey($employees->all())->orderBy('id')->lockForUpdate()->get(['id']);
+        if ($sharePreview !== null) return $desired;
         foreach ($existing as $key => $award) {
             if (! isset($desired[$key])) $desired[$key] = ['sales_invoice_id' => $award->sales_invoice_id, 'role' => $award->role,
                 'employee_id' => $award->employee_id, 'calculated_paisa' => 0, 'earned_paisa' => 0, 'accrued_paisa' => 0, 'state' => 'adjusted'];
@@ -173,6 +196,7 @@ class CommissionService
             $this->reconcileAward($row['employee_id'], $id, $change);
         }
         foreach ($employees as $employee) $this->offset($employee);
+        return $desired;
     }
 
     public function invoiceValue(SalesInvoice $invoice): int
@@ -373,6 +397,90 @@ class CommissionService
         return $row;
     }
 
+    /** Describe the live parties, not who happened to click Deliver in the admin panel. */
+    public function shareFacts(SalesInvoice $invoice): ?array
+    {
+        $dispatch = Dispatch::where('sales_invoice_id', $invoice->id)->first();
+        $key = $invoice->booking_id ? "booking:{$invoice->booking_id}" : "direct:{$invoice->id}";
+        $scope = DB::table('commission_scopes')->where('source_key', $key)->first();
+        $original = (int) ($scope->original_salesman_id ?? $dispatch?->original_assignee_id);
+        if (! $dispatch || $dispatch->status !== 'delivered' || ! $scope || ! $original) return null;
+        $rules = json_decode($scope->rules, true, flags: JSON_THROW_ON_ERROR);
+        if (! isset($rules['salesman']) || $rules['salesman']['mode'] === 'off') return null;
+        $weights = $this->facts($invoice, [])['weights'];
+        if (! array_filter(array_keys($weights), fn ($id) => (int) $id !== $original)) return null;
+        $ids = array_unique([$original, ...array_keys($weights)]);
+        $employees = Employee::whereIn('user_id', $ids)->pluck('name', 'user_id');
+        if (! $employees->has($original) || $employees->count() !== count($ids)) return null;
+        $deliverers = collect($weights)->map(fn ($weight, $id) => ['name' => $employees[$id], 'weight' => $weight])->values()->all();
+        $awards = DB::table('commission_awards')->where('sales_invoice_id', $invoice->id)->where('role', 'salesman');
+
+        return ['original' => $employees[$original], 'delivered' => implode(', ', array_column($deliverers, 'name')),
+            'deliverers' => $deliverers, 'calculated' => (int) $awards->sum('calculated_paisa'),
+            'due' => (int) $awards->sum('earned_paisa')];
+    }
+
+    private function cappedAmount(int $employee, string $role, int $invoice, string $date, int $amount, bool $due, array $scopeInvoices, array &$monthTotals): int
+    {
+        $cap = FinanceWorkItem::where('kind', 'commission_cap')->where('status', 'posted')
+            ->where('payload->employee_id', $employee)->where('payload->commission_role', $role)
+            ->where('payload->date', '<=', $date)->orderByDesc('payload->date')->latest('id')->first();
+        if (! $cap) return $amount;
+        $limit = (int) $cap->amount_paisa;
+        $award = DB::table('commission_awards')->where('employee_id', $employee)->where('role', $role)->where('sales_invoice_id', $invoice)->value('id');
+        $paid = $award ? -(int) DB::table('commission_entries')->where('commission_award_id', $award)
+            ->whereIn('kind', ['commission_payout','offset_payable','shortage_offset'])->sum('payable_paisa') : 0;
+        if ($cap->payload['cap_period'] === 'month') {
+            $start = substr($date, 0, 7).'-01';
+            $next = \Illuminate\Support\Carbon::parse($start)->addMonth()->toDateString();
+            $key = $employee.':'.$role.':'.$cap->id.':'.$start;
+            $monthTotals[$key] ??= (int) DB::table('commission_awards as a')->join('sales_invoices as i', 'i.id', '=', 'a.sales_invoice_id')
+                ->where('a.employee_id', $employee)->where('a.role', $role)->whereNotIn('i.id', $scopeInvoices)
+                ->where('i.invoice_date', '>=', max($start, $cap->payload['date']))->where('i.invoice_date', '<', $next)
+                ->sum('a.earned_paisa');
+            $limit = max(0, $limit - $monthTotals[$key]);
+            if ($due) $monthTotals[$key] += min($amount, max($paid, $limit));
+        }
+
+        return min($amount, max($paid, $limit));
+    }
+
+    public function recalculateForCap(int $employee, string $role, string $from): void
+    {
+        $ids = DB::table('commission_awards as a')->join('sales_invoices as i', 'i.id', '=', 'a.sales_invoice_id')
+            ->where('a.employee_id', $employee)->where('a.role', $role)->where('i.invoice_date', '>=', $from)
+            ->orderBy('i.invoice_date')->orderBy('i.id')->pluck('a.sales_invoice_id');
+        foreach (SalesInvoice::whereKey($ids->all())->orderBy('invoice_date')->orderBy('id')->get() as $invoice) $this->recalculate($invoice);
+    }
+
+    public function employeeFinance(int $employee, ?int $award = null): array
+    {
+        $due = (int) $this->balances($employee, 'payable_paisa')->sum('balance');
+        $recovery = (int) $this->balances($employee, 'recovery_paisa')->sum('balance');
+        $awardDue = $award ? (int) $this->balances($employee, 'payable_paisa', $award)->sum('balance') : $due;
+        $held = $this->recoveryHeld($employee);
+
+        return ['due' => $due, 'recovery' => $recovery, 'award_due' => $awardDue, 'held' => $held];
+    }
+
+    public function validateEmployeeRequest(int $employee, string $kind, int $amount, array $data): void
+    {
+        $facts = $this->employeeFinance($employee, isset($data['award_id']) ? (int) $data['award_id'] : null);
+        $deduct = $kind === 'recovery_repayment' && ($data['repayment_via'] ?? null) === 'commission';
+        $room = match ($kind) {
+            'commission_payout' => $facts['award_due'],
+            'recovery_repayment' => $deduct ? min($facts['due'], $facts['recovery']) : $facts['recovery'],
+            'recovery_waiver' => $facts['recovery'],
+            default => $amount,
+        };
+        if ($amount > $room) $this->treasury->fail('Amount exceeds the live employee balance.');
+        if ($kind === 'recovery_hold' && ($facts['held'] || ! $facts['recovery'])) $this->treasury->fail('Choose an employee with recovery that is not already on hold.');
+        if ($kind === 'recovery_resume' && ! $facts['held']) $this->treasury->fail('This employee’s recovery is not on hold.');
+        if ($kind === 'recovery_hold' && ! empty($data['hold_until']) && $data['hold_until'] <= max($data['date'], now('Asia/Karachi')->toDateString())) {
+            $this->treasury->fail('The restart date must be after the effective date and today.');
+        }
+    }
+
     private function balances(int $employee, string $column, ?int $award = null): Collection
     {
         return DB::table('commission_entries')->where('employee_id', $employee)->whereNotNull('commission_award_id')
@@ -381,9 +489,31 @@ class CommissionService
             ->havingRaw("SUM({$column}) > 0")->orderBy('commission_award_id')->get();
     }
 
+    private function recoveryHeld(int $employee): bool
+    {
+        if (! DB::table('commission_employee_controls')->where('employee_id', $employee)->value('hold_recovery')) return false;
+        $until = FinanceWorkItem::where('kind', 'recovery_hold')->where('status', 'posted')->where('payload->employee_id', $employee)
+            ->latest('id')->first()?->payload['hold_until'] ?? null;
+
+        return ! $until || $until > now('Asia/Karachi')->toDateString();
+    }
+
+    public function resumeExpiredHolds(): void
+    {
+        foreach (DB::table('commission_employee_controls')->where('hold_recovery', true)->pluck('employee_id') as $employee) {
+            DB::transaction(function () use ($employee) {
+                Employee::whereKey($employee)->lockForUpdate()->firstOrFail();
+                if (! $this->recoveryHeld($employee)) {
+                    DB::table('commission_employee_controls')->where('employee_id', $employee)->update(['hold_recovery' => false]);
+                    $this->offset($employee);
+                }
+            }, 3);
+        }
+    }
+
     private function offset(int $employee): void
     {
-        if (DB::table('commission_employee_controls')->where('employee_id', $employee)->value('hold_recovery')) return;
+        if ($this->recoveryHeld($employee)) return;
         $recoveries = $this->balances($employee, 'recovery_paisa');
         foreach ($this->balances($employee, 'payable_paisa') as $award) {
             $due = (int) $award->balance;
@@ -399,32 +529,59 @@ class CommissionService
         }
     }
 
+    public function deductShortage(FinanceWorkItem $item, User $actor): void
+    {
+        abort_unless($actor->can('manage-employee-commissions'), 403);
+        $employee = Employee::whereKey($item->payload['employee_id'])->lockForUpdate()->firstOrFail();
+        abort_if($employee->user_id === $actor->id || $employee->user_id !== $item->beneficiary_id, 403);
+        $left = (int) $item->amount_paisa;
+        $balances = $this->balances($employee->id, 'payable_paisa');
+        if ($left > $balances->sum('balance')) $this->treasury->fail('The amount exceeds the live commission payable.');
+        foreach ($balances as $award) {
+            if ($left === 0) break;
+            $take = min($left, (int) $award->balance);
+            $this->entry($employee->id, $award->commission_award_id, 'shortage_offset', 0, -$take, 0, 0, 'Approved deduction for an employee cash shortage', $item);
+            $left -= $take;
+        }
+    }
+
     public function postEmployeeAction(FinanceWorkItem $item, User $actor, ?string $reference): void
     {
         $employee = Employee::whereKey($item->payload['employee_id'])->lockForUpdate()->firstOrFail();
         abort_if($employee->user_id === $actor->id, 403);
         $kind = $item->kind;
+        $amount = (int) $item->amount_paisa;
+        $this->validateEmployeeRequest($employee->id, $kind, $amount, $item->payload);
         if (in_array($kind, ['recovery_hold','recovery_resume'], true)) {
             DB::table('commission_employee_controls')->updateOrInsert(['employee_id' => $employee->id], ['hold_recovery' => $kind === 'recovery_hold']);
             if ($kind === 'recovery_resume') $this->offset($employee->id);
             return;
         }
-        $this->offset($employee->id);
+        $deduct = $kind === 'recovery_repayment' && ($item->payload['repayment_via'] ?? null) === 'commission';
+        if (! $deduct) $this->offset($employee->id);
         $isPay = $kind === 'commission_payout';
         $award = $isPay && isset($item->payload['award_id']) ? (int) $item->payload['award_id'] : null;
         $balances = $this->balances($employee->id, $isPay ? 'payable_paisa' : 'recovery_paisa', $award);
-        $amount = (int) $item->amount_paisa;
         if ($amount > $balances->sum('balance')) $this->treasury->fail('Amount exceeds the live employee balance.');
-        if (in_array($kind, ['commission_payout','recovery_repayment'], true)) {
+        if (in_array($kind, ['commission_payout','recovery_repayment'], true) && ! $deduct) {
             if (! trim($reference ?? '')) $this->treasury->fail('Enter the completed transaction reference.');
             $account = $this->treasury->account((int) ($item->payload['account_id'] ?? 0), $actor);
             $this->treasury->entry($account, $kind, 'approval', $item->id, $isPay ? -$amount : $amount, $item->payload['date'], $actor, $reference);
+        }
+        if ($deduct) {
+            $left = $amount;
+            foreach ($this->balances($employee->id, 'payable_paisa') as $payable) {
+                if (! $left) break;
+                $take = min($left, (int) $payable->balance);
+                $this->entry($employee->id, $payable->commission_award_id, 'offset_payable', 0, -$take, 0, 0, 'Approved recovery deduction', $item);
+                $left -= $take;
+            }
         }
         foreach ($balances as $balance) {
             if (! $amount) break;
             $take = min($amount, (int) $balance->balance);
             $this->entry($employee->id, $balance->commission_award_id, $kind, $kind === 'recovery_waiver' ? $take : 0,
-                $isPay ? -$take : 0, $isPay ? 0 : -$take, $isPay ? $take : ($kind === 'recovery_repayment' ? -$take : 0),
+                $isPay ? -$take : 0, $isPay ? 0 : -$take, $isPay ? $take : ($kind === 'recovery_repayment' && ! $deduct ? -$take : 0),
                 substr($item->payload['notes'], 0, 250), $item);
             $amount -= $take;
         }

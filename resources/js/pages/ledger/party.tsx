@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
-import { amount, money, shortDate } from '@/lib/format';
+import { amount, shortDate, totalMoney, totalAmount } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
 import { FileDown } from 'lucide-react';
@@ -60,7 +60,7 @@ export default function LedgerParty({ party, partyType, statement, aging, outsta
                 <div className="grid gap-3 md:grid-cols-5">
                     <Card>
                         <CardHeader className="pb-1"><CardTitle className="text-sm font-medium text-muted-foreground">Outstanding</CardTitle></CardHeader>
-                        <CardContent className="text-xl font-semibold tabular-nums">{money(outstanding)}</CardContent>
+                        <CardContent className="text-xl font-semibold tabular-nums">{totalMoney(outstanding)}</CardContent>
                     </Card>
                     <Card>
                         <CardHeader className="pb-1"><CardTitle className="text-sm font-medium text-muted-foreground">Current (0–30)</CardTitle></CardHeader>
@@ -123,7 +123,7 @@ export default function LedgerParty({ party, partyType, statement, aging, outsta
                             <TableRow className="bg-muted/30">
                                 <TableCell colSpan={5} className="font-semibold">Closing Balance</TableCell>
                                 <TableCell className="text-right font-semibold tabular-nums">
-                                    {amount(displayBalance(statement.closing_balance))}
+                                    {totalAmount(displayBalance(statement.closing_balance))}
                                 </TableCell>
                             </TableRow>
                         </TableBody>

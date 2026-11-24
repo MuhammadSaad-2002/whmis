@@ -1,5 +1,5 @@
 import { chartTheme } from '@/lib/chart-theme';
-import { amount } from '@/lib/format';
+import { amount, totalAmount } from '@/lib/format';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 
 export interface DonutSlice {
@@ -45,7 +45,7 @@ export function DonutChart({ data }: { data: DonutSlice[] }) {
                 </ResponsiveContainer>
                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                     <span className="text-sm font-medium text-muted-foreground">Total</span>
-                    <span className="text-lg font-semibold tabular-nums">Rs {amount(total)}</span>
+                    <span className="text-lg font-semibold tabular-nums">Rs {totalAmount(total)}</span>
                 </div>
             </div>
 

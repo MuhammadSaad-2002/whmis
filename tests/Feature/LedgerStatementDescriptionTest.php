@@ -89,8 +89,8 @@ class LedgerStatementDescriptionTest extends TestCase
         $customer = Customer::create(['name' => 'Statement Pharmacy']);
 
         foreach ([
-            [$this->company, 'Supplier', 'ledger.supplier.pdf', '90.25', '142.75'],
-            [$customer, 'Customer', 'ledger.customer.pdf', '142.75', '90.25'],
+            [$this->company, 'Supplier', 'ledger.supplier.pdf', '90', '143'],
+            [$customer, 'Customer', 'ledger.customer.pdf', '143', '90'],
         ] as [$party, $label, $route, $expectedDebit, $expectedCredit]) {
             $post = fn ($type, $date, $charge, $settlement) => $ledger->post(
                 $party, $type, $date, $label === 'Customer' ? $charge : $settlement, $label === 'Customer' ? $settlement : $charge,
@@ -114,7 +114,9 @@ class LedgerStatementDescriptionTest extends TestCase
             $this->assertCount(4, $totals);
             $this->assertSame($expectedDebit, trim($totals->item(1)->textContent));
             $this->assertSame($expectedCredit, trim($totals->item(2)->textContent));
-            $this->assertSame('452.50', $xpath->evaluate('string(//tr[td/strong="Closing Balance"]/td[2]/strong)'));
+            $this->assertSame('453', $xpath->evaluate('string(//tr[td/strong="Closing Balance"]/td[2]/strong)'));
+            $this->assertGreaterThan(0, $xpath->query('//tr/td[normalize-space(.)="90.25"]')->length);
+            $this->assertGreaterThan(0, $xpath->query('//tr/td[normalize-space(.)="52.50"]')->length);
 
             $this->get(route($route, [$party, 'from' => $from->toDateString(), 'to' => $to->toDateString()]))
                 ->assertOk()->assertHeader('content-type', 'application/pdf');

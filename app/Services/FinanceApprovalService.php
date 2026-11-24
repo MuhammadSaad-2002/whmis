@@ -2,16 +2,20 @@
 
 namespace App\Services;
 
-use App\Models\{FinanceWorkItem, FinancialAccount, SalesInvoice, User};
+use App\Models\{Customer, FinanceWorkItem, FinancialAccount, Payment, SalesInvoice, User};
 use App\Support\Paisa;
 use Illuminate\Support\Facades\DB;
 
 class FinanceApprovalService
 {
     public const EMPLOYEE_KINDS = ['commission_payout', 'recovery_repayment', 'recovery_waiver', 'recovery_hold', 'recovery_resume'];
-    public const PRIVATE_KINDS = [...self::EMPLOYEE_KINDS, 'commission_cap', 'commission_share'];
+    public const PRIVATE_KINDS = [...self::EMPLOYEE_KINDS, 'commission_cap', 'commission_share', 'shortage_commission_offset'];
     public const KINDS = ['opening', 'transfer', 'expense', 'adjustment', 'statement', 'close_variance', 'refund', 'credit_apply', 'credit_release',
-        'shortage', 'shortage_repayment', 'shortage_receipt_reverse', 'refund_recovery', 'refund_correction', 'commission_cap', 'commission_share', 'delivery_correction', ...self::EMPLOYEE_KINDS];
+        'credit_writeoff', 'shortage', 'shortage_repayment', 'shortage_receipt_reverse', 'shortage_repayment_reverse', 'shortage_commission_offset', 'refund_recovery', 'refund_correction',
+        'commission_cap', 'commission_share', 'delivery_correction', ...self::EMPLOYEE_KINDS];
+
+    public const EVIDENCE_REQUIRED = ['opening', 'transfer', 'expense', 'statement', 'refund_correction', 'recovery_waiver'];
+    public const EXPENSE_CATEGORIES = ['Fuel & transport', 'Rent', 'Utilities', 'Repairs & maintenance', 'Office & stationery', 'Staff welfare', 'Bank charges', 'Other'];
 
     public function __construct(private TreasuryService $treasury, private InvoiceBalanceService $balance, private LedgerService $ledger) {}
 
@@ -60,8 +64,25 @@ class FinanceApprovalService
                 abort_unless($existing->kind === $kind && (int) $existing->created_by === $actor->id, 409);
                 return $existing;
             }
+            // Multipart form IDs arrive as strings. Persist numeric JSON keys consistently for ledger lookups.
+            foreach (['invoice_id','source_payment_id','target_id','account_id','day_id','credit_id','collection_id','employee_id','award_id','booking_id'] as $field) {
+                if (isset($data[$field])) $data[$field] = (int) $data[$field];
+            }
             $amount = Paisa::from($data['amount'] ?? 0);
             $beneficiary = null;
+            unset($data['accounts'], $data['customer_id'], $data['previous_paisa'], $data['share_bp'], $data['reported'], $data['verified'], $data['counted']);
+            if (! $evidence && in_array($kind, self::EVIDENCE_REQUIRED, true)) $this->treasury->fail('Attach supporting evidence for this request.');
+            if (in_array($kind, ['expense','transfer','statement','adjustment','refund','refund_recovery','shortage_repayment','commission_payout','recovery_repayment'], true)
+                && ! ($kind === 'recovery_repayment' && ($data['repayment_via'] ?? null) === 'commission')) {
+                $this->treasury->account((int) ($data['account_id'] ?? 0), $actor, $kind === 'refund' ? ($data['method'] ?? 'cash') : null);
+            }
+            if ($kind === 'transfer') {
+                if ((int) ($data['target_id'] ?? 0) === (int) $data['account_id']) $this->treasury->fail('Choose two different accounts.');
+                $this->treasury->account((int) ($data['target_id'] ?? 0), $actor);
+            }
+            if ($kind === 'expense' && (! in_array($data['category'] ?? null, self::EXPENSE_CATEGORIES, true) || ! trim($data['payee'] ?? ''))) {
+                $this->treasury->fail('Select an expense category and enter who was paid.');
+            }
             if ($kind === 'opening') {
                 abort_unless($actor->can('treasury.manage'), 403);
                 $control = DB::table('treasury_control')->where('id', 1)->lockForUpdate()->first();
@@ -77,8 +98,23 @@ class FinanceApprovalService
                 $data += ['reported' => (int) (clone $cash)->sum('reported_paisa'), 'verified' => (int) (clone $cash)->sum('verified_paisa'),
                     'counted' => (int) $day->counted_cash_paisa];
                 $amount = max(abs($data['reported'] - $data['counted']), abs($data['verified'] - $data['counted']));
+                if ($day->counted_cash_paisa === null || $amount === 0 || DB::table('delivery_collections')->where('collection_day_id', $day->id)->whereNull('recorded_at')->exists()) {
+                    $this->treasury->fail('Count the cash and verify all collections on a day with a remaining difference first.');
+                }
+                $data['date'] = $day->business_date;
+                if ($data['counted'] > $data['verified']) {
+                    $this->treasury->account((int) ($data['account_id'] ?? 0), $actor, 'cash');
+                } else {
+                    unset($data['account_id']);
+                }
                 $beneficiary = $day->salesman_id;
-            } elseif (in_array($kind, ['shortage','shortage_repayment','shortage_receipt_reverse'], true)) {
+            } elseif ($kind === 'shortage_repayment_reverse') {
+                $repayment = $this->visibleRequests($actor)->where('kind', 'shortage_repayment')->where('status', 'posted')->findOrFail($data['credit_id'] ?? 0);
+                $data['account_id'] = (int) $repayment->payload['account_id'];
+                $data['collection_id'] = (int) $repayment->payload['collection_id'];
+                $beneficiary = $repayment->beneficiary_id;
+                $amount = (int) $repayment->amount_paisa;
+            } elseif (in_array($kind, ['shortage','shortage_repayment','shortage_receipt_reverse','shortage_commission_offset'], true)) {
                 $row = DB::table('delivery_collections')->where('id', $data['collection_id'] ?? 0)->where('method', 'cash')->first();
                 abort_unless($row, 404);
                 $beneficiary = $row->reporter_id;
@@ -89,43 +125,86 @@ class FinanceApprovalService
                         $this->treasury->fail('Only an open shortage with no employee repayments can be reversed here.');
                     }
                 }
-                if (! $evidence || $amount <= 0 || ($kind === 'shortage' && ($row->recorded_at || $amount > $row->reported_paisa))
-                    || ($kind === 'shortage_repayment' && $amount > $this->shortageBalance($row))) {
-                    $this->treasury->fail('Attach supporting evidence and enter a valid cash shortage or recovery amount.');
+                if ($kind === 'shortage') {
+                    $day = app(DeliveryCollectionService::class)->lockedDay((int) $row->collection_day_id, $actor);
+                    $amountAvailable = $this->shortageAvailable($day, $row);
+                    if ($amount > $amountAvailable) $this->treasury->fail('Amount exceeds the remaining physical cash shortage for this report.');
+                    $data['date'] = $day->business_date;
                 }
-            } elseif (in_array($kind, ['refund', 'credit_apply'], true)) {
+                if ($kind === 'shortage_commission_offset') {
+                    $employee = \App\Models\Employee::where('user_id', $beneficiary)->first();
+                    if (! $employee || $amount > min($this->shortageBalance($row), app(CommissionService::class)->employeeFinance($employee->id)['due'])) {
+                        $this->treasury->fail('The amount exceeds the shortage or this Salesman’s commission due.');
+                    }
+                    $data['employee_id'] = $employee->id;
+                }
+                if ($amount <= 0 || ($kind === 'shortage' && ($row->recorded_at || $amount > $row->reported_paisa))
+                    || ($kind === 'shortage_repayment' && $amount > $this->shortageBalance($row))) {
+                    $this->treasury->fail('Enter a valid cash shortage or recovery amount.');
+                }
+            } elseif (in_array($kind, ['refund', 'credit_apply', 'credit_writeoff'], true)) {
                 if ($amount <= 0) $this->treasury->fail('Enter a positive amount.');
-                $invoice = SalesInvoice::whereKey((int) ($data['invoice_id'] ?? 0))->lockForUpdate()->firstOrFail();
-                if ($amount > $this->refundable($invoice)) $this->treasury->fail('Amount exceeds the unreserved, receipt-backed invoice credit.');
-                $data['customer_id'] = $invoice->customer_id;
-                $data['credit_note_ids'] = $invoice->postedReturns()->pluck('id')->all();
-                $data['source_cancellation'] = ! $invoice->isPosted();
+                [$party, $invoice, $payment, $available] = $this->creditSource($data);
+                if ($amount > $available) $this->treasury->fail('Amount exceeds the unreserved, receipt-backed credit.');
+                $data['customer_id'] = $party->id;
+                if ($invoice) {
+                    $data['credit_note_ids'] = $invoice->postedReturns()->pluck('id')->all();
+                    $data['source_cancellation'] = ! $invoice->isPosted();
+                }
+                if ($payment) $data['source_receipt'] = $payment->payment_number;
+                if ($kind === 'credit_apply') $this->assertCreditTarget($party->id, $invoice?->id, (int) ($data['target_id'] ?? 0), $amount);
+                if ($kind === 'credit_writeoff') $this->assertWriteoff($party, $amount);
             } elseif ($kind === 'credit_release') {
-                $credit = FinanceWorkItem::where('kind', 'credit_apply')->where('status', 'posted')->findOrFail($data['credit_id'] ?? 0);
+                $credit = $this->visibleRequests($actor)->where('kind', 'credit_apply')->where('status', 'posted')->findOrFail($data['credit_id'] ?? 0);
                 $amount = (int) $credit->amount_paisa;
+                foreach (['invoice_id','customer_id','source_payment_id','source_receipt'] as $field) $data[$field] = $credit->payload[$field] ?? null;
+                $data['target_id'] = $credit->payload['target_id'];
             } elseif (in_array($kind, ['refund_recovery','refund_correction'], true)) {
-                $refund = FinanceWorkItem::where('kind', 'refund')->where('status', 'posted')->findOrFail($data['credit_id'] ?? 0);
-                $remaining = (int) $refund->amount_paisa - $this->resolvedRefund($refund->id);
-                if (! $evidence || $amount <= 0 || $amount > $remaining) $this->treasury->fail('Attach evidence and enter an amount within the unresolved payout.');
-                $data['invoice_id'] = $refund->payload['invoice_id'];
+                $refund = $this->visibleRequests($actor)->where('kind', 'refund')->where('status', 'posted')->findOrFail($data['credit_id'] ?? 0);
+                $remaining = $this->remainingRefund($refund);
+                if ($kind === 'refund_correction' && isset($data['corrected_amount'])) {
+                    [, , , $available] = $this->creditSource($refund->payload);
+                    $data['previous_paisa'] = $remaining;
+                    $data['correction_delta_paisa'] = Paisa::from($data['corrected_amount']) - $remaining;
+                    $amount = abs($data['correction_delta_paisa']);
+                    $data['account_id'] = $this->refundAccount($refund);
+                    $this->treasury->account($data['account_id'], $actor);
+                    if ($data['correction_delta_paisa'] > $available) $this->treasury->fail('The corrected refund exceeds the available receipt-backed credit.');
+                } elseif ($amount > $remaining) $this->treasury->fail('Enter an amount within the unresolved payout.');
+                if ($amount <= 0 || $remaining <= 0) $this->treasury->fail('Enter a different amount for an unresolved posted refund.');
+                foreach (['invoice_id','customer_id','source_payment_id','source_receipt'] as $field) $data[$field] = $refund->payload[$field] ?? null;
             } elseif ($kind === 'commission_cap') {
-                $scope = DB::table('commission_scopes')->where('booking_id', $data['booking_id'] ?? 0)->first();
-                if (! $scope) $this->treasury->fail('This booking does not have a locked commission snapshot.');
-                $role = $data['commission_role'] ?? null;
-                $rules = json_decode($scope->rules, true, flags: JSON_THROW_ON_ERROR);
-                if (! in_array($rules[$role]['mode'] ?? null, ['full_fixed','proportional'], true)) $this->treasury->fail('Choose a existing fixed commission role.');
-                $data['previous_paisa'] = (int) $rules[$role]['rate'];
-                $beneficiary = $role === 'booker' ? $scope->booker_id : $scope->original_salesman_id;
+                if (isset($data['employee_id'])) {
+                    $employee = \App\Models\Employee::findOrFail($data['employee_id']);
+                    $beneficiary = $employee->user_id;
+                    if (! in_array($data['cap_period'] ?? null, ['invoice','month'], true) || ! in_array($data['commission_role'] ?? null, ['booker','salesman'], true)) {
+                        $this->treasury->fail('Select an employee, role and cap period.');
+                    }
+                    unset($data['booking_id']);
+                } else {
+                    // Preserve outstanding requests made against the older booking-level cap.
+                    $scope = DB::table('commission_scopes')->where('booking_id', $data['booking_id'] ?? 0)->first();
+                    if (! $scope) $this->treasury->fail('This booking does not have a locked commission snapshot.');
+                    $role = $data['commission_role'] ?? null;
+                    $rules = json_decode($scope->rules, true, flags: JSON_THROW_ON_ERROR);
+                    if (! in_array($rules[$role]['mode'] ?? null, ['full_fixed','proportional'], true)) $this->treasury->fail('Choose an existing fixed commission role.');
+                    $data['previous_paisa'] = (int) $rules[$role]['rate'];
+                    $beneficiary = $role === 'booker' ? $scope->booker_id : $scope->original_salesman_id;
+                }
             } elseif (in_array($kind, ['commission_share', 'delivery_correction'], true)) {
                 $invoice = SalesInvoice::where('status','posted')->findOrFail($data['invoice_id'] ?? 0);
                 if ($kind === 'commission_share') {
+                    $data['share_facts'] = app(CommissionService::class)->shareFacts($invoice);
+                    if (! $data['share_facts']) $this->treasury->fail('Select a delivered invoice with different assigned and delivering Salesmen and a commission to split.');
                     if (! isset($data['share']) || (float) $data['share'] < 0 || (float) $data['share'] > 100) $this->treasury->fail('Enter a share between 0 and 100 percent.');
                     $data['share_bp'] = Paisa::from($data['share']);
+                    $data['share_projection'] = app(CommissionService::class)->previewShare($invoice, $data['share_bp']);
+                    $amount = max($data['share_facts']['calculated'], array_sum(array_column($data['share_projection'], 'calculated')));
                 } else {
                     abort_unless($actor->can('dispatch.manage'), 403);
                     if (empty($data['items']) || array_sum(array_column($data['items'], 'quantity')) <= 0) $this->treasury->fail('Enter quantities to remove from the recorded delivery.');
+                    $amount = Paisa::from($invoice->total_amount);
                 }
-                $amount = Paisa::from($invoice->total_amount);
             } elseif (in_array($kind, self::EMPLOYEE_KINDS, true)) {
                 $employee = \App\Models\Employee::findOrFail($data['employee_id'] ?? 0);
                 $beneficiary = $employee->user_id;
@@ -135,8 +214,8 @@ class FinanceApprovalService
                     $data['award_invoice_number'] = $award->invoice_number;
                     $data['commission_role'] = $award->role;
                 }
+                app(CommissionService::class)->validateEmployeeRequest($employee->id, $kind, $amount, $data);
             } else {
-                if (! $evidence && in_array($kind, ['statement', 'adjustment'], true)) $this->treasury->fail('Attach the count, statement, or adjustment evidence.');
                 if ($kind !== 'statement' && $amount <= 0) $this->treasury->fail('Enter a positive amount.');
             }
             $item = FinanceWorkItem::create([
@@ -161,7 +240,7 @@ class FinanceApprovalService
             }
             if (in_array($item->kind, self::PRIVATE_KINDS, true)) {
                 abort_unless($actor->can('manage-employee-commissions'), 403);
-                if ($item->kind === 'commission_cap') {
+                if ($item->kind === 'commission_cap' && empty($item->payload['employee_id'])) {
                     abort_if(DB::table('commission_awards as a')->join('employees as e', 'e.id', '=', 'a.employee_id')
                         ->join('commission_scopes as s', 's.id', '=', 'a.commission_scope_id')
                         ->where('s.booking_id', $item->payload['booking_id'])->where('a.role', $item->payload['commission_role'])->where('e.user_id', $actor->id)->exists(), 403);
@@ -172,7 +251,7 @@ class FinanceApprovalService
                     ->where('a.sales_invoice_id', $item->payload['invoice_id'])->where('e.user_id', $actor->id)->exists(), 403);
                 $dispatch = \App\Models\Dispatch::where('sales_invoice_id', $item->payload['invoice_id'])->first();
                 abort_if($dispatch && (in_array($actor->id, [(int) $dispatch->original_assignee_id, (int) $dispatch->assigned_to], true)
-                    || $dispatch->events()->where('action','delivered')->where('created_by',$actor->id)->exists()), 403);
+                    || $dispatch->events()->where('action','delivered')->where(fn ($q) => $q->where('created_by',$actor->id)->orWhere('assigned_to',$actor->id))->exists()), 403);
             }
             if ($item->kind === 'opening') {
                 $import = collect($item->payload['imports'] ?? []);
@@ -208,61 +287,98 @@ class FinanceApprovalService
                 if ($item->kind === 'commission_share') {
                     abort_unless($actor->can('manage-employee-commissions'), 403);
                     $invoice = SalesInvoice::where('status','posted')->whereKey($data['invoice_id'])->lockForUpdate()->firstOrFail();
+                    $live = app(CommissionService::class)->shareFacts($invoice);
+                    if (isset($data['share_facts']) && (! $live || $live['original'] !== $data['share_facts']['original']
+                        || $live['deliverers'] !== $data['share_facts']['deliverers'])) {
+                        $this->treasury->fail('The delivery changed after review. Submit a new commission share.');
+                    }
                 } elseif ($item->kind === 'delivery_correction') {
                     abort_unless($actor->can('dispatch.manage'), 403);
                     $invoice = SalesInvoice::findOrFail($data['invoice_id']);
                     app(DispatchService::class)->record($invoice, ['action' => 'correct_delivery', 'items' => $data['items'],
                         'notes' => $data['notes'], 'request_key' => $item->request_key], $actor, true);
                 } elseif (in_array($item->kind, ['refund_recovery','refund_correction'], true)) {
-                    $invoice = SalesInvoice::whereKey($data['invoice_id'])->lockForUpdate()->firstOrFail();
-                    $refund = FinanceWorkItem::where('kind','refund')->where('status','posted')->lockForUpdate()->findOrFail($data['credit_id']);
-                    if ($amount + $this->resolvedRefund($refund->id) > (int) $refund->amount_paisa) $this->treasury->fail('The refund is already resolved for this amount.');
+                    $refund = $this->visibleRequests($actor)->where('kind','refund')->where('status','posted')->lockForUpdate()->findOrFail($data['credit_id']);
+                    [$party, $invoice, $payment, $available] = $this->creditSource($refund->payload);
+                    $sourceName = $invoice?->invoice_number ?? $payment->payment_number;
+                    $remaining = $this->remainingRefund($refund);
+                    if (isset($data['correction_delta_paisa'])) {
+                        $delta = (int) $data['correction_delta_paisa'];
+                        if ($remaining !== (int) $data['previous_paisa'] || $remaining + $delta < 0 || $delta > $available) {
+                            $this->treasury->fail('The underlying refund or available credit changed. Submit a new correction.');
+                        }
+                        $account = $this->treasury->account($this->refundAccount($refund), $actor);
+                        $this->treasury->entry($account, 'refund_correction', 'approval', $id, -$delta, $date, $actor, $reference);
+                        $this->ledger->post($party, 'refund_correction', $date, Paisa::rupees(max(0, $delta)), Paisa::rupees(max(0, -$delta)), $item, 'Book correction of refund #'.$refund->id);
+                    } elseif ($amount > $remaining) {
+                        $this->treasury->fail('The refund is already resolved for this amount.');
+                    }
                     if ($item->kind === 'refund_recovery') {
                         if (! trim($reference ?? '')) $this->treasury->fail('Confirm the repayment and enter its reference.');
                         $account = $this->treasury->account((int) ($data['account_id'] ?? 0), $actor);
                         $this->treasury->entry($account, 'refund_recovery', 'approval', $id, $amount, $date, $actor, $reference);
-                        $this->ledger->post($invoice->customer, 'refund_recovery', $date, 0, (float) Paisa::rupees($amount), $item, "Refund recovery on {$invoice->invoice_number}");
+                        $this->ledger->post($party, 'refund_recovery', $date, 0, (float) Paisa::rupees($amount), $item, "Refund recovery on {$sourceName}");
                     }
                 } elseif ($item->kind === 'commission_cap') {
                     abort_unless($actor->can('manage-employee-commissions'), 403);
-                    $booking = \App\Models\Booking::whereKey($data['booking_id'])->lockForUpdate()->firstOrFail();
-                    $scope = DB::table('commission_scopes')->where('booking_id', $booking->id)->lockForUpdate()->first();
-                    $rules = json_decode($scope->rules, true, flags: JSON_THROW_ON_ERROR);
-                    $role = $data['commission_role'];
-                    if ((int) ($rules[$role]['rate'] ?? -1) !== $data['previous_paisa']) $this->treasury->fail('The fixed cap changed after review. Resubmit with the current rate.');
-                    $rules[$role]['rate'] = $amount;
-                    DB::table('commission_scopes')->where('id', $scope->id)->update(['rules' => json_encode($rules, JSON_THROW_ON_ERROR), 'updated_at' => now()]);
-                    if ($latest = $booking->salesInvoices()->latest('id')->first()) app(CommissionService::class)->recalculate($latest);
+                    if (! empty($data['employee_id'])) {
+                        abort_if($item->beneficiary_id && (int) $item->beneficiary_id === $actor->id, 403);
+                    } else {
+                        $booking = \App\Models\Booking::whereKey($data['booking_id'])->lockForUpdate()->firstOrFail();
+                        $scope = DB::table('commission_scopes')->where('booking_id', $booking->id)->lockForUpdate()->first();
+                        $rules = json_decode($scope->rules, true, flags: JSON_THROW_ON_ERROR);
+                        $role = $data['commission_role'];
+                        if ((int) ($rules[$role]['rate'] ?? -1) !== $data['previous_paisa']) $this->treasury->fail('The fixed cap changed after review. Resubmit with the current rate.');
+                        $rules[$role]['rate'] = $amount;
+                        DB::table('commission_scopes')->where('id', $scope->id)->update(['rules' => json_encode($rules, JSON_THROW_ON_ERROR), 'updated_at' => now()]);
+                        if ($latest = $booking->salesInvoices()->latest('id')->first()) app(CommissionService::class)->recalculate($latest);
+                    }
+                } elseif ($item->kind === 'shortage_repayment_reverse') {
+                    $repayment = $this->visibleRequests($actor)->where('kind', 'shortage_repayment')->where('status', 'posted')->lockForUpdate()->findOrFail($data['credit_id']);
+                    $entry = DB::table('treasury_entries')->where('source_type', 'approval')->where('source_id', $repayment->id)
+                        ->where('kind', 'shortage_repayment')->first();
+                    if (! $entry || DB::table('treasury_entries')->where('reverses_id', $entry->id)->exists()) $this->treasury->fail('This repayment has already been reversed.');
+                    $account = $this->treasury->account((int) $entry->account_id, $actor);
+                    $this->treasury->entry($account, 'shortage_repayment_reverse', 'approval', $id, -$amount, $date, $actor, $reference, (int) $entry->id);
+                    $repayment->update(['status' => 'reversed']);
+                    $this->treasury->event('approval', $repayment->id, 'reversed', $actor, ['correction_id' => $id]);
                 } elseif ($item->kind === 'shortage_receipt_reverse') {
                     abort_unless($actor->can('payments.manage'), 403);
                     $row = DB::table('delivery_collections')->where('id', $data['collection_id'])->first();
                     $payment = \App\Models\Payment::findOrFail($row?->payment_id);
                     if ($payment->status !== 'completed') $this->treasury->fail('The source receipt is not completed.');
                     app(PaymentService::class)->cancel($payment, $item);
-                } elseif ($item->kind === 'shortage_repayment') {
+                } elseif (in_array($item->kind, ['shortage_repayment','shortage_commission_offset'], true)) {
                     $source = DB::table('delivery_collections')->where('id', $data['collection_id'])->first();
                     abort_unless($source && $source->payment_id, 404);
                     SalesInvoice::whereKey($source->sales_invoice_id)->lockForUpdate()->firstOrFail();
                     \App\Models\Payment::whereKey($source->payment_id)->lockForUpdate()->firstOrFail();
                     $row = DB::table('delivery_collections')->where('id', $data['collection_id'])->lockForUpdate()->first();
-                    if (! $row || $amount > $this->shortageBalance($row) || ! trim($reference ?? '')) $this->treasury->fail('Confirm funds and enter a reference; amount cannot exceed the shortage.');
-                    $account = $this->treasury->account((int) ($data['account_id'] ?? 0), $actor);
-                    $this->treasury->entry($account, 'shortage_repayment', 'approval', $id, $amount, $date, $actor, $reference);
+                    if (! $row || $amount > $this->shortageBalance($row)) $this->treasury->fail('The amount cannot exceed the remaining shortage.');
+                    if ($item->kind === 'shortage_commission_offset') {
+                        app(CommissionService::class)->deductShortage($item, $actor);
+                    } else {
+                        if (! trim($reference ?? '')) $this->treasury->fail('Confirm funds and enter a reference.');
+                        $account = $this->treasury->account((int) ($data['account_id'] ?? 0), $actor);
+                        $this->treasury->entry($account, 'shortage_repayment', 'approval', $id, $amount, $date, $actor, $reference);
+                    }
                 } elseif (in_array($item->kind, self::EMPLOYEE_KINDS, true)) {
                     abort_unless($actor->can('manage-employee-commissions'), 403);
                     app(CommissionService::class)->postEmployeeAction($item, $actor, $reference);
                 } elseif ($item->kind === 'credit_release') {
                     $credit = FinanceWorkItem::where('kind', 'credit_apply')->lockForUpdate()->findOrFail($data['credit_id']);
                     if ($credit->status !== 'posted') $this->treasury->fail('The credit application has already been released.');
-                    SalesInvoice::whereKey([(int) $credit->payload['invoice_id'], (int) $credit->payload['target_id']])->orderBy('id')->lockForUpdate()->get();
+                    SalesInvoice::whereKey([(int) ($credit->payload['invoice_id'] ?? 0), (int) $credit->payload['target_id']])->orderBy('id')->lockForUpdate()->get();
+                    if (! empty($credit->payload['source_payment_id'])) Payment::whereKey($credit->payload['source_payment_id'])->lockForUpdate()->firstOrFail();
                     $this->assertUnconsumed(SalesInvoice::findOrFail($credit->payload['target_id']));
                     $credit->update(['status' => 'reversed']);
                     $this->treasury->event('approval', $credit->id, 'credit_released', $actor, ['correction_id' => $id]);
-                } elseif (in_array($item->kind, ['refund', 'credit_apply'], true)) {
-                    $ids = array_filter([(int) $data['invoice_id'], (int) ($data['target_id'] ?? 0)]);
-                    $invoices = SalesInvoice::whereKey($ids)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
-                    $invoice = $invoices[$data['invoice_id']];
-                    if ($amount > $this->refundable($invoice, $id)) $this->treasury->fail('The invoice no longer has enough refundable credit.');
+                } elseif (in_array($item->kind, ['refund', 'credit_apply', 'credit_writeoff'], true)) {
+                    $ids = array_filter([(int) ($data['invoice_id'] ?? 0), (int) ($data['target_id'] ?? 0)]);
+                    SalesInvoice::whereKey($ids)->orderBy('id')->lockForUpdate()->get();
+                    [$party, $invoice, $payment, $available] = $this->creditSource($data, $id);
+                    $sourceName = $invoice?->invoice_number ?? $payment->payment_number;
+                    if ($amount > $available) $this->treasury->fail('The source no longer has enough refundable credit.');
                     if ($item->kind === 'refund') {
                         if (! trim($reference ?? '')) $this->treasury->fail('Confirm the actual payout and enter its transaction reference.');
                         $account = ! empty($data['opening_id'])
@@ -270,13 +386,13 @@ class FinanceApprovalService
                             : $this->treasury->account((int) ($data['account_id'] ?? 0), $actor, $data['method'] ?? 'cash');
                         if (! empty($data['opening_id'])) $date = now('Asia/Karachi')->toDateString();
                         $this->treasury->entry($account, 'customer_refund', 'approval', $id, -$amount, $date, $actor, $reference);
-                        $this->ledger->post($invoice->customer, 'refund', $date, (float) Paisa::rupees($amount), 0, $item, "Refund against {$invoice->invoice_number}");
+                        $this->ledger->post($party, 'refund', $date, (float) Paisa::rupees($amount), 0, $item, "Refund against {$sourceName}");
+                    } elseif ($item->kind === 'credit_writeoff') {
+                        $this->assertWriteoff($party, $amount);
+                        $this->ledger->post($party, 'credit_writeoff', $date, Paisa::rupees($amount), 0, $item, "Unused credit released on {$sourceName}");
                     } else {
-                        $target = $invoices[$data['target_id'] ?? 0] ?? null;
-                        if (! $target || $target->id === $invoice->id || $target->customer_id !== $invoice->customer_id
-                            || Paisa::from($this->balance->sales()->whereKey($target->id)->value('outstanding')) < $amount) {
-                            $this->treasury->fail('Choose another open invoice for the same customer with sufficient balance.');
-                        }
+                        $this->assertCreditTarget($party->id, $invoice?->id, (int) ($data['target_id'] ?? 0), $amount);
+                        $target = SalesInvoice::findOrFail($data['target_id']);
                     }
                 } elseif ($item->kind === 'transfer') {
                     if (! trim($reference ?? '')) $this->treasury->fail('Enter the completed transfer reference.');
@@ -301,28 +417,98 @@ class FinanceApprovalService
             if (isset($target) && $item->kind === 'credit_apply') app(CommissionService::class)->recalculate($target);
             if ($item->kind === 'credit_release') app(CommissionService::class)->recalculate(SalesInvoice::findOrFail($credit->payload['target_id']));
             if (isset($invoice) && $item->kind === 'refund') app(CommissionService::class)->recalculate($invoice);
-            if (isset($invoice) && $item->kind === 'commission_share') app(CommissionService::class)->recalculate($invoice);
+            if (isset($invoice) && $item->kind === 'commission_share') {
+                $commissions = app(CommissionService::class);
+                $commissions->recalculate($invoice);
+                $this->treasury->event('approval', $id, 'commission_posted', $actor, ['awards' => $commissions->previewShare($invoice, (int) $data['share_bp'])]);
+            }
+            if ($item->kind === 'commission_cap' && ! empty($data['employee_id'])) {
+                app(CommissionService::class)->recalculateForCap((int) $data['employee_id'], $data['commission_role'], $date);
+            }
         }, 3);
     }
 
     public function refundable(SalesInvoice $invoice, ?int $except = null): int
     {
         if ($invoice->isDraft()) return 0;
-        $paid = Paisa::from($invoice->paymentAllocations()->whereHas('payment', fn ($q) => $q->where('status', 'completed')->where('direction', 'in'))->sum('amount'));
+        $allocations = $invoice->paymentAllocations()->with('payment')->whereHas('payment',
+            fn ($q) => $q->where('status', 'completed')->where('direction', 'in')->where('method', '!=', 'adjustment'))->get();
+        $paid = Paisa::from($allocations->sum('amount'));
         $credit = $invoice->isPosted() ? Paisa::from($invoice->postedReturns()->sum('total_amount')) : Paisa::from($invoice->total_amount);
         $unfunded = DB::table('delivery_collections')->where('sales_invoice_id', $invoice->id)->where('shortage_paisa', '>', 0)->get()
             ->sum(fn ($row) => $this->shortageBalance($row));
-        $excess = min(max(0, $paid - $unfunded), max(0, $paid + $credit - Paisa::from($invoice->total_amount) - $unfunded));
-        $reserved = (int) FinanceWorkItem::whereIn('kind', ['refund', 'credit_apply'])->whereIn('status', ['pending', 'approved', 'posted'])
-            ->where('payload->invoice_id', $invoice->id)->when($except, fn ($q) => $q->whereKeyNot($except))->sum('amount_paisa');
+        $unbackedRounding = $allocations->sum(function ($allocation) {
+            $payment = $allocation->payment;
+            if ($payment->tendered_paisa === null) return 0;
+            $shortage = (int) DB::table('delivery_collections')->where('payment_id', $payment->id)->sum('shortage_paisa');
+            return min(Paisa::from($allocation->amount), max(0, Paisa::from($payment->amount) - $payment->tendered_paisa - $shortage));
+        });
+        $excess = min(max(0, $paid - $unfunded - $unbackedRounding), max(0, $paid + $credit - Paisa::from($invoice->total_amount) - $unfunded - $unbackedRounding));
+        $reserved = $this->reservedCredit('invoice_id', $invoice->id, $except);
         return max(0, $excess - $reserved);
+    }
+
+    private function reservedCredit(string $field, int $id, ?int $except): int
+    {
+        return (int) FinanceWorkItem::whereIn('kind', ['refund', 'credit_apply', 'credit_writeoff'])->whereIn('status', ['pending', 'approved', 'posted'])
+            ->where('payload->'.$field, $id)->when($except, fn ($q) => $q->whereKeyNot($except))->get()
+            ->sum(fn ($row) => $row->kind === 'refund' && $row->status === 'posted' ? $this->remainingRefund($row) : (int) $row->amount_paisa);
+    }
+
+    public function unappliedReceiptCredit(Payment $payment, ?int $except = null): int
+    {
+        if ($payment->party_type !== 'customer' || $payment->direction !== 'in' || $payment->status !== 'completed' || $payment->method === 'adjustment') return 0;
+        $funded = min(Paisa::from($payment->amount), $payment->tendered_paisa ?? PHP_INT_MAX);
+        return max(0, $funded - Paisa::from($payment->allocations()->sum('amount'))
+            - $this->reservedCredit('source_payment_id', $payment->id, $except));
+    }
+
+    private function creditSource(array $data, ?int $except = null): array
+    {
+        $id = (int) ($data['invoice_id'] ?? 0);
+        $receipt = (int) ($data['source_payment_id'] ?? 0);
+        if (($id <= 0) === ($receipt <= 0)) $this->treasury->fail('Select one invoice or one unallocated receipt as the credit source.');
+        $invoice = $id ? SalesInvoice::whereKey($id)->lockForUpdate()->firstOrFail() : null;
+        $payment = $receipt ? Payment::whereKey($receipt)->where('party_type','customer')->where('direction','in')->where('status','completed')
+            ->where('method','!=','adjustment')->lockForUpdate()->firstOrFail() : null;
+        $party = Customer::withTrashed()->findOrFail($invoice?->customer_id ?? $payment->party_id);
+        return [$party, $invoice, $payment, $invoice ? $this->refundable($invoice, $except) : $this->unappliedReceiptCredit($payment, $except)];
+    }
+
+    public function assertUnusedReceiptCredit(Payment $payment): void
+    {
+        if ($this->reservedCredit('source_payment_id', $payment->id, null) > 0) $this->treasury->fail('Resolve pending or posted refunds and credit actions against this receipt before reversing it.');
     }
 
     public function shortageBalance(object $row): int
     {
         if ($row->payment_id && ! \App\Models\Payment::whereKey($row->payment_id)->where('status','completed')->exists()) return 0;
-        return max(0, (int) $row->shortage_paisa - (int) FinanceWorkItem::where('kind', 'shortage_repayment')->where('status', 'posted')
+        return max(0, (int) $row->shortage_paisa - (int) FinanceWorkItem::whereIn('kind', ['shortage_repayment','shortage_commission_offset'])->where('status', 'posted')
             ->where('payload->collection_id', (int) $row->id)->sum('amount_paisa'));
+    }
+
+    public function shortageAvailable(object $day, object $row): int
+    {
+        if ($day->counted_cash_paisa === null || $row->recorded_at || $row->payment_id || $row->included_in_opening) return 0;
+        $totals = DB::table('delivery_collections')->where('collection_day_id', $day->id)->where('method', 'cash')
+            ->selectRaw('SUM(reported_paisa) AS reported, SUM(shortage_paisa) AS charged')->first();
+        $outstanding = $this->balance->sales()->whereKey($row->sales_invoice_id)->first()?->outstanding;
+
+        return max(0, min(Paisa::from($outstanding), (int) $row->reported_paisa, (int) $totals->reported - (int) $day->counted_cash_paisa - (int) $totals->charged));
+    }
+
+    private function assertCreditTarget(int $customer, ?int $sourceInvoice, int $target, int $amount): void
+    {
+        $row = $this->balance->openSales()->where('sales_invoices.customer_id', $customer)->whereKey($target)->first();
+        if (! $row || $row->id === $sourceInvoice || Paisa::from($row->outstanding) < $amount) $this->treasury->fail('Choose another open invoice for the same customer with sufficient balance.');
+    }
+
+    private function assertWriteoff(Customer $party, int $amount): void
+    {
+        $customer = Customer::withTrashed()->whereKey($party->id)->lockForUpdate()->firstOrFail();
+        if ($amount > max(0, -Paisa::from($this->ledger->outstanding($customer)))) {
+            $this->treasury->fail('The amount exceeds the customer’s current ledger credit.');
+        }
     }
 
     public function assertUnconsumed(SalesInvoice $invoice): void
@@ -334,15 +520,23 @@ class FinanceApprovalService
 
     public function dependencies(SalesInvoice $invoice): \Illuminate\Support\Collection
     {
-        return FinanceWorkItem::whereIn('kind', ['refund','credit_apply'])->whereIn('status', ['pending','approved','posted'])
+        return FinanceWorkItem::whereIn('kind', ['refund','credit_apply','credit_writeoff'])->whereIn('status', ['pending','approved','posted'])
             ->where('payload->invoice_id', $invoice->id)->get(['id','kind','status','amount_paisa','payload'])
-            ->reject(fn ($row) => $row->kind === 'refund' && $row->status === 'posted' && $this->resolvedRefund($row->id) >= (int) $row->amount_paisa);
+            ->reject(fn ($row) => $row->kind === 'refund' && $row->status === 'posted' && $this->remainingRefund($row) === 0);
     }
 
-    private function resolvedRefund(int $id): int
+    public function remainingRefund(FinanceWorkItem $refund): int
     {
-        return (int) FinanceWorkItem::whereIn('kind', ['refund_recovery','refund_correction'])->where('status', 'posted')
-            ->where('payload->credit_id', $id)->sum('amount_paisa');
+        $changes = FinanceWorkItem::whereIn('kind', ['refund_recovery','refund_correction'])->where('status', 'posted')
+            ->where('payload->credit_id', $refund->id)->get(['amount_paisa','payload']);
+
+        return max(0, (int) $refund->amount_paisa + $changes->sum(fn ($item) => $item->payload['correction_delta_paisa'] ?? -(int) $item->amount_paisa));
+    }
+
+    private function refundAccount(FinanceWorkItem $refund): int
+    {
+        return (int) DB::table('treasury_entries')->where('source_type', 'approval')->where('source_id', $refund->id)
+            ->where('kind', 'customer_refund')->value('account_id');
     }
 
     public function withdraw(int $id, User $actor, string $reason): void
@@ -357,7 +551,7 @@ class FinanceApprovalService
         }, 3);
     }
 
-    private function openingSnapshot(): array
+    public function openingSnapshot(): array
     {
         return FinancialAccount::orderBy('id')->get(['id','kind','name','custodian_id','opening_paisa','opening_reference'])->toArray();
     }

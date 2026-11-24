@@ -1,5 +1,5 @@
-import { Paginator, type PaginatedData } from '@/components/paginator';
-import { Badge } from '@/components/ui/badge';
+import { MasterFilterSelect, MasterRegister, MasterStatus, useMasterFilters } from '@/components/master-register';
+import { type PaginatedData } from '@/components/paginator';
 import { Button } from '@/components/ui/button';
 import {
     Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -17,8 +17,8 @@ import { type BreadcrumbItem } from '@/types';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { ALERT_FIX, required, useClientValidation, type Validator } from '@/lib/form-validation';
 import { Head, router, useForm } from '@inertiajs/react';
-import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
-import { FormEvent, useEffect, useState } from 'react';
+import { ListFilter, Pencil, Plus, Trash2 } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 import { toast } from 'sonner';
 
 interface Slab {
@@ -84,10 +84,12 @@ export default function IncentivesIndex({ rules, products, companies, customers,
     const { can } = usePermissions();
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editing, setEditing] = useState<Rule | null>(null);
-    const [search, setSearch] = useState(filters.search ?? '');
+    const state = useMasterFilters('/incentives', filters);
+    const manage = can('incentives.manage');
+    const statusFilter = filters.active ? ['1', 'true', 'on', 'yes'].includes(filters.active.toLowerCase()) ? 'active' : 'inactive' : undefined;
     const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
         rowCount: rules.data.length,
-        onActivate: (i) => openEdit(rules.data[i]),
+        onActivate: (i) => { if (manage) openEdit(rules.data[i]); },
     });
 
     const form = useForm(emptyForm);
@@ -101,15 +103,6 @@ export default function IncentivesIndex({ rules, products, companies, customers,
             whenType('price_override', 'Special price cannot be negative.', (v) => Number(v) >= 0),
         ],
     });
-
-    useEffect(() => {
-        const timeout = setTimeout(() => {
-            if ((filters.search ?? '') !== search) {
-                router.get('/incentives', { ...filters, search: search || undefined }, { preserveState: true, replace: true });
-            }
-        }, 350);
-        return () => clearTimeout(timeout);
-    }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const openCreate = () => {
         setEditing(null);
@@ -175,8 +168,6 @@ export default function IncentivesIndex({ rules, products, companies, customers,
     };
 
     const err = (key: string) => (form.errors as Record<string, string>)[key];
-    const manage = can('incentives.manage');
-
     const setSlab = (index: number, key: keyof Slab, value: string) => {
         form.setData('slabs', form.data.slabs.map((slab, i) => (i === index ? { ...slab, [key]: value } : slab)));
     };
@@ -184,43 +175,16 @@ export default function IncentivesIndex({ rules, products, companies, customers,
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Incentive Rules" />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
-                    <div>
-                        <h1 className="text-4xl font-bold">Incentive Rules</h1>
-                        <p className="text-sm text-muted-foreground">
-                            Bonus schemes, discounts, and special prices for invoice and booking lines.
-                            <span data-shortcut-hint> Press <kbd>F4</kbd> to open the rule picker.</span>
-                        </p>
-                    </div>
-                    {manage && (
-                        <Button onClick={openCreate}>
-                            <Plus className="mr-1 size-4" /> Add Rule
-                        </Button>
-                    )}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                    <div className="relative w-full sm:w-64">
-                        <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-                        <Input ref={searchRef} onKeyDown={onSearchKeyDown} placeholder="Search rules…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
-                    </div>
-                    <Select
-                        value={filters.rule_type ?? 'all'}
-                        onValueChange={(v) => router.get('/incentives', { ...filters, rule_type: v === 'all' ? undefined : v }, { preserveState: true })}
-                    >
-                        <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All types</SelectItem>
-                            {Object.entries(RULE_TYPES).map(([value, label]) => (
-                                <SelectItem key={value} value={value}>{label}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-
-                <div className="rounded-xl border">
-                    <Table>
+            <MasterRegister title="Incentive Rules" description="Bonus schemes, discounts, and special prices for invoice and booking lines"
+                label="rule" page={rules} state={state} searchRef={searchRef} onSearchKeyDown={onSearchKeyDown} placeholder="Rule name…"
+                actions={manage && <button type="button" className="hbtn pri" onClick={openCreate}><Plus className="i" aria-hidden="true" />Add Rule</button>}
+                status={{ value: statusFilter,
+                    onChange: status => state.change({ active: status === 'active' ? '1' : status === 'inactive' ? '0' : undefined }) }}
+                filters={<MasterFilterSelect label="Rule type" icon={ListFilter} value={filters.rule_type ?? ''} onChange={value => state.change({ rule_type: value || undefined })}>
+                    <option value="">All types</option>
+                    {Object.entries(RULE_TYPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </MasterFilterSelect>}>
+                {dense => <Table className={dense ? 'incentive-table dense' : 'incentive-table'}>
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Rule</TableHead>
@@ -228,25 +192,25 @@ export default function IncentivesIndex({ rules, products, companies, customers,
                                 <TableHead>Scope</TableHead>
                                 <TableHead>Valid</TableHead>
                                 <TableHead>Status</TableHead>
-                                <TableHead className="w-24" />
+                                <TableHead className="w-24"><span className="sr-only">Actions</span></TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {rules.data.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                                        No incentive rules yet.
+                                    <TableCell colSpan={6} className="empty">
+                                        {state.applied ? 'No incentive rules match these filters.' : 'No incentive rules yet.'}
                                     </TableCell>
                                 </TableRow>
                             )}
                             {rules.data.map((rule, index) => (
                                 <TableRow key={rule.id} {...rowProps(index)}>
                                     <TableCell>
-                                        <div className="font-medium">{rule.name}</div>
-                                        <div className="text-xs text-muted-foreground">{RULE_TYPES[rule.rule_type] ?? rule.rule_type}</div>
+                                        <div className="font-bold">{rule.name}</div>
+                                        <div className="row-secondary">{RULE_TYPES[rule.rule_type] ?? rule.rule_type}</div>
                                     </TableCell>
-                                    <TableCell className="text-sm">{rule.summary}</TableCell>
-                                    <TableCell className="text-sm">
+                                    <TableCell className="wrap-cell">{rule.summary}</TableCell>
+                                    <TableCell className="wrap-cell">
                                         {[
                                             rule.customer?.name && `Customer: ${rule.customer.name}`,
                                             rule.product?.name && `Product: ${rule.product.name}`,
@@ -259,36 +223,32 @@ export default function IncentivesIndex({ rules, products, companies, customers,
                                             : <span className="text-muted-foreground">Always</span>}
                                     </TableCell>
                                     <TableCell>
-                                        <Badge variant={rule.active ? 'default' : 'secondary'}>
-                                            {rule.active ? 'active' : 'inactive'}
-                                        </Badge>
+                                        <MasterStatus status={rule.active ? 'active' : 'inactive'} />
                                     </TableCell>
                                     <TableCell>
                                         {manage && (
-                                            <div className="flex justify-end gap-1">
-                                                <Button variant="ghost" size="icon" onClick={() => openEdit(rule)}>
-                                                    <Pencil className="size-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost" size="icon"
+                                            <div className="acts">
+                                                <button type="button" className="ib" aria-label={`Edit ${rule.name}`} onClick={() => openEdit(rule)}>
+                                                    <Pencil className="i" aria-hidden="true" />
+                                                </button>
+                                                <button
+                                                    type="button" className="ib master-delete" aria-label={`Delete ${rule.name}`}
                                                     onClick={() => {
                                                         if (confirm(`Delete rule "${rule.name}"?`)) {
                                                             router.delete(route('incentives.destroy', rule.id), { preserveScroll: true });
                                                         }
                                                     }}
                                                 >
-                                                    <Trash2 className="size-4 text-destructive" />
-                                                </Button>
+                                                    <Trash2 className="i" aria-hidden="true" />
+                                                </button>
                                             </div>
                                         )}
                                     </TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
-                    </Table>
-                    <Paginator meta={rules} />
-                </div>
-            </div>
+                </Table>}
+            </MasterRegister>
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogContent appearance="form" className="max-w-2xl" aria-describedby={undefined}>

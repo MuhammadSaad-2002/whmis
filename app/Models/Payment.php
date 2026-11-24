@@ -24,6 +24,8 @@ class Payment extends Model implements AuditableContract
             'payment_date' => 'date',
             'cheque_date' => 'date',
             'amount' => 'decimal:2',
+            'tendered_paisa' => 'integer',
+            'received_paisa' => 'integer',
         ];
     }
 

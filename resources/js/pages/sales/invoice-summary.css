@@ -1,0 +1,42 @@
+.invoice-summary {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+
+    .master-register { flex: 1; }
+    .hero .intro { min-width: 0; }
+    .hero h1 { overflow-wrap: anywhere; }
+    .hero .sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+    .register-hero-actions { min-width: 0; }
+    .invoice-summary-status { display: inline-flex; flex-wrap: wrap; gap: 5px; }
+    .invoice-summary-section h2 { font-size: 17px; font-weight: 700; }
+    .invoice-summary-section p { margin-top: 2px; }
+
+    .invoice-summary-details {
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr));
+        gap: 12px 18px;
+        border-bottom: 1px solid var(--line);
+        padding: 14px;
+    }
+    .invoice-summary-details dt { color: var(--ink3); font-size: 13px; }
+    .invoice-summary-details dd { margin-top: 3px; overflow-wrap: anywhere; font-weight: 600; }
+    .invoice-summary-incentives { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .invoice-summary-incentives .master-tag { margin-inline-start: 0; }
+    .st.invoice-summary-bonus { margin-inline-start: 4px; padding: 2px 6px; text-transform: none; }
+    .master-register .tblwrap .summary-line-table { min-width: 740px; }
+    .master-register .tblwrap .summary-comparison { min-width: 0; }
+    .summary-returned { color: var(--amber); }
+    .summary-receivable-row { background: var(--tealbg); }
+    .tblwrap:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+
+    @media (max-width: 760px) {
+        .invoice-summary-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .register-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .register-stats .kpi:last-child { grid-column: 1 / -1; }
+        .hero .hbtn { min-height: 44px; }
+        .summary-comparison :is(td, th) { padding-inline: 6px; font-size: 13px; }
+        .summary-comparison thead th:first-child { min-width: 76px; }
+    }
+}

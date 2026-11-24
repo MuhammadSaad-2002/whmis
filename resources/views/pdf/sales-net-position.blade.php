@@ -6,14 +6,6 @@
     @include('pdf.partials.document-style')
 </head>
 <body>
-    @php
-        $statusLabel = [
-            'posted_no_returns' => 'Posted — No Returns',
-            'partially_returned' => 'Partially Returned',
-            'fully_returned' => 'Fully Returned',
-        ][$position['status']] ?? 'Posted';
-    @endphp
-
     <table class="header">
         <tr>
             <td>
@@ -22,10 +14,7 @@
             </td>
             <td style="text-align: right;">
                 <h1>{{ $invoice->invoice_number }}</h1>
-                <div class="meta">
-                    Sale Date: {{ $invoice->invoice_date->format('d M Y') }}<br>
-                    Status: <span class="badge">{{ $statusLabel }}</span>
-                </div>
+                <div class="meta">Sale Date: {{ $invoice->invoice_date->format('d M Y') }}</div>
             </td>
         </tr>
     </table>
@@ -95,18 +84,29 @@
     </table>
 
     <table class="totals">
-        <tr><td>Net Receivable</td><td class="num">{{ number_format($position['net']['receivable'], 2) }}</td></tr>
-        <tr><td>Amount Received</td><td class="num">-{{ number_format($position['payments'], 2) }}</td></tr>
+        <tr><td>Net Receivable</td><td class="num">{{ \App\Support\MoneyDisplay::roundedTotal($position['net']['receivable']) }}</td></tr>
+        <tr><td>Amount Received
+            @if(fmod($position['actual_received'], 1) !== 0.0)
+                <span class="meta">(actual: Rs {{ number_format($position['actual_received'], 2) }})</span>
+            @endif
+        </td><td class="num">-{{ \App\Support\MoneyDisplay::roundedTotal($position['actual_received']) }}</td></tr>
+        @if($position['noncash_settlement'] > 0)
+            <tr><td>Non-cash Settlement</td><td class="num">-{{ \App\Support\MoneyDisplay::total($position['noncash_settlement']) }}</td></tr>
+        @endif
+        @if($position['applied_credit'] > 0)
+            <tr><td>Applied Customer Credit</td><td class="num">-{{ \App\Support\MoneyDisplay::total($position['applied_credit']) }}</td></tr>
+        @endif
         @if($position['refund_due'] > 0)
-            <tr class="grand"><td>Refund Due (Rs)</td><td class="num">{{ number_format($position['refund_due'], 2) }}</td></tr>
+            <tr class="grand"><td>Refund Due (Rs)</td><td class="num">{{ \App\Support\MoneyDisplay::roundedTotal($position['refund_due']) }}</td></tr>
         @else
-            <tr class="grand"><td>Final Outstanding (Rs)</td><td class="num">{{ number_format($position['final_outstanding'], 2) }}</td></tr>
+            <tr class="grand"><td>Final Outstanding (Rs)</td><td class="num">{{ \App\Support\MoneyDisplay::roundedTotal($position['final_outstanding']) }}</td></tr>
         @endif
     </table>
 
     <p class="meta document-note">
         This statement reflects the invoice net of valid (non-cancelled) returns as of {{ now()->format('d M Y') }}.
         The original Sales Invoice remains the primary record.
+        Summary amounts are rounded to whole rupees.
     </p>
 
 </body>

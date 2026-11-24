@@ -1,4 +1,4 @@
-import { amount, money, qty, shortDate } from '@/lib/format';
+import { amount, qty, shortDate, totalMoney } from '@/lib/format';
 import { openWorkspaceTab } from '@/lib/embedded';
 import { Link } from '@inertiajs/react';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -110,10 +110,10 @@ export function InvoicePreview({ invoice, close, canEdit, canReturn, post, busy 
                 </div>
                 <div className="db" aria-busy={!data && !failed}>
                     <div className="dgrid">
-                        <div><small>Invoice total</small><b className="num">{money(invoice.total_amount)}</b></div>
-                        <div><small>Returns</small><b className={`num ${Number(invoice.returned_amount) ? 'neg' : ''}`}>{Number(invoice.returned_amount) ? '−' : ''}{money(invoice.returned_amount)}</b></div>
-                        <div><small>Net</small><b className="num">{money(invoice.net_amount)}</b></div>
-                        <div><small>Profit · margin</small><b className="num">{invoice.net_profit == null ? '—' : `${money(invoice.net_profit)} · ${invoice.margin == null ? '—' : Number(invoice.margin).toFixed(1) + '%'}`}</b></div>
+                        <div><small>Invoice total</small><b className="num">{totalMoney(invoice.total_amount)}</b></div>
+                        <div><small>Returns</small><b className={`num ${Number(invoice.returned_amount) ? 'neg' : ''}`}>{Number(invoice.returned_amount) ? '−' : ''}{totalMoney(invoice.returned_amount)}</b></div>
+                        <div><small>Net</small><b className="num">{totalMoney(invoice.net_amount)}</b></div>
+                        <div><small>Profit · margin</small><b className="num">{invoice.net_profit == null ? '—' : `${totalMoney(invoice.net_profit)} · ${invoice.margin == null ? '—' : Number(invoice.margin).toFixed(1) + '%'}`}</b></div>
                     </div>
                     {invoice.net_profit != null && Number(invoice.net_profit) === 0 && Number(invoice.net_amount) > 0 &&
                         <div className="warn"><strong>Zero margin.</strong> This invoice has no net profit after posted returns.</div>}
@@ -130,14 +130,14 @@ export function InvoicePreview({ invoice, close, canEdit, canReturn, post, busy 
                             </tr>)}</tbody>
                         </table> : <p className="muted">No line items.</p>}
                         {data.paid != null && <><h3 className="sec">Payment</h3><div className="payment-status">
-                            <span>Received <b className="num">{money(data.paid)}</b></span>
-                            <span>Outstanding <b className={`num ${(data.outstanding ?? 0) > 0 ? 'neg' : ''}`}>{money(data.outstanding)}</b></span>
+                            <span>Received <b className="num">{totalMoney(data.paid)}</b></span>
+                            <span>Outstanding <b className={`num ${(data.outstanding ?? 0) > 0 ? 'neg' : ''}`}>{totalMoney(data.outstanding)}</b></span>
                         </div></>}
                         <h3 className="sec">Activity</h3>
                         <div className="tl">
                             {data.created_at && <div>Invoice created{invoice.sale_type === 'booking' ? ' from booking' : ''}<small>{dateTime.format(new Date(data.created_at))}{data.creator && ` · ${data.creator}`}</small></div>}
                             {data.posted_at && <div>Posted to ledger<small>{dateTime.format(new Date(data.posted_at))}</small></div>}
-                            {data.returns.map((item) => <div key={item.number}>Sales return {item.number} · {money(item.amount)}<small>{listDate(item.date)}</small></div>)}
+                            {data.returns.map((item) => <div key={item.number}>Sales return {item.number} · {totalMoney(item.amount)}<small>{listDate(item.date)}</small></div>)}
                             {invoice.status === 'draft' && <div>Awaiting posting</div>}
                             {invoice.status === 'cancelled' && <div>Invoice cancelled</div>}
                         </div>

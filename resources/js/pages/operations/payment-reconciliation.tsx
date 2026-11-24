@@ -1,6 +1,6 @@
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { money, shiftDate, shortDate } from '@/lib/format';
+import { shiftDate, shortDate, totalPaisaMoney as cashTotal, totalMoney } from '@/lib/format';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { Banknote, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Download, Info, Lock, Printer } from 'lucide-react';
 import { useState, type CSSProperties, type ReactNode } from 'react';
@@ -33,10 +33,10 @@ export default function PaymentReconciliation({ days, rows, date, staff, account
     const countedTotal = days.reduce((total, day) => total + Number(day.counted_cash_paisa ?? 0), 0);
     const variance = counted ? countedTotal - sum(rows.filter(hasCash), reported) : null;
     const stats = [
-        ['#1f4e79', 'Reported by salesmen', rs(sum(rows, reported)), `${rows.length} reports · ${submitted.length} submitted day(s)`],
-        ['#7c3aed', 'Cash counted', counted ? rs(countedTotal) : 'Not fully counted', counted ? 'Physically counted' : countedTotal ? `${rs(countedTotal)} counted so far` : 'Count cash first'],
-        ['#059669', 'Posted to invoices', rs(sum(rows.filter(activeReceipt), row => verified(row) + Number(row.shortage_paisa))), 'Verified and in the customer ledger'],
-        [variance === null ? '#94a3b8' : variance < 0 ? '#dc2626' : variance > 0 ? '#d97706' : '#059669', 'Cash variance', variance === null ? '—' : `${variance > 0 ? '+' : ''}${rs(variance)}`, variance === null ? 'Counted − reported cash' : variance < 0 ? 'Short against reports' : variance > 0 ? 'More than reported' : 'Counts match'],
+        ['#1f4e79', 'Reported by salesmen', cashTotal(sum(rows, reported)), `${rows.length} reports · ${submitted.length} submitted day(s)`],
+        ['#7c3aed', 'Cash counted', counted ? cashTotal(countedTotal) : 'Not fully counted', counted ? 'Physically counted' : countedTotal ? `${cashTotal(countedTotal)} counted so far` : 'Count cash first'],
+        ['#059669', 'Actual received', cashTotal(sum(rows, row => row.actual_received_paisa)), `${cashTotal(sum(rows, row => row.invoice_settled_paisa))} settled on invoices`],
+        [variance === null ? '#94a3b8' : variance < 0 ? '#dc2626' : variance > 0 ? '#d97706' : '#059669', 'Cash variance', variance === null ? '—' : `${variance > 0 ? '+' : ''}${cashTotal(variance)}`, variance === null ? 'Counted − reported cash' : variance < 0 ? 'Short against reports' : variance > 0 ? 'More than reported' : 'Counts match'],
         ['#d97706', 'Awaiting verification', pending, pending ? 'Reports to review' : 'No reports waiting'],
     ] as const;
     const byDay = new Map<number, Row[]>();
@@ -82,7 +82,7 @@ function ReconciliationDay({ day, date, rows, cashNotes, accounts, canPost, acto
     const pendingCash = cash.filter(isPending);
     const firstPending = (rows.find(row => isPending(row) && row.method !== 'none') ?? rows.find(isPending))?.id;
     const cashReported = sum(cash, reported);
-    const cashPosted = sum(cash.filter(activeReceipt), verified);
+    const cashPosted = sum(cash, row => row.actual_received_paisa);
     // Reversed cash remains part of the physical cash audit and caps new postings.
     const cashApplied = sum(cash, verified);
     const counted = day.counted_cash_paisa === null ? null : Number(day.counted_cash_paisa);
@@ -100,7 +100,7 @@ function ReconciliationDay({ day, date, rows, cashNotes, accounts, canPost, acto
         <div className="recon-day-body">
             <CashCount day={day} cashNotes={cashNotes} editable={open} reported={cashReported} posted={cashPosted} applied={cashApplied} accounts={accounts} matchingIds={eligible ? pendingCash.map(row => row.id) : []} matchingTotal={sum(pendingCash, reported)}/>
             <div className="recon-collections">
-                {warnings.map(row => <Notice key={row.sales_invoice_id} tone="red"><strong>Review {row.invoice_number} before posting.</strong> Pending reports total {rs(pendingByInvoice.get(row.sales_invoice_id) ?? 0)}, but only {rs(due(row))} is outstanding. Check for duplicate reports or payments already posted separately.</Notice>)}
+                {warnings.map(row => <Notice key={row.sales_invoice_id} tone="red"><strong>Review {row.invoice_number} before posting.</strong> Pending reports total {cashTotal(pendingByInvoice.get(row.sales_invoice_id) ?? 0)}, but only {rs(due(row))} is outstanding. Check for duplicate reports or payments already posted separately.</Notice>)}
                 {rows.length === 0 ? <div className="recon-empty">No collection reports in this submission.</div> : rows.map(row => <CollectionCard key={row.id} row={row} date={date} first={row.id === firstPending} editable={open && canPost} room={room} counted={counted} accounts={accounts} canRequest={can('finance.review') && can('finance.request')} canViewSale={can('sales.view') && can('view-supplier-details')}/>)}
             </div>
         </div>
@@ -125,13 +125,13 @@ function CollectionCard({ row, date, first, editable, room, counted, accounts, c
         </button>
         <div className="recon-report-body" data-collapsed={!expanded} id={`recon-report-${row.id}`}>
             <dl className="recon-metrics">
-                <div><dt>Invoice</dt><dd>{money(row.total_amount)}</dd></div><div><dt>Previously paid</dt><dd>{rs(Number(row.previous_paid_paisa))}</dd></div><div><dt>Posted {shortDate(date).split(' ').slice(0, 2).join(' ')}</dt><dd>{rs(Number(row.posted_on_date_paisa ?? 0))}</dd></div>
-                <div><dt>Outstanding now</dt><dd className={due(row) ? 'recon-negative' : 'recon-positive'}>{rs(due(row))}</dd></div><div><dt>Verified</dt><dd>{row.verified_paisa === null ? '—' : rs(verified(row))}</dd></div>
+                <div><dt>Invoice</dt><dd>{totalMoney(row.total_amount)}</dd></div><div><dt>Previously paid</dt><dd>{rs(Number(row.previous_paid_paisa))}</dd></div><div><dt>Settled {shortDate(date).split(' ').slice(0, 2).join(' ')}</dt><dd>{rs(Number(row.posted_on_date_paisa ?? 0))}</dd></div>
+                <div><dt>Outstanding now</dt><dd className={due(row) ? 'recon-negative' : 'recon-positive'}>{rs(due(row))}</dd></div><div><dt>Actual received</dt><dd>{cashTotal(row.actual_received_paisa)}</dd></div>
             </dl>
             {canViewSale && <Link className="recon-text-link recon-invoice-link recon-no-print" href={`/sales/${row.sales_invoice_id}/summary`}>View invoice {row.invoice_number} →</Link>}
             {pending && editable && touched && <ReconciliationVerification row={row} room={room} counted={counted} accounts={accounts} canRequest={canRequest}/>}
             {!pending && <div className="recon-result">
-                <span>{posted ? <>Posted <b>{rs(verified(row) + Number(row.shortage_paisa))}</b> · Receipt {row.payment_number}</> : reversed ? <>Receipt {row.payment_number} was reversed</> : row.method === 'none' ? 'Confirmed: no payment collected' : 'Reviewed without posting a payment'}{reference && ` · Ref ${reference}`}</span>
+                <span>{posted ? <>Settled <b>{cashTotal(row.invoice_settled_paisa)}</b> · Receipt {row.payment_number}{row.payment_date && ` · ${shortDate(row.payment_date)}`}</> : reversed ? <>Receipt {row.payment_number} was reversed</> : row.method === 'none' ? 'Confirmed: no payment collected' : 'Reviewed without posting a payment'}{reference && ` · Ref ${reference}`}</span>
                 {row.recorded_at && <span>Reviewed {row.reviewer ? `by ${row.reviewer} · ` : ''}{stamp(row.recorded_at)}</span>}
                 {row.review_note && <span>Review note: {row.review_note}</span>}
                 {Number(row.shortage_paisa) > 0 && <span>Employee shortage: {rs(Number(row.shortage_paisa))}{!reversed && canRequest && <> · <Link className="recon-text-link recon-no-print" href={`/finance-approvals?kind=shortage_repayment&collection_id=${row.id}`}>Request repayment</Link> · <Link className="recon-text-link recon-no-print" href={`/finance-approvals?kind=shortage_receipt_reverse&collection_id=${row.id}`}>Request receipt correction</Link></>}</span>}
@@ -145,7 +145,7 @@ function CloseDay({ day, editable, pending, reported, applied, canRequest }: { d
     const counted = Number(day.counted_cash_paisa ?? 0);
     const needsVariance = reported !== counted || applied !== counted;
     const waitingCount = day.counted_cash_paisa === null && reported > 0;
-    if (day.closed_at) return <div className="recon-close"><Pill tone="green">Closed</Pill><span>Counted {rs(counted)} · Cash posted at reconciliation {rs(applied)}{day.variance_note && ` · ${day.variance_note}`}</span></div>;
+    if (day.closed_at) return <div className="recon-close"><Pill tone="green">Closed</Pill><span>Counted {cashTotal(counted)} · Cash posted at reconciliation {cashTotal(applied)}{day.variance_note && ` · ${day.variance_note}`}</span></div>;
     if (!editable) return <div className="recon-close"><Info size={16}/>{day.submitted_at ? 'Another Finance user must review your own collection day.' : 'This salesman has not submitted these reports to Finance yet.'}</div>;
     return <form className="recon-close recon-no-print" onSubmit={e => { e.preventDefault(); form.post(`${path}/${day.id}/close`, { preserveScroll: true, errorBag: `close-${day.id}` }); }}>
         <div className="recon-close-state">{waitingCount ? 'Count the cash first.' : pending ? `${pending} report${pending === 1 ? '' : 's'} still to verify.` : needsVariance ? 'An independently approved variance and an explanation are required.' : 'Ready to close.'}</div>

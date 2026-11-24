@@ -16,7 +16,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { draftWasSaved, useDraftLeave } from '@/hooks/use-draft-leave';
 import AppLayout from '@/layouts/app-layout';
 import type { VisitOptions } from '@inertiajs/core';
-import { amount, dec2, money, pakistanDate, qty as fmtQty, toNumber } from '@/lib/format';
+import { amount, dec2, money, pakistanDate, qty as fmtQty, toNumber, totalMoney } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { combineEffects } from '@/lib/incentive';
 import { computeLine, computeTotals, effectiveDiscountPercent } from '@/lib/invoice-math';
@@ -58,6 +58,7 @@ interface InvoiceDto {
     gst_percent: string;
     notes: string | null;
     total_amount: string;
+    rounding_amount?: string | null;
     total_profit: string;
     items: {
         product_id: number;
@@ -273,6 +274,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
         () => computeTotals(computed.filter((_, i) => rows[i].product_id), header),
         [computed, rows, header],
     );
+    const rounding = toNumber(readonly ? invoice?.rounding_amount : totals.rounding_amount);
 
     const grid = useKeyboardGrid({
         appendOnArrowDown: false,
@@ -515,7 +517,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
                         )}
                         {invoice?.status === 'posted' && (
                             <span className="text-sm text-muted-foreground">
-                                Profit: <span className="font-medium tabular-nums">{money(invoice.total_profit)}</span>
+                                Profit: <span className="font-medium tabular-nums">{totalMoney(invoice.total_profit)}</span>
                             </span>
                         )}
                     </div>
@@ -869,7 +871,8 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
                         <span>GST <span className="ml-1">+{amount(totals.item_gst_total)}</span></span>
                         {totals.discount_amount > 0 && <span>Inv. Disc <span className="ml-1">−{amount(totals.discount_amount)}</span></span>}
                         {totals.gst_amount > 0 && <span>Inv. GST <span className="ml-1">+{amount(totals.gst_amount)}</span></span>}
-                        <span className="ml-auto text-2xl text-primary">Total <span className="ml-1">{money(totals.total_amount)}</span></span>
+                        {rounding !== 0 && <span>Rounding <span className="ml-1">{amount(rounding)}</span></span>}
+                        <span className="ml-auto text-2xl text-primary">Total <span className="ml-1">{totalMoney(readonly && invoice ? invoice.total_amount : totals.total_amount)}</span></span>
                     </div>
                 </div>
             </div>

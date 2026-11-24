@@ -155,7 +155,9 @@ class OpenInvoiceBalanceTest extends TestCase
         $this->post($url, $payload + ['allocations' => [$allocation($older, '100.12'), $allocation($newer, '25.38')]])
             ->assertSessionDoesntHaveErrors()->assertRedirect();
         $payment = Payment::sole();
-        $this->assertEquals(125.50, $payment->amount);
+        $this->assertEquals(126, $payment->amount);
+        $this->assertSame(12550, $payment->tendered_paisa);
+        $this->assertSame(12600, $payment->received_paisa);
         $this->assertDatabaseHas('payment_allocations', ['payment_id' => $payment->id, 'invoice_id' => $older->id, 'amount' => 100.12]);
         $this->assertDatabaseHas('payment_allocations', ['payment_id' => $payment->id, 'invoice_id' => $newer->id, 'amount' => 25.38]);
         $this->getJson(route('lookup.open-invoices', ['party_type' => 'customer', 'party_id' => $customer->id]))

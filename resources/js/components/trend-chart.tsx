@@ -8,11 +8,13 @@ export interface TrendPoint {
     label: string;
     sales: number;
     profit: number;
+    received?: number;
 }
 
 const compactNumber = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
 
 export function TrendChart({ data }: { data: TrendPoint[] }) {
+    const hasReceipts = data.some((point) => point.received !== undefined);
     return (
         <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -41,15 +43,17 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
                     />
                     <Legend wrapperStyle={{ fontSize: 14, fontWeight: 600 }} formatter={(label) => <span style={{ color: chartTheme.text }}>{label}</span>} />
                     <Line
-                        type="monotone" dataKey="sales" name="Sales"
+                        type="monotone" dataKey="sales" name="Net Sales"
                         stroke={chartTheme.sales} strokeWidth={2}
                         dot={false} activeDot={{ r: 4 }}
                     />
                     <Line
-                        type="monotone" dataKey="profit" name="Profit"
+                        type="monotone" dataKey="profit" name="Net Profit"
                         stroke={chartTheme.profit} strokeWidth={2} strokeDasharray="5 3"
                         dot={false} activeDot={{ r: 4 }}
                     />
+                    {hasReceipts && <Line type="monotone" dataKey="received" name="Actual Receipts" stroke="#684ab4" strokeWidth={2}
+                        strokeDasharray="2 4" dot={false} activeDot={{ r: 4 }} />}
                 </LineChart>
             </ResponsiveContainer>
         </div>

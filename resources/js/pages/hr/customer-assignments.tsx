@@ -11,7 +11,7 @@ export default function CustomerAssignments({ employeeId, linked, customers, opt
     employeeId: number; linked: boolean; customers: Option[]; options: AssignmentOption[] | null; issue?: string | null;
 }) {
     const [open, setOpen] = useState(false);
-    return <section className="space-y-3 rounded-xl border p-4">
+    return <section className="card register-panel space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
             <div><h2 className="text-lg font-semibold">Assigned Customers ({customers.length})</h2>
                 <p className="text-sm text-muted-foreground">Active assigned customers appear in this Booker’s booking form.</p></div>

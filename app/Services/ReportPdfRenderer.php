@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\ReportTotals;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Barryvdh\DomPDF\PDF as PdfDocument;
 use Dompdf\Adapter\CPDF;
@@ -27,7 +28,7 @@ class ReportPdfRenderer
         ]);
         $orientation ??= $widest > 6 ? 'landscape' : 'portrait';
 
-        return $this->renderView('pdf.report', $data, $orientation);
+        return $this->renderView('pdf.report', ReportTotals::roundMoney($data), $orientation);
     }
 
     public function renderView(string $view, array $data, string $orientation): PdfDocument

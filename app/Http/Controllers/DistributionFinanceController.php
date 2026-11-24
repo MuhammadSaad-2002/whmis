@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{FinanceWorkItem, Payment, PaymentAllocation, SalesInvoice, SalesReturn, User};
-use App\Services\{DailyCollectionReport, DeliveryCollectionService, DeliveryPlanningService, FinanceApprovalService, InvoiceBalanceService, ReportPdfRenderer, TreasuryService};
+use App\Services\{DailyCollectionReport, DeliveryCollectionService, DeliveryPlanningService, FinanceApprovalOptions, FinanceApprovalService, InvoiceBalanceService, ReportPdfRenderer, TreasuryService};
 use App\Support\Paisa;
 use App\Support\ReportCsv;
 use Illuminate\Http\Request;
@@ -14,13 +14,13 @@ use Inertia\Inertia;
 
 class DistributionFinanceController
 {
-    private const RECEIPTS = ['receipt', 'refund_recovery', 'shortage_repayment', 'recovery_repayment', 'advance_repayment'];
+    private const RECEIPTS = ['receipt', 'refund_recovery', 'shortage_repayment', 'recovery_repayment', 'advance_repayment', 'reconciliation_surplus'];
 
     private const PAYOUTS = ['supplier_payment', 'customer_refund', 'commission_payout', 'advance', 'salary_payment', 'expense'];
 
     private const LEDGER_FILTERS = [
         'opening' => ['opening'], 'receipt' => self::RECEIPTS, 'payout' => self::PAYOUTS,
-        'transfer' => ['transfer_in', 'transfer_out'], 'other' => ['adjustment'],
+        'transfer' => ['transfer_in', 'transfer_out'], 'other' => ['adjustment', 'refund_correction', 'shortage_repayment_reverse'],
     ];
 
     public function __construct(private TreasuryService $treasury, private FinanceApprovalService $approvals, private DeliveryCollectionService $collections) {}
@@ -160,7 +160,7 @@ class DistributionFinanceController
     {
         $filters = $request->validate([
             'request_id' => ['nullable', 'integer', 'min:1'],
-            'status' => ['nullable', Rule::in(['all', 'pending', 'approved', 'posted', 'rejected', 'cancelled'])],
+            'status' => ['nullable', Rule::in(['all', 'pending', 'approved', 'posted', 'rejected', 'cancelled', 'reversed'])],
             'search' => 'nullable|string|max:120',
             'type' => ['nullable', Rule::in(FinanceApprovalService::KINDS)],
         ]);
@@ -187,6 +187,18 @@ class DistributionFinanceController
             ->latest('id')->paginate(25)->withQueryString();
         $names = User::whereKey($items->getCollection()->flatMap(fn ($item) => [$item->created_by, $item->approved_by, $item->posted_by])
             ->filter()->unique()->values()->all())->pluck('name', 'id');
+        $events = DB::table('finance_work_events')->where('source_type','approval')->whereIn('source_id', $items->getCollection()->modelKeys())
+            ->whereIn('action', ['reconciled','posted','reversed','credit_released','withdrawn','commission_posted'])->orderBy('id')->get()->groupBy('source_id');
+        $invoiceIds = $items->getCollection()->flatMap(fn ($item) => [$item->payload['invoice_id'] ?? null,
+            $item->kind === 'credit_apply' || $item->kind === 'credit_release' ? $item->payload['target_id'] ?? null : null])->filter()->unique();
+        $invoices = SalesInvoice::with('customer:id,name')->whereKey($invoiceIds->all())->get(['id','invoice_number','customer_id'])->keyBy('id');
+        $employees = \App\Models\Employee::whereKey($items->getCollection()->map(fn ($item) => $item->payload['employee_id'] ?? null)->filter()->unique()->all())->pluck('name','id');
+        $accounts = app(FinanceApprovalOptions::class)->accounts($actor);
+        $movements = DB::table('treasury_entries as t')->join('financial_accounts as a','a.id','=','t.account_id')->where('t.source_type','approval')
+            ->whereIn('t.source_id', $items->getCollection()->modelKeys())->whereIn('t.account_id', $this->treasury->visible($actor)->select('financial_accounts.id'))
+            ->get(['t.source_id','a.name','t.paisa','t.kind'])->groupBy('source_id');
+        $ledger = DB::table('ledger_entries')->where('reference_type', (new FinanceWorkItem)->getMorphClass())
+            ->whereIn('reference_id', $items->getCollection()->modelKeys())->get(['reference_id','debit','credit','description'])->groupBy('reference_id');
 
         return Inertia::render('operations/finance-approvals', [
             'items' => $items->through(fn ($item) => $item->only([
@@ -195,29 +207,79 @@ class DistributionFinanceController
             ]) + [
                 'has_evidence' => (bool) $item->evidence_path,
                 'requester_name' => $names->get($item->created_by), 'reviewer_name' => $names->get($item->approved_by), 'poster_name' => $names->get($item->posted_by),
+                'details' => [
+                    'invoice' => $invoices->get($item->payload['invoice_id'] ?? 0)?->invoice_number,
+                    'customer' => $invoices->get($item->payload['invoice_id'] ?? 0)?->customer?->name,
+                    'target_invoice' => in_array($item->kind, ['credit_apply','credit_release'], true) ? $invoices->get($item->payload['target_id'] ?? 0)?->invoice_number : null,
+                    'employee' => $employees->get($item->payload['employee_id'] ?? 0),
+                    'share' => $item->payload['share_facts'] ?? null,
+                    'share_projection' => $item->payload['share_projection'] ?? null,
+                    'opening' => $item->payload['accounts'] ?? null,
+                    'opening_imports' => collect($item->payload['imports'] ?? [])->countBy('type'),
+                    'ledger' => $ledger->get($item->id, collect())->map(fn ($entry) => [
+                        'description' => $entry->description, 'paisa' => Paisa::from($entry->debit) - Paisa::from($entry->credit),
+                    ])->values(),
+                    'movements' => $movements->get($item->id, collect())->map(fn ($movement) => [
+                        'name' => $movement->name, 'paisa' => (int) $movement->paisa, 'kind' => $movement->kind])->values(),
+                ],
+                'outcomes' => $events->get($item->id, collect())->map(fn ($event) => ['action' => $event->action,
+                    'data' => json_decode($event->data, true, flags: JSON_THROW_ON_ERROR)])->values(),
                 'payload' => \Illuminate\Support\Arr::only($item->payload ?? [], ['date', 'notes', 'invoice_id', 'target_id', 'account_id', 'booking_id',
-                    'employee_id', 'award_id', 'award_invoice_number', 'commission_role', 'collection_id', 'day_id', 'credit_id', 'share', 'method', 'direction', 'opening_id']),
+                    'employee_id', 'award_id', 'award_invoice_number', 'commission_role', 'collection_id', 'day_id', 'credit_id', 'share', 'method', 'direction', 'opening_id',
+                    'category', 'payee', 'transaction_reference', 'cap_period', 'repayment_via', 'hold_until', 'corrected_amount', 'previous_paisa', 'reported', 'counted', 'verified',
+                    'source_payment_id', 'source_receipt']),
             ]),
             'summary' => $summary,
             'filters' => ['status' => $status, 'search' => $search, 'type' => $filters['type'] ?? ''],
             'requestId' => $requestId,
-            'accounts' => $this->treasury->options($actor), 'kinds' => $actor->can('manage-employee-commissions') ? FinanceApprovalService::KINDS
+            'accounts' => $accounts, 'kinds' => $actor->can('manage-employee-commissions') ? FinanceApprovalService::KINDS
                 : array_values(array_diff(FinanceApprovalService::KINDS, FinanceApprovalService::PRIVATE_KINDS)),
             'today' => now('Asia/Karachi')->toDateString(), 'actorId' => $actor->id,
         ]);
     }
 
+    public function approvalOptions(Request $request, FinanceApprovalOptions $options)
+    {
+        $data = $request->validate([
+            'kind' => ['required', Rule::in(FinanceApprovalService::KINDS)],
+            'customer_id' => 'nullable|integer|min:1', 'award_id' => 'nullable|integer|min:1', 'date' => 'nullable|date_format:Y-m-d',
+        ]);
+
+        return response()->json($options->get($request->user(), $data['kind'], $data['customer_id'] ?? null, $data['award_id'] ?? null, $data['date'] ?? null))
+            ->header('Cache-Control', 'private, no-store');
+    }
+
+    public function approvalSharePreview(Request $request)
+    {
+        abort_unless($request->user()->can('manage-employee-commissions'), 403);
+        $data = $request->validate(['invoice_id' => 'required|integer|min:1', 'share' => 'required|numeric|decimal:0,2|min:0|max:100']);
+        $invoice = SalesInvoice::where('status','posted')->findOrFail($data['invoice_id']);
+        $commissions = app(\App\Services\CommissionService::class);
+        abort_unless($commissions->shareFacts($invoice), 404);
+        return response()->json($commissions->previewShare($invoice, Paisa::from($data['share'])))
+            ->header('Cache-Control', 'private, no-store');
+    }
+
     public function createApproval(Request $request)
     {
+        // Reject private workflows before validating their fields or storing any files.
+        abort_if(in_array($request->input('kind'), FinanceApprovalService::PRIVATE_KINDS, true)
+            && ! $request->user()->can('manage-employee-commissions'), 403);
         $data = $request->validate([
             'kind' => ['required', Rule::in(FinanceApprovalService::KINDS)], 'request_key' => 'required|uuid',
             'date' => 'required|date_format:Y-m-d', 'notes' => 'required|string|max:1500',
-            'amount' => 'nullable|numeric|decimal:0,2|min:0|max:999999999999', 'invoice_id' => 'nullable|integer',
+            'amount' => 'nullable|required_if:kind,transfer,expense,adjustment,statement,refund,credit_apply,credit_writeoff,refund_recovery,shortage,shortage_repayment,shortage_commission_offset,commission_cap,commission_payout,recovery_repayment,recovery_waiver|numeric|decimal:0,2|min:0|max:999999999999',
+            'invoice_id' => 'nullable|integer|min:1',
+            'source_payment_id' => 'nullable|integer|min:1|prohibited_unless:kind,refund,credit_apply,credit_writeoff',
             'day_id' => 'nullable|integer', 'credit_id' => 'nullable|integer', 'account_id' => 'nullable|integer', 'target_id' => 'nullable|integer',
             'employee_id' => 'nullable|integer', 'award_id' => 'nullable|integer|min:1|prohibited_unless:kind,commission_payout',
             'booking_id' => 'nullable|integer', 'commission_role' => 'nullable|in:booker,salesman',
             'collection_id' => 'nullable|integer',
             'method' => 'nullable|in:cash,bank', 'direction' => 'nullable|in:in,out',
+            'category' => ['nullable', Rule::in(FinanceApprovalService::EXPENSE_CATEGORIES)],
+            'payee' => 'nullable|string|max:200', 'transaction_reference' => 'nullable|string|max:200',
+            'corrected_amount' => 'nullable|required_if:kind,refund_correction|numeric|decimal:0,2|min:0|max:999999999999',
+            'cap_period' => 'nullable|in:invoice,month', 'repayment_via' => 'nullable|in:cash,commission', 'hold_until' => 'nullable|date_format:Y-m-d',
             'evidence' => 'nullable|file|max:8192|mimes:pdf,png,jpg,jpeg,csv',
             'opening_csv' => 'nullable|file|max:1024|mimes:csv,txt',
             'share' => 'nullable|numeric|decimal:0,2|min:0|max:100',
@@ -312,15 +374,20 @@ class DistributionFinanceController
             ->orderBy('actor.name')->orderBy('day.revision')->get(['day.*','actor.name as salesman']);
         $reports = DB::table('delivery_collections as c')->join('sales_invoices as i','i.id','=','c.sales_invoice_id')->join('customers as customer','customer.id','=','i.customer_id')
             ->leftJoin('payments as p','p.id','=','c.payment_id')->whereIn('c.collection_day_id', $days->pluck('id'))->orderBy('c.id')
-            ->select('c.*','i.invoice_number','i.total_amount','customer.name as customer','p.payment_number','p.status as payment_status');
+            ->select('c.*','i.invoice_number','i.total_amount','customer.name as customer','p.payment_number','p.status as payment_status')
+            ->selectRaw('DATE(p.payment_date) AS payment_date');
         if ($finance) $reports->leftJoin('users as reviewer', 'reviewer.id', '=', 'c.reviewer_id')->addSelect('reviewer.name as reviewer', 'p.reference_no as posted_reference');
         $rows = $reports->get();
         $dues = $balances->sales()->whereKey($rows->pluck('sales_invoice_id')->unique()->all())->get()->keyBy('id');
-        $rows->each(fn ($row) => $row->outstanding = $dues[$row->sales_invoice_id]->outstanding ?? 0);
+        $collectionReport = app(DailyCollectionReport::class);
+        $rows->each(function ($row) use ($dues, $collectionReport) {
+            $row->outstanding = $dues[$row->sales_invoice_id]->outstanding ?? 0;
+            foreach ($collectionReport->amounts($row) as $key => $value) $row->{$key} = $value;
+        });
         if (($filters['format'] ?? null) === 'pdf') {
             $salesman = ! $finance ? $request->user()->name : (isset($filters['salesman_id'])
                 ? ($days->first()?->salesman ?? 'Selected salesman') : null);
-            $data = app(DailyCollectionReport::class)->data($date, $finance, $days, $rows, $salesman);
+            $data = $collectionReport->data($date, $finance, $days, $rows, $salesman);
 
             return app(ReportPdfRenderer::class)->render($data)->stream(($finance ? 'daily-reconciliation-' : 'daily-collections-').$date.'.pdf')
                 ->header('Cache-Control', 'private, no-store');
@@ -328,11 +395,11 @@ class DistributionFinanceController
         if (($filters['format'] ?? null) === 'csv') {
             $labels = $days->keyBy('id');
             return ReportCsv::download("daily-collections-{$date}.csv",
-                ['Business date','Salesman','Revision','Customer','Invoice','Total','Previous paid','Method','Reported','Verified','Shortage','Outstanding','Receipt','Status','Review notes'],
+                ['Report business date','Salesman','Revision','Customer','Invoice','Total','Previous paid','Method','Reported','Actual received','Invoice settled','Shortage','Outstanding','Receipt','Payment date','Status','Review notes'],
                 $rows->map(fn ($row) => [$date,$labels[$row->collection_day_id]->salesman,$labels[$row->collection_day_id]->revision,
                     $row->customer,$row->invoice_number,$row->total_amount,Paisa::rupees($row->previous_paid_paisa),$row->method,
-                    Paisa::rupees($row->reported_paisa),$row->verified_paisa !== null ? Paisa::rupees($row->verified_paisa) : '',
-                    Paisa::rupees($row->shortage_paisa),max(0,(float) $row->outstanding),$row->payment_number,$row->payment_status ?? ($row->recorded_at ? 'recorded' : 'pending'), $row->review_note]));
+                    Paisa::rupees($row->reported_paisa),Paisa::rupees($row->actual_received_paisa),Paisa::rupees($row->invoice_settled_paisa),
+                    Paisa::rupees($row->shortage_paisa),max(0,(float) $row->outstanding),$row->payment_number,$row->payment_date,$row->payment_status ?? ($row->recorded_at ? 'recorded' : 'pending'), $row->review_note]));
         }
         if ($finance) {
             $postedOnDate = PaymentAllocation::query()->where('invoice_type', (new SalesInvoice)->getMorphClass())

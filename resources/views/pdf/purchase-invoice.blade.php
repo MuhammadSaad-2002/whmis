@@ -79,8 +79,11 @@
         @if((float) $invoice->gst_amount > 0)
             <tr><td>Invoice GST</td><td class="num">+{{ number_format((float) $invoice->gst_amount, 2) }}</td></tr>
         @endif
-        <tr class="grand"><td>Total (Rs)</td><td class="num">{{ number_format((float) $invoice->total_amount, 2) }}</td></tr>
-        <tr><td class="muted">Expected Margin</td><td class="num muted">{{ number_format((float) $invoice->total_margin, 2) }} ({{ number_format((float) $invoice->margin_percent, 1) }}%)</td></tr>
+        @if((float) ($invoice->rounding_amount ?? 0) !== 0.0)
+            <tr><td>Rounding</td><td class="num">{{ number_format((float) $invoice->rounding_amount, 2) }}</td></tr>
+        @endif
+        <tr class="grand"><td>Total (Rs)</td><td class="num">{{ \App\Support\MoneyDisplay::total($invoice->total_amount) }}</td></tr>
+        <tr><td class="muted">Expected Margin</td><td class="num muted">{{ \App\Support\MoneyDisplay::total($invoice->total_margin) }} ({{ number_format((float) $invoice->margin_percent, 1) }}%)</td></tr>
     </table>
 
     @if($invoice->notes)

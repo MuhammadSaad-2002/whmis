@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { money, pct, shortDate } from '@/lib/format';
+import { money, pct, shortDate, totalPaisaMoney as cashTotal } from '@/lib/format';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { ArrowUpRight, CalendarDays, ChevronRight, DollarSign, FileText, List, Plus, type LucideIcon } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -79,11 +79,11 @@ export default function Commissions({ employee, employees, employeeIdentity, man
             {employee && <div aria-busy={loading}>
                 <section className="commission-balances" aria-label="Employee commission balances">
                     <div className="commission-card commission-pad"><h2>Payouts</h2><div className="commission-due">
-                        <small>Payout due</small><strong>{cash(totals.payable)}</strong><em>{hasDue ? 'Ready to request' : 'Nothing due yet'}</em>
+                        <small>Payout due</small><strong>{cashTotal(totals.payable)}</strong><em>{hasDue ? 'Ready to request' : 'Nothing due yet'}</em>
                     </div><dl className="commission-paid"><BalanceLine label="Paid to date" value={totals.paid} /></dl></div>
                     <div className="commission-card commission-pad commission-earn"><div className="commission-section-title"><h2>Earnings</h2><span>how commission moves to payable</span></div>
                         <div className="commission-stages">{describeStages.map(([key, label, detail]) => <div key={key} data-stage={key}>
-                            <small><i />{label}</small><strong data-zero={!Number(totals[key])}>{cash(totals[key])}</strong><p>{detail}</p>
+                            <small><i />{label}</small><strong data-zero={!Number(totals[key])}>{cashTotal(totals[key])}</strong><p>{detail}</p>
                         </div>)}</div>
                     </div>
                     <div className="commission-card commission-pad"><h2>Recovery</h2><dl>
@@ -193,7 +193,7 @@ function RatePreview({ rules }: { rules: PreviewRules }) {
     const booker = estimate(rules.booker);
     const salesman = estimate(rules.salesman);
     return <div className="commission-preview"><label>Preview: on a fully delivered, settled booking invoice of <span>Rs <input aria-label="Example eligible amount" type="number" min="0" step=".01" value={value} onChange={event => setValue(event.target.value)} /></span></label>
-        <p>Booker <strong>{cash(booker)}</strong> · Salesman <strong>{cash(salesman)}</strong> · Both roles <strong>{cash(booker + salesman)}</strong></p>
+        <p>Booker <strong>{cash(booker)}</strong> · Salesman <strong>{cash(salesman)}</strong> · Both roles <strong>{cashTotal(booker + salesman)}</strong></p>
         <small>Illustration using default rates and the same eligible amount for both roles, with no split or overrides.</small>
     </div>;
 }

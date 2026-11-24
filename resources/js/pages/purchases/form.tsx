@@ -1,4 +1,5 @@
 import InputError from '@/components/input-error';
+import { RegisterHeader } from '@/components/master-register';
 import { ProductSearchCell, type ProductHit } from '@/components/product-search-cell';
 import { PurchaseBatchCell } from '@/components/purchase-batch-cell';
 import { Button } from '@/components/ui/button';
@@ -14,7 +15,7 @@ import { useTreasuryPayment } from '@/hooks/use-treasury-payment';
 import { draftWasSaved, useDraftLeave } from '@/hooks/use-draft-leave';
 import AppLayout from '@/layouts/app-layout';
 import type { VisitOptions } from '@inertiajs/core';
-import { amount, dec2, money, pakistanDate, qty, shortDate, toNumber } from '@/lib/format';
+import { amount, dec2, money, pakistanDate, qty, shortDate, toNumber, totalMoney, totalAmount } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { computeLine, computeTotals } from '@/lib/invoice-math';
 import { Head, Link, router } from '@inertiajs/react';
@@ -62,6 +63,7 @@ interface InvoiceDto {
     gst_amount: string;
     total_margin: string;
     total_amount: string;
+    rounding_amount?: string | null;
     items: {
         product_id: number;
         product?: { id: number; name: string };
@@ -477,24 +479,24 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
             {draft.dialog}
             <Head title={invoice ? invoice.invoice_number : 'New Purchase Invoice'} />
             <main className={`purchase-doc${readonly ? ' purchase-doc--view' : ''}`} aria-busy={saving}>
-                <nav className="purchase-crumb" aria-label="Breadcrumb">
-                    <Link href={route('purchases.index')}><ChevronLeft aria-hidden="true" />Purchase Invoices</Link>
-                    <span aria-hidden="true">/</span><span aria-current="page">{invoice?.invoice_number ?? 'New'}</span>
-                </nav>
-                <header className="purchase-heading">
-                    <h1>{invoice ? <><span>Purchase</span> {invoice.invoice_number}</> : 'New Purchase Invoice'}</h1>
-                    <span className="purchase-status" data-status={invoice?.status ?? 'draft'}>{invoice?.status ?? 'draft'}</span>
-                    {isDraft && invoice?.updated_at && draft.canLeaveAfterSave() && <span className="purchase-saved"><Check aria-hidden="true" />Draft saved {clockPKT.format(new Date(invoice.updated_at))}</span>}
-                    <div className="purchase-actions">
-                        {invoice && <>
-                            <Button variant="outline" className="purchase-button" asChild><a href={route('purchases.print', invoice.id)} target="_blank" rel="noreferrer"><Printer />Print</a></Button>
-                            {can('purchases.create') && <Button variant="outline" className="purchase-button" disabled={saving} onClick={() => router.post(route('purchases.duplicate', invoice.id), {}, { preserveState: false })}><Copy />Duplicate</Button>}
-                            {invoice.status === 'posted' && can('purchases.cancel') && <Button variant="outline" className="purchase-button purchase-button--danger" disabled={saving} onClick={() => setConfirmAction('cancel')}><XCircle />Cancel Invoice</Button>}
+                <div className="master-register purchase-header">
+                    <RegisterHeader title={invoice?.invoice_number ?? 'New Purchase Invoice'}
+                        description={<>
+                            <Link className="purchase-back" href={route('purchases.index')}><ChevronLeft className="i" aria-hidden="true" />Purchase Invoices</Link>
+                            <span className={`st ${invoice?.status ?? 'draft'}`}>{invoice?.status ?? 'draft'}</span>
+                            {isDraft && invoice?.updated_at && draft.canLeaveAfterSave() && <span className="purchase-saved"><Check className="i" aria-hidden="true" />Draft saved {clockPKT.format(new Date(invoice.updated_at))}</span>}
                         </>}
-                        {canSave && <Button variant="outline" className="purchase-button" onClick={() => save()} disabled={saving}><Save />Save Draft <kbd>F8</kbd></Button>}
-                        {canPost && <Button className="purchase-button purchase-button--primary" onClick={askPost} disabled={saving}><Check />Post invoice <kbd>Ctrl ↵</kbd></Button>}
-                    </div>
-                </header>
+                        actions={(invoice || canSave || canPost) && <div className="register-hero-actions" role="group" aria-label="Invoice actions">
+                            {invoice && <>
+                                <a className="hbtn" href={route('purchases.print', invoice.id)} target="_blank" rel="noreferrer"><Printer className="i" aria-hidden="true" />Print</a>
+                                {can('purchases.create') && <button type="button" className="hbtn" disabled={saving} onClick={() => router.post(route('purchases.duplicate', invoice.id), {}, { preserveState: false })}><Copy className="i" aria-hidden="true" />Duplicate</button>}
+                                {invoice.status === 'posted' && can('purchases.cancel') && <button type="button" className="hbtn purchase-cancel" disabled={saving} onClick={() => setConfirmAction('cancel')}><XCircle className="i" aria-hidden="true" />Cancel Invoice</button>}
+                            </>}
+                            {canSave && <button type="button" className="hbtn" onClick={() => save()} disabled={saving}><Save className="i" aria-hidden="true" />Save Draft <kbd>F8</kbd></button>}
+                            {canPost && <button type="button" className="hbtn pri" onClick={askPost} disabled={saving}><Check className="i" aria-hidden="true" />Post invoice <kbd>Ctrl ↵</kbd></button>}
+                        </div>}
+                    />
+                </div>
 
                 <section data-enter-nav className="purchase-fields" aria-label="Invoice details">
                     <div className="purchase-field purchase-supplier">
@@ -576,9 +578,9 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
 
                 {readonly && invoice && (invoice.status === 'posted' || invoice.posted_at) && <section className="purchase-strip" aria-label="Posted invoice summary">
                     <SummaryTile icon={Package} tone="teal" label={invoice.status === 'cancelled' ? 'Stock reversed' : 'Stock added'} value={stockSummary} />
-                    <SummaryTile icon={ArrowUp} tone="red" label={invoice.status === 'cancelled' ? (isCash ? 'Cash payment reversed' : 'Payable reversed') : isCash ? 'Paid in cash' : 'Added to payable'} value={money(invoiceTotal)} />
+                    <SummaryTile icon={ArrowUp} tone="red" label={invoice.status === 'cancelled' ? (isCash ? 'Cash payment reversed' : 'Payable reversed') : isCash ? 'Paid in cash' : 'Added to payable'} value={totalMoney(invoiceTotal)} />
                     <SummaryTile icon={Landmark} tone="blue" label={supplier?.payable_balance !== undefined ? 'Supplier balance now' : 'Supplier'} value={supplier?.payable_balance !== undefined ? money(supplier.payable_balance) : supplier?.name ?? '—'} />
-                    <SummaryTile icon={TrendingUp} tone={marginValue < 0 ? 'red' : 'green'} label="Expected margin" value={`${money(marginValue)}${marginPercent ? ` · ${marginPercent}` : ''}`} />
+                    <SummaryTile icon={TrendingUp} tone={marginValue < 0 ? 'red' : 'green'} label="Expected margin" value={`${totalMoney(marginValue)}${marginPercent ? ` · ${marginPercent}` : ''}`} />
                 </section>}
 
                 <section className="purchase-lines" aria-label="Invoice items">
@@ -708,8 +710,9 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                             <i aria-hidden="true">%</i></span><b data-empty={adjustment === 0}>{discount ? '−' : '+'}{amount(adjustment)}</b></label>;
                     })}
                     <div className="purchase-total-part"><span>Items</span><b className="purchase-muted">{filledRows.length} · {qty(units)} units</b></div>
-                    <div className="purchase-margin-total" data-loss={marginValue < 0}><span>Exp. margin</span><b>{amount(marginValue)}</b>{marginPercent && <small>{marginPercent}</small>}</div>
-                    <div className="purchase-grand"><span>Total</span><b>{money(invoiceTotal)}</b></div>
+                    <div className="purchase-margin-total" data-loss={marginValue < 0}><span>Exp. margin</span><b>{totalAmount(marginValue)}</b>{marginPercent && <small>{marginPercent}</small>}</div>
+                    {!!toNumber(displayTotals.rounding_amount) && <div className="purchase-total-part"><span>Rounding</span><b>{amount(displayTotals.rounding_amount)}</b></div>}
+                    <div className="purchase-grand"><span>Total</span><b>{totalMoney(invoiceTotal)}</b></div>
                 </section>
             </main>
 
@@ -722,7 +725,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                     {confirmAction === 'post' && <DialogBody><dl className="purchase-dialog-details">
                         <div><dt>Supplier</dt><dd>{supplier?.name}</dd></div>
                         <div><dt>Stock into {warehouse.name.toLowerCase()}</dt><dd>{stockSummary}</dd></div>
-                        <div><dt>{isCash ? 'Paid in cash' : 'Added to payable'}</dt><dd>{money(invoiceTotal)}</dd></div>
+                        <div><dt>{isCash ? 'Paid in cash' : 'Added to payable'}</dt><dd>{totalMoney(invoiceTotal)}</dd></div>
                         {!isCash && <div><dt>Due</dt><dd>{header.due_date ? shortDate(header.due_date) : 'No due date'}</dd></div>}
                     </dl></DialogBody>}
                     <DialogFooter>

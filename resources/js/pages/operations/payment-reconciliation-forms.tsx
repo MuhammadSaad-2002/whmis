@@ -1,4 +1,4 @@
-import { amount } from '@/lib/format';
+import { amount, totalPaisaMoney as cashTotal } from '@/lib/format';
 import { Link, useForm } from '@inertiajs/react';
 import { Check, X } from 'lucide-react';
 import { useState } from 'react';
@@ -39,16 +39,16 @@ export function CashCount({ day, cashNotes, editable, reported, posted, applied,
                     <input type="number" min="0" max="100000000" step="1" inputMode="numeric" placeholder="0" aria-label={`${note} rupee notes`} value={form.data.notes[note] ?? ''} onChange={e => form.setData('notes', { ...form.data.notes, [note]: e.target.value })}/><output>{form.data.notes[note] ? amount(note * Number(form.data.notes[note])) : '—'}</output></label>)}
                 <label className="recon-denom"><span>Coins</span><input type="number" min="0" max={maxAmount} step=".01" inputMode="decimal" placeholder="0" aria-label="Coins total" value={form.data.coins} onChange={e => form.setData('coins', e.target.value)}/><output>{form.data.coins ? amount(form.data.coins) : '—'}</output></label>
             </div> : <Field label="Total physical cash (PKR)"><input required type="number" min="0" max={maxAmount} step=".01" inputMode="decimal" value={form.data.amount} onChange={e => form.setData('amount', e.target.value)} placeholder="0.00"/></Field>}
-            <div className="recon-total"><span>Total counted</span><output>{rs(current)}</output></div>
+            <div className="recon-total"><span>Total counted</span><output>{cashTotal(current)}</output></div>
             {current < applied && <Notice tone="red">The count cannot be lower than the cash already verified ({rs(applied)}).</Notice>}
             <Errors errors={form.errors}/>
             <div className="recon-actions"><button type="submit" className="recon-button recon-primary" disabled={form.processing || !validTotal || current < applied || current > maxAmount * 100}><Check/> Save cash count</button>{saved !== null && <button type="button" className="recon-button" onClick={() => { setEditing(false); form.clearErrors(); }}>Cancel recount</button>}</div>
-        </form> : <><div className="recon-total recon-saved"><span>Counted</span><strong>{saved === null ? 'Not counted' : rs(saved)}</strong></div>{editable && <p className="recon-muted recon-no-print">Physical count saved · <button className="recon-text-link" type="button" onClick={() => { setMode('total'); form.setData('amount', decimal(saved ?? 0)); setEditing(true); }}>Recount</button></p>}</>}
+        </form> : <><div className="recon-total recon-saved"><span>Counted</span><strong>{saved === null ? 'Not counted' : cashTotal(saved)}</strong></div>{editable && <p className="recon-muted recon-no-print">Physical count saved · <button className="recon-text-link" type="button" onClick={() => { setMode('total'); form.setData('amount', decimal(saved ?? 0)); setEditing(true); }}>Recount</button></p>}</>}
         <div className={counting ? 'recon-no-print' : undefined}>
-            <dl className="recon-comparison">{compare.map(([label, value, color]) => <div key={label}><dt>{label}</dt><span aria-hidden="true" className="recon-meter"><i style={{ width: `${Math.max(0, value) / largest * 100}%`, backgroundColor: color }}/></span><dd>{label === 'Counted' && saved === null ? '—' : rs(value)}</dd></div>)}</dl>
+            <dl className="recon-comparison">{compare.map(([label, value, color]) => <div key={label}><dt>{label}</dt><span aria-hidden="true" className="recon-meter"><i style={{ width: `${Math.max(0, value) / largest * 100}%`, backgroundColor: color }}/></span><dd>{label === 'Counted' && saved === null ? '—' : cashTotal(value)}</dd></div>)}</dl>
             {saved === null && (!counting || !current) ? <Notice tone="neutral">Count the cash first. Posted cash cannot exceed the counted amount.</Notice> : difference === 0 ? <Notice tone="green">{counting ? 'Count matches reported cash. Save it before posting.' : 'Counted cash matches reported cash.'}</Notice> : difference < 0 ? <Notice tone="red"><strong>{rs(-difference)} short</strong> against reported cash. Review individual reports before posting.</Notice> : <Notice tone="amber"><strong>{rs(difference)} more</strong> than reported. Check for an unreported collection before closing.</Notice>}
         </div>
-        {counting && <p className="recon-print-only">Reported cash {rs(reported)} · Saved count {saved === null ? 'not counted' : rs(saved)} · Posted cash {rs(posted)}</p>}
+        {counting && <p className="recon-print-only">Reported cash {rs(reported)} · Saved count {saved === null ? 'not counted' : cashTotal(saved)} · Posted cash {rs(posted)}</p>}
         {!counting && matchingIds.length > 0 && <MatchingCash key={matchingIds.join(',')} id={day.id} ids={matchingIds} value={matchingTotal} accounts={cashAccounts(accounts)}/>}
     </aside>;
 }
@@ -59,7 +59,7 @@ function MatchingCash({ id, ids, value, accounts }: { id: number; ids: number[];
         <h3>Post matching cash</h3><p>{ids.length} cash report{ids.length === 1 ? '' : 's'} ready. This records an allocated receipt for each report. Bank transfers are reviewed separately.</p>
         <Field label="Receiving cash account"><AccountSelect accounts={accounts} value={form.data.account_id} required onChange={value => form.setData('account_id', value)}/></Field>
         <Errors errors={form.errors}/>
-        <button type="submit" className="recon-button recon-success" disabled={form.processing || !form.data.account_id}><Check/> Post cash receipts · {rs(value)}</button>
+        <button type="submit" className="recon-button recon-success" disabled={form.processing || !form.data.account_id}><Check/> Post cash receipts · {cashTotal(value)}</button>
     </form>;
 }
 
@@ -102,7 +102,7 @@ export function ReconciliationVerification({ row, room, counted, accounts, canRe
         <Errors errors={form.errors}/>
         <div className="recon-verify-actions">
             {row.method !== 'none' && !opening && value > 0 && <button type="button" className="recon-button recon-decline" onClick={() => form.setData({ ...form.data, amount: '0.00', shortage_approval_id: '' })}><X/> Review without payment</button>}
-            <button type="submit" className="recon-button recon-success" disabled={form.processing || !valid}><Check/> {receipt ? `Record payment${shortage ? '' : ` · ${rs(value)}`}` : 'Confirm no payment'}</button>
+            <button type="submit" className="recon-button recon-success" disabled={form.processing || !valid}><Check/> {receipt ? `Record payment${shortage ? '' : ` · ${cashTotal(value)}`}` : 'Confirm no payment'}</button>
         </div>
     </form>;
 }

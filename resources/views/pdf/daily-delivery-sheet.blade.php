@@ -57,11 +57,11 @@
                     <td><strong>{{ $delivery->invoice->invoice_number }}</strong></td>
                     <td><strong>{{ $customer?->name ?? 'Customer #'.$delivery->invoice->customer_id }}</strong></td>
                     <td>{{ $place ?: '—' }}</td>
-                    <td class="num">{{ number_format($delivery->invoice->total_amount, 2) }}</td>
+                    <td class="num">{{ \App\Support\MoneyDisplay::total($delivery->invoice->total_amount) }}</td>
                     <td class="write-in">{{ $receiver }}</td>
                     <td class="num write-in">
                         @if($received > 0)
-                            {{ number_format($received / 100, 2) }}
+                            {{ \App\Support\MoneyDisplay::total($received / 100) }}
                             <div class="meta">Verified</div>
                         @endif
                     </td>

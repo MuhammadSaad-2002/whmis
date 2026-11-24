@@ -1,3 +1,4 @@
+import { RegisterHeader } from '@/components/master-register';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { SearchField } from '@/components/ui/search-field';
 import { useDraftLeave } from '@/hooks/use-draft-leave';
@@ -244,38 +245,35 @@ export default function DeliverySchedules({ customers, salesmen, search, today }
     }
 
     return <AppLayout><Head title="Booking & Delivery Schedules" />
-        <main className="delivery-schedules">
-            <section className="hero">
-                <div className="htop">
-                    <div><h1>Booking &amp; Delivery Schedules</h1><p className="sub">Set the weekdays and default salesman for each customer.</p></div>
-                    <div className="sp" />
+        <main className="master-register delivery-schedules">
+            <RegisterHeader title="Booking & Delivery Schedules" description="Set the weekdays and default salesman for each customer"
+                actions={<div className="register-hero-actions">
                     {canAny('dispatch.view', 'dispatch.assigned') && <Link href="/dispatch" className="hbtn"><Truck className="i" aria-hidden="true" />Dispatch &amp; delivery</Link>}
                     <button type="button" className="hbtn pri" disabled={running || saving} onClick={() => {
                         if (drafts.size) { toast.info('Save your changes first so the plan uses them.'); return; }
                         setRunning(true);
                         router.post(route('dispatch.schedules.generate', {}, false), {}, { preserveScroll: true, onFinish: () => setRunning(false) });
                     }}><RotateCw className="i" aria-hidden="true" />{running ? 'Generating…' : 'Generate plan now'}</button>
-                </div>
-            </section>
+                </div>} />
 
             {!salesmen.length && <p className="setup">No active Salesmen yet. In Users, assign the Salesman role to an active login.</p>}
             <section className="card list" aria-label="Customer schedules">
-                <div className="tbar">
-                    <SearchField aria-label="Search by customer or city" placeholder="Customer or city…" value={query}
-                        onChange={event => { setQuery(event.target.value); setLimit(PAGE_SIZE); }} />
-                    <div className="chips" role="group" aria-label="Schedule filters">
+                <div className="tabs" role="group" aria-label="Schedule filters">
                         {filters.map(([key, label]) => {
                             const count = current.filter(customer => matches(customer, key, drafts)).length;
-                            return <button key={key} type="button" aria-pressed={filter === key} className={cn('chip', filter === key && 'on', count > 0 && ['none', 'no-booker', 'dirty'].includes(key) && 'warn')}
-                                onClick={() => { setFilter(key); setLimit(PAGE_SIZE); }}>{label}<b>{count}</b></button>;
+                            return <button key={key} type="button" aria-pressed={filter === key} className={cn('tab', filter === key && 'on')}
+                                onClick={() => { setFilter(key); setLimit(PAGE_SIZE); }}>{label}<span className="ct">{count}</span></button>;
                         })}
-                        {(filter !== 'all' || term) && <button className="clear" type="button" onClick={() => { setQuery(''); setFilter('all'); setLimit(PAGE_SIZE); }}>Clear filters</button>}
-                    </div>
-                    <div className="tsp" />
+                </div>
+                <div className="filters">
+                    <SearchField aria-label="Search by customer or city" placeholder="Customer or city…" value={query}
+                        onChange={event => { setQuery(event.target.value); setLimit(PAGE_SIZE); }} />
+                    {(filter !== 'all' || term) && <button className="clear" type="button" onClick={() => { setQuery(''); setFilter('all'); setLimit(PAGE_SIZE); }}>Clear filters</button>}
+                    <div className="fsp" />
                     <span className="shown" aria-live="polite">{filtered.length} of {customers.length} customers</span>
                 </div>
 
-                {selected.size > 0 && <div className="bulk" role="region" aria-label="Bulk schedule editor">
+                {selected.size > 0 && <div className="schedule-bulk" role="region" aria-label="Bulk schedule editor">
                     <b>{selected.size} selected</b>
                     <span className="lbl">Booking</span><Weekdays label="Bulk booking days" field="booking_days" days={bulk.booking_days}
                         change={booking_days => setBulk({ ...bulk, booking_days })} />

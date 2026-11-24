@@ -6,10 +6,12 @@ use App\Exports\ReportExport;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
+use App\Services\CustomerReceiptReport;
 use App\Services\ReportPdfRenderer;
 use App\Services\ReportService;
 use App\Services\ReportVisualizationService;
 use App\Services\SupplierPurchaseValueReport;
+use App\Support\ReportTotals;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Inertia\Inertia;
@@ -44,7 +46,17 @@ class ReportController extends Controller
         if ($supplierPurchaseValue) {
             $filters = $request->validate(['company_id' => 'nullable|integer|exists:companies,id']);
         }
+        if ($key === CustomerReceiptReport::KEY) {
+            $filters = $request->validate([
+                'from' => 'nullable|date_format:Y-m-d',
+                'to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])],
+                'customer_id' => 'nullable|integer|exists:customers,id',
+            ]);
+        }
         $data = $this->reports->build($key, $filters);
+        if ($request->format !== 'pdf') {
+            $data = ReportTotals::roundMoney($data);
+        }
 
         if ($request->format === 'xlsx') {
             return Excel::download(
@@ -74,7 +86,7 @@ class ReportController extends Controller
             ], $supplierPurchaseValue ? 'landscape' : null)->stream("{$key}.pdf");
         }
 
-        $today = now();
+        $today = now('Asia/Karachi');
         $defaultDates = ['from' => $today->copy()->startOfMonth()->toDateString(), 'to' => $today->toDateString()];
 
         return Inertia::render('reports/show', [
@@ -98,7 +110,7 @@ class ReportController extends Controller
             'defaultDates' => $defaultDates,
             'options' => [
                 'customers' => in_array('customer', $meta['filters'])
-                    ? Customer::active()->orderBy('name')->get(['id', 'name']) : [],
+                    ? ($key === CustomerReceiptReport::KEY ? Customer::withTrashed() : Customer::active())->orderBy('name')->get(['id', 'name']) : [],
                 'suppliers' => in_array('supplier', $meta['filters'])
                     ? ($supplierPurchaseValue ? Company::withTrashed() : Company::active())->orderBy('name')->get(['id', 'name']) : [],
                 'products' => in_array('product', $meta['filters'])

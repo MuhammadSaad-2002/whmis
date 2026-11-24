@@ -49,7 +49,7 @@ class LedgerService
             ->value('balance');
 
         // Customers owe us (debit balance); we owe suppliers (credit balance).
-        return $party instanceof Customer ? $balance : -$balance;
+        return round($party instanceof Customer ? $balance : -$balance, 2);
     }
 
     /**

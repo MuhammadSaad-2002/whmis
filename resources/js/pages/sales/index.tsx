@@ -4,7 +4,7 @@ import { SearchField } from '@/components/ui/search-field';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { amount, money } from '@/lib/format';
+import { amount, totalMoney, totalAmount } from '@/lib/format';
 import { Head, Link, router } from '@inertiajs/react';
 import { Check, Download, Eye, List, ListFilter, Plus, Printer, Undo2, UserRound } from 'lucide-react';
 import { type ChangeEvent, type ReactNode, useEffect, useRef, useState } from 'react';
@@ -59,13 +59,13 @@ function relativeDate(date: string, today: string) {
 function Kpi({ label, value, color, tone, children }: { label: string; value: number; color: string; tone?: string; children: ReactNode }) {
     return <div className="card kpi">
         <div className="lbl"><i style={{ background: color }} />{label}</div>
-        <div className="val num" style={{ color: tone }}>{money(value)}</div>
+        <div className="val num" style={{ color: tone }}>{totalMoney(value)}</div>
         <div className="foot">{children}</div>
     </div>;
 }
 
 function currencyCell(value: number | string | null) {
-    return value == null ? <span className="muted">—</span> : money(value);
+    return value == null ? <span className="muted">—</span> : totalMoney(value);
 }
 
 export default function SalesIndex({ invoices, customers, filters, summary, counts, headerCounts, today }: Props) {
@@ -189,7 +189,7 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
                 {can('sales.create') && <Link className="hbtn pri" href={route('sales.create', {}, false)}><Plus className="i" />New Sale</Link>}
             </section>
             <section className="kpis" aria-label="Sales summary">
-                <Kpi label="Gross Sales" value={summary.gross} color="#1f4e79">{count(invoices.total, 'invoice')} · avg {money(invoices.total ? summary.gross / invoices.total : 0)}</Kpi>
+                <Kpi label="Gross Sales" value={summary.gross} color="#1f4e79">{count(invoices.total, 'invoice')} · avg {totalMoney(invoices.total ? summary.gross / invoices.total : 0)}</Kpi>
                 <Kpi label="Returns" value={summary.returns} color="#dc2626" tone="var(--red)">
                     <span className="chip r">{pct(summary.gross ? summary.returns * 100 / summary.gross : 0)}</span>return rate · {count(summary.returned_count, 'invoice')}
                 </Kpi>
@@ -231,7 +231,7 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
                     {inverted && <p className="filter-error" role="alert">To date must be on or after From date.</p>}
                 </div>
                 {selection.length > 0 && <div className="bulk show" aria-label="Selected invoices">
-                    <b>{selection.length} selected</b><span className="selection-sum">· {money(selectionTotal)} · {count(drafts.length, 'draft')}</span><div className="sp" />
+                    <b>{selection.length} selected</b><span className="selection-sum">· {totalMoney(selectionTotal)} · {count(drafts.length, 'draft')}</span><div className="sp" />
                     {canPost && <button type="button" disabled={posting || drafts.length === 0} onClick={() => post(drafts)}><Check className="i" />Post drafts</button>}
                     <a href={route('sales.list.pdf', { ...filters, ids: selection.map((row) => row.id) }, false)} target="_blank" rel="noopener"><Printer className="i" />Print</a>
                     <a href={route('sales.export', { ...filters, ids: selection.map((row) => row.id) }, false)} download><Download className="i" />Export</a>
@@ -258,9 +258,9 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
                                 <td className="cust"><b>{invoice.customer?.name ?? '—'}</b><small>{invoice.customer?.city ?? '—'}</small></td>
                                 <td className="date">{listDate(invoice.invoice_date)}<small className="muted">{relativeDate(invoice.invoice_date, today)}</small></td>
                                 <td><SaleType type={invoice.sale_type} /></td>
-                                <td className="r num number-cell">{money(invoice.total_amount)}</td>
+                                <td className="r num number-cell">{totalMoney(invoice.total_amount)}</td>
                                 <td className={`r num ${Number(invoice.returned_amount) ? 'neg' : 'muted'}`}>{Number(invoice.returned_amount) ? `−${amount(invoice.returned_amount)}` : '—'}</td>
-                                <td className="r num">{money(invoice.net_amount)}</td>
+                                <td className="r num">{totalMoney(invoice.net_amount)}</td>
                                 <td className={`r num ${Number(invoice.net_profit) < 0 ? 'neg' : ''}`}>{currencyCell(invoice.net_profit)}</td>
                                 <td className={`r num ${invoice.margin == null ? 'muted' : Number(invoice.margin) <= 0 ? 'neg' : ''}`}>{pct(invoice.margin, 0)}</td>
                                 <td><SaleStatus invoice={invoice} /></td>
@@ -274,8 +274,8 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
                         </tbody>
                         {!!invoices.total && <tfoot><tr>
                             <td className="check-col" /><td colSpan={4}>Totals · {count(invoices.total, 'invoice')}</td>
-                            <td className="r num">{money(summary.gross)}</td><td className="r num neg">{summary.returns ? `−${amount(summary.returns)}` : '—'}</td>
-                            <td className="r num">{money(summary.net)}</td><td className="r num">{money(summary.net_profit)}</td>
+                            <td className="r num">{totalMoney(summary.gross)}</td><td className="r num neg">{summary.returns ? `−${totalAmount(summary.returns)}` : '—'}</td>
+                            <td className="r num">{totalMoney(summary.net)}</td><td className="r num">{totalMoney(summary.net_profit)}</td>
                             <td className="r num">{pct(summary.margin)}</td><td colSpan={2} />
                         </tr></tfoot>}
                     </table>

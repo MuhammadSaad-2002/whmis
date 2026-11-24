@@ -21,7 +21,7 @@
 </head>
 <body>
     @php
-        $rs = fn ($v) => 'Rs '.number_format((float) $v, 2);
+        $rs = fn ($v) => 'Rs '.\App\Support\MoneyDisplay::total($v);
         $sign = fn ($d) => $d === null ? '—' : (($d >= 0 ? '▲ ' : '▼ ').abs($d).'% vs prev');
     @endphp
 
@@ -49,6 +49,8 @@
             <td><div class="label">Net Purchases</div><div class="value">{{ $rs($kpis['purchases']) }}</div><div class="delta">{{ $sign($kpis['purchases_delta']) }}</div></td>
         </tr>
     </table>
+
+    <p>Actual customer receipts (by payment date): <strong>{{ $rs($kpis['received']) }}</strong> · {{ $sign($kpis['received_delta']) }}. Excludes unverified collections, non-cash adjustments, and employee shortages.</p>
 
     <h2 style="margin-top:14px;">Financial position · as of now</h2>
     <p>Payroll expense (period): {{ $rs($hr['expense']) }} · Commission expense: {{ $rs($hr['commission_expense']) }} · Profit after payroll and commissions: {{ $rs($kpis['profit'] - $hr['expense'] - $hr['commission_expense']) }}</p>

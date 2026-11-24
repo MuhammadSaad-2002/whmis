@@ -95,7 +95,10 @@
         @if((float) $invoice->gst_amount > 0)
             <tr><td>Invoice GST</td><td class="num">+{{ number_format((float) $invoice->gst_amount, 2) }}</td></tr>
         @endif
-        <tr class="grand"><td>Total (Rs)</td><td class="num">{{ number_format((float) $invoice->total_amount, 2) }}</td></tr>
+        @if((float) ($invoice->rounding_amount ?? 0) !== 0.0)
+            <tr><td>Rounding</td><td class="num">{{ number_format((float) $invoice->rounding_amount, 2) }}</td></tr>
+        @endif
+        <tr class="grand"><td>Total (Rs)</td><td class="num">{{ \App\Support\MoneyDisplay::total($invoice->total_amount) }}</td></tr>
     </table>
 
     @if($invoice->sale_terms)

@@ -48,9 +48,9 @@
     @php $t = $data['totals']; @endphp
     <table class="summary" role="presentation">
         <tr>
-            <td><span class="meta">Due from Customers</span><br><strong>Rs {{ number_format($t['total_receivable'], 2) }}</strong></td>
-            <td><span class="meta">Owed to Suppliers</span><br><strong>Rs {{ number_format($t['total_payable'], 2) }}</strong></td>
-            <td><span class="meta">Net Position</span><br><strong>Rs {{ number_format($t['net'], 2) }}</strong></td>
+            <td><span class="meta">Due from Customers</span><br><strong>Rs {{ \App\Support\MoneyDisplay::roundedTotal($t['total_receivable']) }}</strong></td>
+            <td><span class="meta">Owed to Suppliers</span><br><strong>Rs {{ \App\Support\MoneyDisplay::roundedTotal($t['total_payable']) }}</strong></td>
+            <td><span class="meta">Net Position</span><br><strong>Rs {{ \App\Support\MoneyDisplay::roundedTotal($t['net']) }}</strong></td>
         </tr>
     </table>
 
@@ -62,7 +62,7 @@
                 <img src="{{ $charts['bridge'] }}" alt="Position Bridge waterfall chart">
                 <table class="figure-labels" role="presentation"><tr>
                     @foreach($charts['bridgeLabels'] as $label)
-                        <td>{{ $label['label'] }}<br><strong>{{ number_format($label['amount'], 2) }}</strong></td>
+                        <td>{{ $label['label'] }}<br><strong>{{ \App\Support\MoneyDisplay::total($label['amount']) }}</strong></td>
                     @endforeach
                 </tr></table>
             </div>
@@ -95,9 +95,9 @@
     </tr></tbody></table>
 
     <div class="meta" style="margin-top: 10px;">
-        Employee salary payable: {{ number_format($t['employee_payable'], 2) }} · Employee advances: {{ number_format($t['employee_advances'], 2) }}<br>
-        Commission payable: {{ number_format($t['commission_payable'], 2) }} · Commission recovery: {{ number_format($t['commission_recovery'], 2) }} · Employee cash shortages: {{ number_format($t['employee_shortage'], 2) }}<br>
-        Period payroll expense: {{ number_format($t['payroll_expense'], 2) }} · Employee cash out: {{ number_format($t['employee_cash_out'], 2) }} · Combined net cash flow: {{ number_format($t['net_cash_flow'], 2) }}
+        Employee salary payable: {{ \App\Support\MoneyDisplay::total($t['employee_payable']) }} · Employee advances: {{ \App\Support\MoneyDisplay::total($t['employee_advances']) }}<br>
+        Commission payable: {{ \App\Support\MoneyDisplay::total($t['commission_payable']) }} · Commission recovery: {{ \App\Support\MoneyDisplay::total($t['commission_recovery']) }} · Employee cash shortages: {{ \App\Support\MoneyDisplay::total($t['employee_shortage']) }}<br>
+        Period payroll expense: {{ \App\Support\MoneyDisplay::total($t['payroll_expense']) }} · Employee cash out: {{ \App\Support\MoneyDisplay::total($t['employee_cash_out']) }} · Combined net cash flow: {{ \App\Support\MoneyDisplay::total($t['net_cash_flow']) }}
     </div>
 
     <div class="details">
@@ -138,9 +138,9 @@
         <tfoot>
             <tr>
                 <td colspan="2"><strong>Total</strong></td>
-                <td class="num"><strong>{{ number_format($t['total_receivable'], 2) }}</strong></td>
+                <td class="num"><strong>{{ \App\Support\MoneyDisplay::roundedTotal($t['total_receivable']) }}</strong></td>
                 <td class="num" colspan="4"></td>
-                <td class="num"><strong>{{ number_format($t['received'], 2) }}</strong></td>
+                <td class="num"><strong>{{ \App\Support\MoneyDisplay::roundedTotal($t['received']) }}</strong></td>
             </tr>
         </tfoot>
     </table>
@@ -173,9 +173,9 @@
         <tfoot>
             <tr>
                 <td colspan="2"><strong>Total</strong></td>
-                <td class="num"><strong>{{ number_format($t['total_payable'], 2) }}</strong></td>
+                <td class="num"><strong>{{ \App\Support\MoneyDisplay::roundedTotal($t['total_payable']) }}</strong></td>
                 <td class="num" colspan="4"></td>
-                <td class="num"><strong>{{ number_format($t['paid'], 2) }}</strong></td>
+                <td class="num"><strong>{{ \App\Support\MoneyDisplay::roundedTotal($t['paid']) }}</strong></td>
             </tr>
         </tfoot>
     </table>
@@ -195,7 +195,7 @@
                     <td>{{ $p['direction'] === 'in' ? 'Receipt' : 'Payment' }}</td>
                     <td>{{ $p['party_name'] ?? '—' }}</td>
                     <td>{{ ucfirst($p['method']) }}</td>
-                    <td class="num">{{ ($p['direction'] === 'in' ? '+' : '−') }} {{ number_format($p['amount'], 2) }}</td>
+                    <td class="num">{{ ($p['direction'] === 'in' ? '+' : '−') }} {{ \App\Support\MoneyDisplay::total($p['amount']) }}</td>
                 </tr>
             @empty
                 <tr><td colspan="6">No payments recorded in this period.</td></tr>

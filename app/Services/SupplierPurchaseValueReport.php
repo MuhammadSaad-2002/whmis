@@ -123,6 +123,7 @@ class SupplierPurchaseValueReport
                 'Purchase Value is the posted cost of sold and bonus units, less the cost reversed by posted returns.',
                 'Net Sale Value includes only the supplier’s lines, their share of invoice discount and tax, less posted return credits. The full invoice total is shown for reference and is not added across suppliers.',
                 'Gross Profit is Net Sale Value less Purchase Value, before operating expenses.',
+                'Receipts settle whole invoices and are not split between suppliers. Use Sales Register for actual receipts and outstanding amounts by invoice.',
             ],
             'columns' => [
                 ['key' => 'product', 'label' => 'Product'], ...$supplierColumn,
@@ -150,7 +151,7 @@ class SupplierPurchaseValueReport
                 'keep_together' => true,
                 'columns' => [
                     ['key' => 'metric', 'label' => 'Metric'],
-                    $this->column('amount', 'Amount (Rs)', 'money'),
+                    $this->column('amount', 'Amount (Rs)', 'money') + ['final' => true],
                 ],
                 'rows' => [
                     ['metric' => 'Total Purchase Value', 'amount' => $invoiceTotals['purchase_value']],

@@ -28,7 +28,7 @@ use Illuminate\Support\Collection;
  */
 class DashboardService
 {
-    public function __construct(private readonly ReportService $reports) {}
+    public function __construct(private readonly ReportService $reports, private readonly CustomerReceiptReport $receipts) {}
 
     public function executivePayload(Carbon $from, Carbon $to, string $period): array
     {
@@ -82,11 +82,12 @@ class DashboardService
         $productRows = collect($this->reports->build('product-sales', $periodFilters)['rows']);
         $supplierRows = $this->salesBySupplier($productRows);
         $customerRows = $this->reports->customerSalesRows($from, $to);
+        $trend = $this->reports->salesProfitTrend($from, $to);
 
         return [
-            'kpis' => $this->periodKpis($from, $to),
+            'kpis' => $this->periodKpis($from, $to, round(array_sum(array_column($trend, 'received')), 2)),
             'hr' => app(HrReportService::class)->totals($from, $to) + ['commission_expense' => app(CommissionService::class)->totals($from, $to)['expense']],
-            'monthlyTrend' => $this->reports->salesProfitTrend($from, $to),
+            'monthlyTrend' => $trend,
             'topProducts' => $this->topProducts($productRows),
             'salesBySupplier' => $supplierRows->take(8)->values()->all(),
             'topCustomers' => $this->topCustomers($customerRows),
@@ -116,7 +117,7 @@ class DashboardService
     }
 
     /** Sales / profit / margin / purchases for the period, each with a % delta vs the prior period. */
-    private function periodKpis(Carbon $from, Carbon $to): array
+    private function periodKpis(Carbon $from, Carbon $to, float $received): array
     {
         [$prevFrom, $prevTo] = $this->previousPeriod($from, $to);
 
@@ -129,6 +130,8 @@ class DashboardService
         return [
             'sales' => $now['net_sales'],
             'sales_delta' => $this->delta($now['net_sales'], $prev['net_sales']),
+            'received' => $received,
+            'received_delta' => $this->delta($received, $this->receipts->total($prevFrom, $prevTo)),
             'profit' => $now['net_profit'],
             'profit_delta' => $this->delta($now['net_profit'], $prev['net_profit']),
             'margin_pct' => $now['net_sales'] > 0 ? round($now['net_profit'] / $now['net_sales'] * 100, 1) : 0.0,

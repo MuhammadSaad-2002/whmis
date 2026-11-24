@@ -348,4 +348,20 @@ class ListSummariesTest extends TestCase
                 ->where('summary.payments', $this->eq(0.0))
                 ->where('summary.net', $this->eq(1000.0)));
     }
+
+    public function test_payment_register_rounds_the_exact_net_only_after_subtracting_payments(): void
+    {
+        $payments = app(PaymentService::class);
+        $payments->record($this->customer, [
+            'method' => 'bank', 'amount' => '10.51', 'payment_date' => '2026-06-01',
+        ]);
+        $payments->record($this->company, [
+            'method' => 'bank', 'amount' => '10.49', 'payment_date' => '2026-06-01',
+        ]);
+
+        $this->get(route('payments.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('summary.receipts', $this->eq(11.0))
+            ->where('summary.payments', $this->eq(10.0))
+            ->where('summary.net', $this->eq(0.0)));
+    }
 }

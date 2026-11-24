@@ -29,6 +29,35 @@ export function amount(value: number | string | null | undefined): string {
     return rsFormatter.format(Number.isFinite(n) ? n : 0);
 }
 
+/** Display monetary totals without zero paisa. Keep precision for all other displays and inputs. */
+export function totalAmount(value: number | string | null | undefined): string {
+    const formatted = amount(value);
+    return formatted === '-0.00' ? '0' : formatted.replace(/\.00$/, '');
+}
+
+export function totalMoney(value: number | string | null | undefined): string {
+    return `Rs ${totalAmount(value)}`;
+}
+
+export function totalPaisaMoney(value: number | string | null | undefined): string {
+    return totalMoney(Number(value ?? 0) / 100);
+}
+
+export function roundPaisaToRupee(paisa: number): number {
+    return Math.sign(paisa) * Math.floor((Math.abs(paisa) + 50) / 100) * 100;
+}
+
+/** For live summaries that combine transaction or audit amounts with paisa. */
+export function roundedTotalAmount(value: number | string | null | undefined): string {
+    const rupees = toNumber(value);
+    const paisa = Math.sign(rupees) * Math.round(Math.abs(rupees) * 100);
+    return totalAmount(roundPaisaToRupee(paisa) / 100);
+}
+
+export function roundedTotalMoney(value: number | string | null | undefined): string {
+    return `Rs ${roundedTotalAmount(value)}`;
+}
+
 export function qty(value: number | string | null | undefined): string {
     const n = Number(value ?? 0);
     return qtyFormatter.format(Number.isFinite(n) ? n : 0);

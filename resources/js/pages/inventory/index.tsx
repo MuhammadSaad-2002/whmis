@@ -2,7 +2,7 @@ import { type PaginatedData } from '@/components/paginator';
 import { SearchField } from '@/components/ui/search-field';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import AppLayout from '@/layouts/app-layout';
-import { money, qty } from '@/lib/format';
+import { money, qty, totalMoney } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Head, Link, router } from '@inertiajs/react';
 import { ArrowDownUp, Building2, History, Layers, List } from 'lucide-react';
@@ -91,7 +91,7 @@ export default function InventoryIndex({ products, companies, filters, totals, s
                 <Link className="hbtn" href={route('inventory.movements', {}, false)}><History className="i" />Movements</Link>
             </header>
             <section className="kpis" aria-label="Inventory summary">
-                <StockKpi title="Total Inventory Value" color="#1f4e79" value={money(totals.inventory_value)} note="All inventory · at cost" />
+                <StockKpi title="Total Inventory Value" color="#1f4e79" value={totalMoney(totals.inventory_value)} note="All inventory · at cost" />
                 <StockKpi title="Available Units" color="#087568" value={qty(summary.available)} note={`${count(products.total)} in this view`} />
                 <StockKpi title="Reserved Units" color="#64748b" value={qty(summary.reserved)} note="Products in this view" />
                 <StockKpi title="Low-stock Products" color="#e3a008" value={qty(summary.low)} note="At or below reorder level" />
@@ -139,7 +139,7 @@ export default function InventoryIndex({ products, companies, filters, totals, s
                                 </tr>)}
                             </tbody>
                             <tfoot><tr><td colSpan={3}>Totals · {count(products.total)}</td><td className="r num">{qty(summary.available)}</td>
-                                <td className="r num">{qty(summary.reserved)}</td><td /><td className="r num">{money(summary.stock_value)}</td><td />
+                                <td className="r num">{qty(summary.reserved)}</td><td /><td className="r num">{totalMoney(summary.stock_value)}</td><td />
                             </tr></tfoot>
                         </table>
                     </div>

@@ -5,13 +5,16 @@ namespace Tests\Feature;
 use App\Models\Batch;
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\PurchaseInvoice;
 use App\Models\SalesInvoice;
 use App\Models\User;
+use App\Services\CustomerReceiptReport;
 use App\Services\InvoicePostingService;
 use App\Services\InventoryService;
 use App\Services\NumberSeriesService;
+use App\Services\PaymentService;
 use App\Services\ReportService;
 use App\Services\ReportVisualizationService;
 use App\Services\ReturnService;
@@ -94,6 +97,56 @@ class ReportTest extends TestCase
                 ->where('filterValues.to', now()->toDateString())
                 ->where('defaultDates.from', now()->startOfMonth()->toDateString())
                 ->where('defaultDates.to', now()->toDateString()));
+    }
+
+    public function test_actual_receipts_follow_payment_date_without_changing_sales_or_profit(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-24 12:00', 'Asia/Karachi'));
+        $sale = SalesInvoice::firstOrFail();
+        $sale->update(['invoice_date' => '2026-10-31']);
+        $payment = app(PaymentService::class);
+        $receipt = $payment->recordManual($this->customer, ['method' => 'online', 'amount' => 750, 'payment_date' => '2026-11-24'],
+            [['invoice_type' => 'sales_invoice', 'invoice_id' => $sale->id, 'amount' => 600]]);
+        $payment->recordManual($this->customer, ['method' => 'adjustment', 'amount' => 100, 'payment_date' => '2026-11-24'],
+            [['invoice_type' => 'sales_invoice', 'invoice_id' => $sale->id, 'amount' => 100]]);
+        $other = Customer::create(['name' => 'Another pharmacy']);
+        $payment->recordManual($other, ['method' => 'cash', 'amount' => 80, 'payment_date' => '2026-11-24'], []);
+        Payment::create([
+            'payment_number' => 'RCV-PENDING-REPORT', 'party_type' => 'customer', 'party_id' => $this->customer->id,
+            'direction' => 'in', 'method' => 'cheque', 'amount' => 200, 'payment_date' => '2026-11-24', 'status' => 'pending',
+        ]);
+
+        $november = ['from' => '2026-11-01', 'to' => '2026-11-24'];
+        $october = ['from' => '2026-10-01', 'to' => '2026-10-31'];
+        $reports = app(ReportService::class);
+        $this->get(route('reports.show', ['key' => CustomerReceiptReport::KEY, 'customer_id' => $this->customer->id] + $november))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page->has('rows', 1)->where('rows.0.payment_number', $receipt->payment_number)
+                ->where('rows.0.received', 750)->where('totals.received', 750));
+        $this->get(route('reports.show', ['key' => CustomerReceiptReport::KEY, 'format' => 'pdf'] + $november))
+            ->assertOk()->assertHeader('content-type', 'application/pdf');
+        $this->get(route('reports.show', ['key' => CustomerReceiptReport::KEY, 'format' => 'xlsx'] + $november))
+            ->assertOk()->assertDownload('customer-receipts-2026-11-24.xlsx');
+        $this->assertEquals(830, $reports->build(CustomerReceiptReport::KEY, $november)['totals']['received']);
+        $this->assertEquals(0, $reports->build(CustomerReceiptReport::KEY, $october)['totals']['received']);
+        $this->assertEquals(0, $reports->build('sales-register', $november)['totals']['net_amount']);
+        $octoberSales = $reports->build('sales-register', $october)['totals'];
+        $this->assertEquals(600, $octoberSales['received']);
+        $this->assertEquals(1300, $octoberSales['outstanding']);
+        $this->assertEquals(2000, $octoberSales['net_amount']);
+        $this->assertEquals(240, $octoberSales['net_profit']);
+        $this->assertEquals(600, $reports->build('booker-sales', $november)['totals']['received']);
+        $customers = collect($reports->build('customer-sales', $november)['rows'])->keyBy('customer');
+        $this->assertEquals(750, $customers['City Pharmacy']['received']);
+        $this->assertEquals(0, $customers['City Pharmacy']['net_revenue']);
+        $this->assertEquals(80, $customers['Another pharmacy']['received']);
+        $month = collect($reports->profitByMonth()['rows'])->firstWhere('month', 'Nov 2026');
+        $this->assertEquals(830, $month['received']);
+        $this->assertEquals(0, $month['net_sales']);
+        $this->assertEquals(830, $reports->salesProfitTrend(now('Asia/Karachi')->startOfDay(), now('Asia/Karachi')->endOfDay())[0]['received']);
+
+        $payment->cancel($receipt);
+        $this->assertEquals(80, $reports->build(CustomerReceiptReport::KEY, $november)['totals']['received']);
+        $this->assertEquals(0, $reports->build('sales-register', $october)['totals']['received']);
     }
 
     public function test_product_sales_report_aggregates_qty_bonus_revenue_profit(): void

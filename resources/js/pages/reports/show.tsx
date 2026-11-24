@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import AppLayout from '@/layouts/app-layout';
-import { amount, qty, shortDate } from '@/lib/format';
+import { amount, qty, shortDate, totalAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
@@ -32,6 +32,7 @@ interface Column {
     label: string;
     align?: 'right';
     format?: 'money' | 'qty' | 'date' | 'pct';
+    final?: boolean;
     wrap?: boolean;
 }
 
@@ -249,11 +250,11 @@ const SUMMARY_KEYS: Record<string, string[]> = {
     'profit-by-month': ['net_sales', 'profit', 'cost', 'returns'],
 };
 
-function formatCell(value: string | number | null, format?: Column['format']): string {
+function formatCell(value: string | number | null, format?: Column['format'], final = false): string {
     if (value === null || value === undefined || value === '') return '—';
     switch (format) {
         case 'money':
-            return amount(value);
+            return final ? totalAmount(value) : amount(value);
         case 'qty':
             return qty(value);
         case 'date':
@@ -411,13 +412,13 @@ function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData 
                                                 >
                                                     {explanation ? (
                                                         <span className="inline-flex items-center justify-end gap-1.5">
-                                                            <span>{formatCell(value, column.format)}</span>
+                                                            <span>{formatCell(value, column.format, column.final)}</span>
                                                             <NegativeValueInfo explanation={explanation} />
                                                         </span>
                                                     ) : column.wrap ? (
                                                         <div className="max-w-72 whitespace-pre-wrap [overflow-wrap:anywhere]">{value}</div>
                                                     ) : (
-                                                        formatCell(value, column.format)
+                                                        formatCell(value, column.format, column.final)
                                                     )}
                                                 </TableCell>
                                             );
@@ -446,11 +447,11 @@ function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData 
                                             {column.key in totals ? (
                                                 explanation ? (
                                                     <span className="inline-flex items-center justify-end gap-1.5">
-                                                        <span>{formatCell(value, column.format)}</span>
+                                                        <span>{formatCell(value, column.format, true)}</span>
                                                         <NegativeValueInfo explanation={explanation} />
                                                     </span>
                                                 ) : (
-                                                    formatCell(value, column.format)
+                                                    formatCell(value, column.format, true)
                                                 )
                                             ) : index === 0 ? (
                                                 'TOTAL'
@@ -818,7 +819,7 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
                                                 value < 0 && 'text-red-600 dark:text-red-500',
                                             )}
                                         >
-                                            <span>{formatCell(value, column.format)}</span>
+                                            <span>{formatCell(value, column.format, true)}</span>
                                             {explanation && <NegativeValueInfo explanation={explanation} />}
                                         </div>
                                     </CardContent>

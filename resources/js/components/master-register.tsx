@@ -47,14 +47,28 @@ type Props = {
     children: (dense: boolean) => ReactNode;
 };
 
-export function RegisterLayout({ title, description, actions, children }: { title: string; description: ReactNode; actions?: ReactNode; children: ReactNode }) {
-    return <main className="master-register" aria-label={title}>
-        <header className="hero">
-            <div className="intro"><h1>{title}</h1><p className="sub">{description}</p></div>
-            <div className="sp" />{actions}
-        </header>
+type RegisterHeading = { title: string; description: ReactNode; actions?: ReactNode };
+
+export function RegisterHeader({ title, description, actions }: RegisterHeading) {
+    return <header className="hero">
+        <div className="intro"><h1>{title}</h1>{description && <p className="sub">{description}</p>}</div>
+        {actions && <><div className="sp" />{actions}</>}
+    </header>;
+}
+
+export function RegisterLayout({ children, ...heading }: RegisterHeading & { children: ReactNode }) {
+    return <main className="master-register" aria-label={heading.title}>
+        <RegisterHeader {...heading} />
         {children}
     </main>;
+}
+
+export function RegisterMetric({ label, value, color = 'var(--teal)', detail }: { label: string; value: ReactNode; color?: string; detail?: ReactNode }) {
+    return <div className="card kpi">
+        <div className="lbl"><i aria-hidden="true" style={{ background: color }} />{label}</div>
+        <div className="val num">{value}</div>
+        {detail && <div className="foot">{detail}</div>}
+    </div>;
 }
 
 export function RegisterList({ title, page, controls, tabs, children }: {

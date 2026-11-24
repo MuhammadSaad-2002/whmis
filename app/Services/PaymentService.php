@@ -99,7 +99,10 @@ class PaymentService
                         ]);
                     }
                 }
-                if ($total > (int) round((float) $data['amount'] * 100)) {
+                $tendered = Paisa::from($data['amount']);
+                $allocationLimit = ! empty($data['apply_rounded_total']) && $data['method'] !== 'adjustment'
+                    ? max($tendered, Paisa::roundToRupee($tendered)) : $tendered;
+                if ($total > $allocationLimit) {
                     throw ValidationException::withMessages(['allocations' => 'Allocated amount exceeds the payment amount.']);
                 }
             }
@@ -116,6 +119,13 @@ class PaymentService
     {
         return DB::transaction(function () use ($party, $data, $allocations, $recalculateCommissions) {
             $direction = $party instanceof Customer ? Payment::DIRECTION_IN : Payment::DIRECTION_OUT;
+            $entered = Paisa::from($data['amount']);
+            $isMoney = $data['method'] !== 'adjustment';
+            $amount = $isMoney ? Paisa::roundToRupee($entered) : $entered;
+            if ($amount > 999999999999999) {
+                throw ValidationException::withMessages(['amount' => 'The rounded payment exceeds the supported amount.']);
+            }
+            $tendered = $isMoney ? (int) ($data['_verified_cash_paisa'] ?? $entered) : null;
             $treasury = app(TreasuryService::class);
             $account = null;
             if ($treasury->live() || ! empty($data['financial_account_id'])) {
@@ -130,7 +140,9 @@ class PaymentService
                 'party_id' => $party->getKey(),
                 'direction' => $direction,
                 'method' => $data['method'],
-                'amount' => $data['amount'],
+                'amount' => Paisa::rupees($amount),
+                'tendered_paisa' => $tendered,
+                'received_paisa' => $tendered === null ? null : Paisa::roundToRupee($tendered),
                 'payment_date' => $data['payment_date'],
                 'bank_name' => $data['bank_name'] ?? null,
                 'cheque_number' => $data['cheque_number'] ?? null,
@@ -151,20 +163,23 @@ class PaymentService
                 ]);
             }
 
-            // Receipt reduces receivable (credit); supplier payment reduces payable (debit).
-            $this->ledger->post(
-                $party,
-                $direction === 'in' ? 'receipt' : 'payment',
-                $data['payment_date'],
-                $direction === 'in' ? 0 : (float) $data['amount'],
-                $direction === 'in' ? (float) $data['amount'] : 0,
-                $payment,
-                ucfirst($direction === 'in' ? 'Receipt' : 'Payment')." {$payment->payment_number}"
-                    .(! empty($data['notes']) ? " — {$data['notes']}" : ''),
-            );
+            $isIn = $direction === Payment::DIRECTION_IN;
+            $booked = (float) Paisa::rupees($amount);
+            $this->ledger->post($party, $isIn ? 'receipt' : 'payment', $data['payment_date'], $isIn ? 0 : $booked, $isIn ? $booked : 0, $payment,
+                ucfirst($isIn ? 'Receipt' : 'Payment')." {$payment->payment_number}".(! empty($data['notes']) ? " — {$data['notes']}" : ''));
+
+            // Keep explicitly allocated paisa on older fractional invoices. The signed
+            // difference is a book adjustment, never an extra cash or bank movement.
+            $bridge = $this->roundingBridge($payment);
+            if ($bridge !== 0) {
+                $delta = (float) Paisa::rupees(abs($bridge));
+                $increasesDebit = ($bridge > 0) !== $isIn;
+                $this->ledger->post($party, 'adjustment', $data['payment_date'], $increasesDebit ? $delta : 0, $increasesDebit ? 0 : $delta,
+                    $payment, "Settlement rounding on {$payment->payment_number}");
+            }
 
             if ($account) {
-                $physical = $data['_verified_cash_paisa'] ?? Paisa::from($data['amount']);
+                $physical = $tendered ?? $entered;
                 if ($physical > 0) $treasury->entry($account, $direction === 'in' ? 'receipt' : 'supplier_payment', 'payment', $payment->id,
                     $physical * ($direction === 'in' ? 1 : -1), $data['payment_date'], Auth::user(), $data['reference_no'] ?? null);
             }
@@ -175,6 +190,16 @@ class PaymentService
 
             return $payment;
         });
+    }
+
+    private function roundingBridge(Payment $payment): int
+    {
+        if ($payment->tendered_paisa === null) return 0;
+        $amount = Paisa::from($payment->amount);
+        $allocated = Paisa::from($payment->allocations()->sum('amount'));
+        // No excess customer or supplier credit is created purely by rounding up.
+        return min($amount, $payment->tendered_paisa) > $allocated
+            ? min($amount, $payment->tendered_paisa) - $amount : $allocated - $amount;
     }
 
     /**
@@ -224,6 +249,7 @@ class PaymentService
             if ($payment->status === 'cancelled') {
                 return;
             }
+            app(FinanceApprovalService::class)->assertUnusedReceiptCredit($payment);
             foreach (SalesInvoice::whereKey($invoiceIds->all())->get() as $invoice) {
                 app(FinanceApprovalService::class)->assertUnconsumed($invoice);
             }
@@ -243,12 +269,13 @@ class PaymentService
             $payment->update(['status' => 'cancelled']);
 
             $isIn = $payment->direction === Payment::DIRECTION_IN;
+            $settled = (float) Paisa::rupees(Paisa::from($payment->amount) + $this->roundingBridge($payment));
             $this->ledger->post(
                 $payment->party,
                 'adjustment',
                 now()->toDateString(),
-                $isIn ? (float) $payment->amount : 0,
-                $isIn ? 0 : (float) $payment->amount,
+                $isIn ? $settled : 0,
+                $isIn ? 0 : $settled,
                 $payment,
                 "Cancellation of {$payment->payment_number}",
             );

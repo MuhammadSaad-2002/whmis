@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { money, qty, shortDate } from '@/lib/format';
+import { money, qty, shortDate, totalMoney } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
 import { Ban, FileText } from 'lucide-react';
@@ -148,7 +148,7 @@ export default function SalesReturnShow({ salesReturn }: Props) {
                             <div className="rounded-lg border p-3 text-right">
                                 <div className="text-xs text-muted-foreground">Total Credit</div>
                                 <div className={`text-lg font-semibold tabular-nums ${cancelled ? 'text-muted-foreground line-through' : ''}`}>
-                                    {money(salesReturn.total_amount)}
+                                    {totalMoney(salesReturn.total_amount)}
                                 </div>
                             </div>
                         </div>

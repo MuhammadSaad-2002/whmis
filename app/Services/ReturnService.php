@@ -10,6 +10,7 @@ use App\Models\SalesInvoiceItem;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnItem;
 use App\Models\StockMovement;
+use App\Support\Paisa;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -119,14 +120,15 @@ class ReturnService
                 throw new RuntimeException('Nothing to return — enter a quantity on at least one line.');
             }
 
+            $credit = $this->roundedReturnAmount($invoice, $return, $totalRefund);
             $return->update([
-                'total_amount' => round($totalRefund, 2),
+                'total_amount' => $credit,
                 'total_cost' => round($totalCost, 2),
             ]);
 
-            if (round($totalRefund, 2) > 0) {
+            if ($credit > 0) {
                 $this->ledger->post(
-                    $invoice->customer, 'credit_note', $date, 0, $totalRefund, $return,
+                    $invoice->customer, 'credit_note', $date, 0, $credit, $return,
                     "Credit Note {$return->return_number} against {$invoice->invoice_number}",
                 );
             }
@@ -254,13 +256,14 @@ class ReturnService
                 throw new RuntimeException('Nothing to return — enter a quantity on at least one line.');
             }
 
-            $return->update(['total_amount' => round($total, 2)]);
+            $credit = $this->roundedReturnAmount($invoice, $return, $total);
+            $return->update(['total_amount' => $credit]);
 
             $this->ledger->post(
                 $invoice->company,
                 'debit_note',
                 $date,
-                round($total, 2),
+                $credit,
                 0,
                 $return,
                 "Debit Note {$return->return_number} against {$invoice->invoice_number}",
@@ -268,6 +271,40 @@ class ReturnService
 
             return $return->refresh();
         });
+    }
+
+    /** Allocate the cumulative rounding difference to the current note, not to any of its lines. */
+    private function roundedReturnAmount(SalesInvoice|PurchaseInvoice $invoice, SalesReturn|PurchaseReturn $return, float $current): float
+    {
+        if ($invoice->rounding_amount === null || $current <= 0) return round($current, 2);
+        $sales = $return instanceof SalesReturn;
+        $notes = $sales ? $invoice->postedReturns() : PurchaseReturn::where('purchase_invoice_id', $invoice->id);
+        $prior = Paisa::from((clone $notes)->whereKeyNot($return->id)->sum('total_amount'));
+        $ids = $notes->pluck('id');
+        $items = $sales ? SalesReturnItem::whereIn('sales_return_id', $ids) : PurchaseReturnItem::whereIn('purchase_return_id', $ids);
+        $returned = (float) (clone $items)->selectRaw($sales ? 'SUM(quantity - bonus_quantity) AS units' : 'SUM(quantity) AS units')->value('units');
+        $full = $returned >= (float) $invoice->items()->sum('quantity') - 0.00001;
+        $invoiceTotal = Paisa::from($invoice->total_amount);
+        $target = $full ? $invoiceTotal : min($invoiceTotal, Paisa::roundToRupee(Paisa::from($items->sum('net_amount'))));
+
+        return max(0, $target - $prior) / 100;
+    }
+
+    public function roundingContext(SalesInvoice|PurchaseInvoice $invoice): ?array
+    {
+        if ($invoice->rounding_amount === null) return null;
+        $sales = $invoice instanceof SalesInvoice;
+        $notes = $sales ? $invoice->postedReturns() : PurchaseReturn::where('purchase_invoice_id', $invoice->id);
+        $ids = (clone $notes)->pluck('id');
+        $items = $sales ? SalesReturnItem::whereIn('sales_return_id', $ids) : PurchaseReturnItem::whereIn('purchase_return_id', $ids);
+        $returned = (float) (clone $items)->selectRaw($sales ? 'SUM(quantity - bonus_quantity) AS units' : 'SUM(quantity) AS units')->value('units');
+
+        return [
+            'invoice_paisa' => Paisa::from($invoice->total_amount),
+            'prior_paisa' => Paisa::from($notes->sum('total_amount')),
+            'prior_line_paisa' => Paisa::from($items->sum('net_amount')),
+            'remaining_units' => max(0, round((float) $invoice->items->sum('quantity') - $returned, 2)),
+        ];
     }
 
     /**

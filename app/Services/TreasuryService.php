@@ -45,15 +45,26 @@ class TreasuryService
         return [
             'refunds' => (int) ($totals['customer_refund'] ?? 0) + (int) ($totals['refund_recovery'] ?? 0),
             'expenses' => (int) ($totals['expense'] ?? 0),
-            'shortage_repayments' => (int) ($totals['shortage_repayment'] ?? 0),
-            'net' => array_sum($totals->except(['opening','transfer_in','transfer_out','adjustment'])->map(fn ($value) => (int) $value)->all()),
+            'shortage_repayments' => (int) ($totals['shortage_repayment'] ?? 0) + (int) ($totals['shortage_repayment_reverse'] ?? 0),
+            'net' => array_sum($totals->except(['opening','transfer_in','transfer_out','adjustment','refund_correction'])->map(fn ($value) => (int) $value)->all()),
         ];
+    }
+
+    public function operatingAdjustments(\Illuminate\Support\Carbon $from, \Illuminate\Support\Carbon $to): array
+    {
+        $moves = DB::table('treasury_entries')->whereBetween('business_date', [$from->toDateString(), $to->toDateString()])
+            ->whereIn('kind', ['expense', 'reconciliation_surplus'])->selectRaw('kind, SUM(paisa) AS balance')->groupBy('kind')->pluck('balance', 'kind');
+        $writtenOff = DB::table('ledger_entries')->where('entry_type', 'credit_writeoff')
+            ->whereDate('entry_date', '>=', $from)->whereDate('entry_date', '<=', $to)->sum('debit');
+
+        return ['expenses' => -(int) ($moves['expense'] ?? 0) / 100, 'other_income' => round((float) $writtenOff + (int) ($moves['reconciliation_surplus'] ?? 0) / 100, 2)];
     }
 
     public function shortageReceivable(): float
     {
         return ((int) DB::table('delivery_collections as c')->join('payments as p','p.id','=','c.payment_id')->where('p.status','completed')
-                ->sum('c.shortage_paisa') - $this->cashTotals()['shortage_repayments']) / 100;
+                ->sum('c.shortage_paisa') - $this->cashTotals()['shortage_repayments']
+                - (int) DB::table('finance_work_items')->where('kind', 'shortage_commission_offset')->where('status', 'posted')->sum('amount_paisa')) / 100;
     }
 
     public function account(int $id, User $actor, ?string $method = null): FinancialAccount

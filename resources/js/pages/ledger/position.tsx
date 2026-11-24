@@ -3,7 +3,7 @@ import { type PaymentSelection, RecordPaymentDialog } from '@/components/record-
 import { useOpenInvoices } from '@/hooks/use-open-invoices';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { amount, money, shortDate } from '@/lib/format';
+import { amount, money, roundedTotalAmount, roundedTotalMoney, shortDate, totalAmount } from '@/lib/format';
 import { ageBucket, invoiceAge, type PaymentParties, paymentMethods, type PartyType } from '@/lib/payment-allocation';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
@@ -128,11 +128,11 @@ function Overview({ totals, ar, ap, arRows, apRows }: { totals: Totals; ar: numb
     ];
     return <>
         <section className="kpis" aria-label="Financial position summary">
-            <Kpi label="Due from Customers" value={money(receivable)} color="#059669" tone="good"
+            <Kpi label="Due from Customers" value={roundedTotalMoney(receivable)} color="#059669" tone="good"
                 footer={`${arRows.length} customers · ${dueCustomers} with balance`}><Mix values={ar} /></Kpi>
-            <Kpi label="Owed to Suppliers" value={money(payable)} color="#dc2626" tone="debt"
+            <Kpi label="Owed to Suppliers" value={roundedTotalMoney(payable)} color="#dc2626" tone="debt"
                 footer={`${apRows.length} ${apRows.length === 1 ? 'supplier' : 'suppliers'} · ${share(ap[3], sum(ap)).toFixed(0)}% over 90 days`}><Mix values={ap} /></Kpi>
-            <Kpi label="Net Position" value={money(totals.net)} color={netColor} tone={signedClass(totals.net)}
+            <Kpi label="Net Position" value={roundedTotalMoney(totals.net)} color={netColor} tone={signedClass(totals.net)}
                 footer="Receivables − payables ± employee balances">
                 <Mix values={[Math.max(receivable, 0), Math.max(payable, 0)]} colors={['#14b8a6', '#f3b1b1']} />
             </Kpi>
@@ -140,7 +140,7 @@ function Overview({ totals, ar, ap, arRows, apRows }: { totals: Totals; ar: numb
                 footer={payable > 0 ? <><span className={`pill ${coverage < 100 ? 'a' : 'g'}`}>{coverage < 100 ? 'Low' : 'OK'}</span> receivables vs supplier dues</> : 'No net supplier dues'}>
                 <Meter value={coverage} color="#f59e0b" />
             </Kpi>
-            <Kpi label="Overdue 90+ (net)" value={money(ap[3] - ar[3])} color="#dc2626"
+            <Kpi label="Overdue 90+ (net)" value={roundedTotalMoney(ap[3] - ar[3])} color="#dc2626"
                 footer={`AP ${compactNumber(ap[3])} vs AR ${compactNumber(ar[3])} past 90 days`}>
                 <Mix values={[ar[3], Math.max(0, ap[3] - ar[3])]} colors={['#14b8a6', '#dc2626']} />
             </Kpi>
@@ -148,7 +148,7 @@ function Overview({ totals, ar, ap, arRows, apRows }: { totals: Totals; ar: numb
         <section className="grid" aria-label="Employee balances and cash movement">
             <div className="card c12 staff">{staff.map(([label, value, time]) => <div key={label}>
                 <small>{label}<em>{time}</em></small>
-                <b className={`num ${value < 0 ? 'debt' : label === 'Received − Paid' && value > 0 ? 'good' : ''}`}>{money(value)}</b>
+                <b className={`num ${value < 0 ? 'debt' : label === 'Received − Paid' && value > 0 ? 'good' : ''}`}>{roundedTotalMoney(value)}</b>
             </div>)}</div>
         </section>
         <section className="grid" aria-label="Financial position analysis">
@@ -192,7 +192,7 @@ function PartyInvoices({ type, row, asOf, pay }: { type: PartyType; row: PartyRo
                     return <tr key={invoice.id}>
                         <td>{can(customer ? 'sales.view' : 'purchases.view') ? <Link href={route(customer ? 'sales.edit' : 'purchases.edit', invoice.id, false)}>{invoice.invoice_number}</Link> : invoice.invoice_number}</td>
                         <td>{shortDate(invoice.invoice_date)}</td><td className="r"><span className={`age b${ageBucket(age)}`}>{age} days</span></td>
-                        <td className="r num doc-original">{amount(invoice.total_amount)}</td><td className="r num"><b>{amount(invoice.outstanding)}</b></td>
+                        <td className="r num doc-original">{totalAmount(invoice.total_amount)}</td><td className="r num"><b>{amount(invoice.outstanding)}</b></td>
                     </tr>;
                 })}</tbody>
             </table> : <p className="muted">No unpaid {docs}.</p>)}
@@ -231,11 +231,11 @@ function PartySection({ type, parties, balance, aging, asOf, revision, pay }: {
     function sortIcon(key: 'name' | 'balance') {
         return sort.key !== key ? <ArrowUpDown className="i" /> : sort.desc ? <ArrowDown className="i" /> : <ArrowUp className="i" />;
     }
-    const ageCells = (values: number[]) => values.map((value, i) => <td key={i} className={`r num age-column ${value ? i === 3 ? 'o90' : i === 2 ? 'o61' : '' : 'z'}`}>{amount(value)}</td>);
+    const ageCells = (values: number[], final = false) => values.map((value, i) => <td key={i} className={`r num age-column ${value ? i === 3 ? 'o90' : i === 2 ? 'o61' : '' : 'z'}`}>{final ? roundedTotalAmount(value) : amount(value)}</td>);
     const toggleRow = (id: number) => setExpanded((open) => open === id ? undefined : id);
     return <section className="grid" aria-label={customer ? 'Receivables' : 'Payables'}><div className="card c12">
         <div className="sech">
-            <h2>{customer ? 'Receivables' : 'Payables'}</h2><span className={`pill ${customer ? 'g' : 'r'}`}>{money(balance)}</span><span className="muted">{customer ? 'Due from customers' : 'Owed to suppliers'}</span>
+            <h2>{customer ? 'Receivables' : 'Payables'}</h2><span className={`pill ${customer ? 'g' : 'r'}`}>{roundedTotalMoney(balance)}</span><span className="muted">{customer ? 'Due from customers' : 'Owed to suppliers'}</span>
             <div className="sp" />
             <SearchField aria-label={`Search ${kind}`} placeholder={`Search ${kind}s…`} value={search} onChange={(event) => setSearch(event.target.value)} />
             {customer && <label className="tg"><input type="checkbox" checked={hideCredit} onChange={(event) => setHideCredit(event.target.checked)} />Hide credit / zero balances</label>}
@@ -272,8 +272,8 @@ function PartySection({ type, parties, balance, aging, asOf, revision, pay }: {
                             </Fragment>;
                         })}
                     </tbody>
-                    <tfoot><tr><td>Total · {rows.length}</td><td className="city-column" /><td className="r num">{amount(sum(rows.map((row) => row.balance)))}</td>
-                        {ageCells(tableAging)}<td className="r age-column"><Mix values={tableAging} small /></td><td className="r num">{amount(sum(rows.map((row) => row.paid)))}</td>
+                    <tfoot><tr><td>Total · {rows.length}</td><td className="city-column" /><td className="r num">{roundedTotalAmount(sum(rows.map((row) => row.balance)))}</td>
+                        {ageCells(tableAging, true)}<td className="r age-column"><Mix values={tableAging} small /></td><td className="r num">{roundedTotalAmount(sum(rows.map((row) => row.paid)))}</td>
                     </tr></tfoot>
                 </table>
             </div>
@@ -344,7 +344,7 @@ function PaymentsLog({ payments, filters, pay }: { payments: PaymentLog[]; filte
                 <tbody>{rows.length ? rows.map((row) => <tr key={row.id}>
                     <td>{shortDate(row.date)}</td><td className="num" title={row.number}>{row.reference_no || row.number}</td><td><span className={`logtype ${row.direction}`}>{row.direction === 'in' ? 'Receipt' : 'Payment'}</span></td>
                     <td>{row.party_name ?? '—'}</td><td>{paymentMethods[row.method] ?? row.method}</td>
-                    <td className={`r num ${row.direction === 'in' ? 'good' : 'debt'}`}><b>{row.direction === 'in' ? '+' : '−'}{amount(row.amount)}</b></td>
+                    <td className={`r num ${row.direction === 'in' ? 'good' : 'debt'}`}><b>{row.direction === 'in' ? '+' : '−'}{totalAmount(row.amount)}</b></td>
                 </tr>) : <tr><td colSpan={6} className="empty">
                     <div className="ico"><CreditCard className="size-5" /></div><b>No {tab === 'in' ? 'receipts' : 'payments'} in this period</b>
                     Change the date range or record a new receipt or payment.

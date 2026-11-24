@@ -427,6 +427,7 @@ class BookingController extends Controller
             'subtotal' => $computed['totals']['subtotal'],
             'item_discount_total' => $computed['totals']['item_discount_total'],
             'item_gst_total' => $computed['totals']['item_gst_total'],
+            'rounding_amount' => $computed['totals']['rounding_amount'],
             'total_amount' => $computed['totals']['total_amount'],
         ]);
     }

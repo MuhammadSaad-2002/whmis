@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\Paisa;
+
 /**
  * Single source of truth for invoice line and header math.
  * The client mirrors these formulas for live display, but posted
@@ -100,7 +102,8 @@ class MarginCalculator
         $invDiscount = self::resolveAmount($itemNet, $header['discount_percent'] ?? 0, $header['discount_amount'] ?? null);
         $afterDiscount = $itemNet - $invDiscount;
         $invGst = self::resolveAmount($afterDiscount, $header['gst_percent'] ?? 0, $header['gst_amount'] ?? null);
-        $total = round($afterDiscount + $invGst, 2);
+        $exact = Paisa::from($afterDiscount + $invGst);
+        $rounded = Paisa::roundToRupee($exact);
 
         return [
             'subtotal' => $subtotal,
@@ -108,7 +111,8 @@ class MarginCalculator
             'item_gst_total' => $itemGst,
             'discount_amount' => $invDiscount,
             'gst_amount' => $invGst,
-            'total_amount' => $total,
+            'rounding_amount' => ($rounded - $exact) / 100,
+            'total_amount' => $rounded / 100,
         ];
     }
 

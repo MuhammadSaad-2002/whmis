@@ -49,13 +49,13 @@
             @endforeach
             <tr class="subtotal">
                 <td colspan="3"><strong>Period Totals</strong></td>
-                <td class="num"><strong>{{ number_format(array_sum(array_column($statement['rows'], 'debit')), 2) }}</strong></td>
-                <td class="num"><strong>{{ number_format(array_sum(array_column($statement['rows'], 'credit')), 2) }}</strong></td>
+                <td class="num"><strong>{{ \App\Support\MoneyDisplay::roundedTotal(array_sum(array_column($statement['rows'], 'debit'))) }}</strong></td>
+                <td class="num"><strong>{{ \App\Support\MoneyDisplay::roundedTotal(array_sum(array_column($statement['rows'], 'credit'))) }}</strong></td>
                 <td></td>
             </tr>
             <tr>
                 <td colspan="5"><strong>Closing Balance</strong></td>
-                <td class="num"><strong>{{ number_format($sign * $statement['closing_balance'], 2) }}</strong></td>
+                <td class="num"><strong>{{ \App\Support\MoneyDisplay::roundedTotal($sign * $statement['closing_balance']) }}</strong></td>
             </tr>
         </tbody>
     </table>
@@ -74,10 +74,11 @@
                 <td class="num">{{ number_format($aging['31_60'], 2) }}</td>
                 <td class="num">{{ number_format($aging['61_90'], 2) }}</td>
                 <td class="num">{{ number_format($aging['over_90'], 2) }}</td>
-                <td class="num"><strong>{{ number_format($aging['total'], 2) }}</strong></td>
+                <td class="num"><strong>{{ \App\Support\MoneyDisplay::roundedTotal($aging['total']) }}</strong></td>
             </tr>
         </tbody>
     </table>
 
+    <p class="meta document-note">Summary amounts are rounded to whole rupees. Ledger entries retain their original precision.</p>
 </body>
 </html>

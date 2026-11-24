@@ -1,50 +1,22 @@
-.delivery-schedules {
-    --bg:#f3f5f7; --card:#fff; --ink:#0f1f2c; --ink2:#475569; --ink3:#556779; --line:#e5e9ee; --line2:#eef1f4;
-    --navy:#0d2436; --teal:#0f8f80; --teal2:#14b8a6; --blue:#2563eb; --amber:#924609; --amberbg:#fff6e0; --red:#b4232a;
-    --radius:14px; --shadow:0 1px 2px rgba(15,31,44,.05),0 4px 16px rgba(15,31,44,.04);
-    min-height:100%; padding:18px 20px 94px; color:var(--ink); background:var(--bg);
-    font-family:var(--font-sans); font-size:14.5px; line-height:1.45; color-scheme:light;
+.master-register.delivery-schedules {
+    --blue:#2563eb;
+    padding-bottom:94px;
 
-    button, a.hbtn, input[type=checkbox] {cursor:pointer}
-    button:disabled, select:disabled, input:disabled {cursor:default; opacity:.55}
-    :is(button,a,input,select):focus-visible {outline:2px solid var(--teal);outline-offset:2px}
-    svg.i {width:17px;height:17px;flex:none}
-    .hero {background:linear-gradient(120deg,var(--navy) 0%,#11384a 55%,#0f4d4a 100%);border-radius:var(--radius);padding:20px 24px;color:#fff;position:relative;overflow:hidden}
-    .hero:after {content:"";position:absolute;right:-60px;top:-90px;width:320px;height:320px;border-radius:50%;background:radial-gradient(circle,rgba(20,184,166,.25),transparent 65%);pointer-events:none}
-    .htop {display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;position:relative;z-index:1}
-    .hero h1 {font-size:27px;font-weight:700;letter-spacing:-.4px;line-height:1.2}
-    .hero .sub {color:#a9bdca;font-size:14.5px;margin-top:5px}
-    .htop .sp,.tsp,.bulk .sp {flex:1}
-    .hbtn {background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);color:#fff;border-radius:10px;padding:0 14px;min-height:40px;font-size:14px;font-weight:600;display:flex;gap:7px;align-items:center}
-    .hbtn:hover {background:rgba(255,255,255,.15)}
-    .hbtn.pri,.savebar .btn.pri {background:var(--teal2);border-color:var(--teal2);color:#04312c}
-    .hbtn.pri:hover,.savebar .btn.pri:hover {background:#2dd4bf}
+    .savebar .btn.pri {background:var(--teal2);border-color:var(--teal2);color:#04312c}
+    .savebar .btn.pri:hover {background:#2dd4bf}
     .setup {margin-top:14px;padding:10px 14px;border-radius:10px;background:var(--amberbg);color:var(--amber)}
 
-    .card {background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);min-width:0}
-    .list {margin-top:14px;overflow:hidden}
-    .tbar {display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:center}
-    .tbar .app-search-field {max-width:340px;min-width:min(200px,100%);min-height:40px;border-color:var(--line);border-radius:10px;--card:#fff}
-    .tbar .app-search-field input {font-size:14.5px}
-    .chips {display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-    .chip {min-height:36px;border-radius:18px;border:1px solid var(--line);background:#fff;padding:0 13px;font-size:13.5px;font-weight:600;color:var(--ink2);display:flex;align-items:center;gap:6px}
-    .chip:hover {border-color:#aebbc7}
-    .chip b {font-size:11.5px;background:var(--line2);border-radius:9px;padding:0 6px;line-height:18px;font-variant-numeric:tabular-nums}
-    .chip.warn b {background:var(--amberbg);color:var(--amber)}
-    .chip.on {background:var(--navy);border-color:var(--navy);color:#fff}
-    .chip.on b {background:rgba(255,255,255,.2);color:#fff}
-    .clear {padding:5px 6px;color:#076b60;font-size:13px;font-weight:600}
     .clear:hover,.history:hover {text-decoration:underline}
     .shown {font-size:13px;color:var(--ink3);font-variant-numeric:tabular-nums}
-    .bulk {display:flex;gap:10px;align-items:center;padding:10px 14px;background:var(--navy);color:#fff;flex-wrap:wrap}
-    .bulk .lbl {font-size:13px;color:#bacbd8}
-    .bulk select,.bulk .bb {background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;min-height:34px;padding:0 9px;font-weight:600}
-    .bulk select option {background:white;color:var(--ink)}
-    .bulk .bb {padding:0 12px;font-size:13.5px}
-    .bulk .bb:hover {background:rgba(255,255,255,.18)}
-    .bulk .days {background:rgba(255,255,255,.06);border-radius:10px;padding:3px}
+    .schedule-bulk {display:flex;gap:10px;align-items:center;padding:10px 14px;background:var(--navy);color:#fff;flex-wrap:wrap}
+    .schedule-bulk .lbl {font-size:13px;color:#bacbd8}
+    .schedule-bulk select,.schedule-bulk .bb {background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;min-height:34px;padding:0 9px;font-weight:600}
+    .schedule-bulk select option {background:white;color:var(--ink)}
+    .schedule-bulk .bb {padding:0 12px;font-size:13.5px}
+    .schedule-bulk .bb:hover {background:rgba(255,255,255,.18)}
+    .schedule-bulk .days {background:rgba(255,255,255,.06);border-radius:10px;padding:3px}
     .thead,.schedule-row {display:grid;grid-template-columns:40px minmax(220px,1.4fr) 260px 260px 150px minmax(170px,.8fr);align-items:center}
-    .thead {background:#fafbfc;border-bottom:1px solid var(--line);font-size:12px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.4px}
+    .thead {background:#fafbfc;border-bottom:1px solid var(--line);font-size:13px;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.3px}
     .thead>div {padding:10px 12px}
     .thead .hd {display:flex;align-items:center;gap:6px}
     .thead .hd i {width:9px;height:9px;border-radius:3px;background:var(--teal2)}
@@ -54,8 +26,8 @@
     .schedule-row:hover {background:#fbfcfd}
     .schedule-row.sel {background:#f2f8f7}
     .schedule-row.dirty {background:#fffbf0;box-shadow:inset 3px 0 0 #f59e0b}
-    .schedule-row>div {min-width:0;padding:12px}
-    .cust b {display:block;font-weight:700;font-size:14.5px;text-transform:uppercase;overflow-wrap:anywhere}
+    .schedule-row>div {min-width:0;padding:11px 12px}
+    .cust b {display:block;font-weight:700;font-size:14px;text-transform:uppercase;overflow-wrap:anywhere}
     .cust .meta {font-size:12.5px;color:var(--ink3);display:flex;gap:2px 8px;flex-wrap:wrap;margin-top:3px;align-items:center;overflow-wrap:anywhere}
     .cust .no-booker,.error {color:var(--red);font-weight:600}
     .history {display:grid;place-items:center;width:22px;height:22px;color:#1f4e79;border-radius:5px}
@@ -70,8 +42,8 @@
     .d.tod {border-style:dashed;border-color:#7b8f9e}
     .d.bk.on {background:var(--teal2);border-color:var(--teal2);color:#04312c}
     .d.dl.on {background:var(--blue);border-color:var(--blue);color:#fff}
-    .bulk .d {background:transparent;border-color:rgba(255,255,255,.25);color:#cfe0ea;width:30px;height:30px}
-    .bulk .d.on {background:#fff;color:var(--navy);border-color:#fff}
+    .schedule-bulk .d {background:transparent;border-color:rgba(255,255,255,.25);color:#cfe0ea;width:30px;height:30px}
+    .schedule-bulk .d.on {background:#fff;color:var(--navy);border-color:#fff}
     .next b {display:block;font-weight:700}
     .next small {font-size:12.5px;color:var(--ink3)}
     .next .now {color:var(--amber)}
@@ -113,17 +85,8 @@
         .history {width:30px;height:28px}
     }
     @media(max-width:540px) {
-        .htop {gap:8px}
-        .htop .sp,.tsp,.bulk .sp {display:none}
-        .hero {padding:14px}
-        .hero h1 {font-size:24px}
-        .hero .sub {margin-bottom:4px}
-        .hbtn {min-height:44px;padding:0 9px;font-size:13px}
-        .tbar {padding:10px}
-        .tbar .app-search-field {max-width:none;min-height:44px}
-        .tbar .app-search-field input,.sal select,.bulk select {font-size:16px}
-        .chips {gap:4px}
-        .chip {padding-inline:9px}
+        .schedule-bulk .sp { display:none }
+        .sal select,.schedule-bulk select {font-size:16px}
         .savebar {display:grid;grid-template-columns:1fr auto auto;gap:7px;padding:8px 9px}
         .savebar .dot {display:none}
         .savebar .btn {padding-inline:8px;font-size:13px}
