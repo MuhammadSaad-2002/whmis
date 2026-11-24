@@ -185,15 +185,17 @@ class OperationsController extends Controller
         $handover = $dispatch && (int) $dispatch->handover_to_id === $actor->id && $actor->can('dispatch.assigned');
         $this->authorizeDispatchDetail($sale, $dispatch, $actor);
         $canManage = $actor->can('dispatch.manage');
+        $historical = $dispatch?->isHistoricalDelivery() ?? false;
         $fieldActions = $actor->can('dispatch.assigned') && $actor->is_active && $dispatch && (int) $dispatch->assigned_to === $actor->id;
-        $collectiblePaisa = $fieldActions && $sale->isPosted() ? $collections->remainingFor($sale) : 0;
+        $collectiblePaisa = ! $historical && $fieldActions && $sale->isPosted() ? $collections->remainingFor($sale) : 0;
         return Inertia::render('operations/dispatch', [
             'invoice' => $sale->only(['id', 'invoice_number', 'status']) + [
                 'customer' => $sale->customer?->name, 'address' => $sale->customer?->address, 'city' => $sale->customer?->city, 'phone' => $sale->customer?->phone,
                 'contact' => $sale->customer?->contact_person,
             ],
             'dispatch' => $dispatch,
-            'items' => $service->progress($sale),
+            'historicalDelivery' => $historical,
+            'items' => $historical ? [] : $service->progress($sale),
             'pickupLines' => $dispatch?->custody_required ? $service->pickupProgress($sale) : [],
             'collectiblePaisa' => $collectiblePaisa,
             'canReportCollection' => $collectiblePaisa > 0 && in_array($dispatch->status, ['partial', 'delivered'], true),
@@ -221,6 +223,7 @@ class OperationsController extends Controller
     {
         $dispatch = Dispatch::where('sales_invoice_id', $sale->id)->with('assignee:id,name')->first();
         $this->authorizeDispatchDetail($sale, $dispatch, $request->user());
+        abort_if($dispatch?->isHistoricalDelivery(), 404);
         $tracksPickup = (bool) $dispatch?->custody_required;
         $formatQty = fn ($value) => rtrim(rtrim(number_format((float) $value, 2), '0'), '.');
         $title = $tracksPickup ? 'Dispatch Picking List' : 'Dispatch Delivery Items';

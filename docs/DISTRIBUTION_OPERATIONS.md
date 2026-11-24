@@ -65,6 +65,13 @@ movements, COGS, ledger entries, or receipts. Physical returns use Returns; actu
 collections use Payments. Cancelled invoices retain history but cannot receive
 new dispatch actions. The detail can print its basic item/batch picking list.
 
+Historical deliveries appear as **Delivered** with a read-only detail. The update
+through `SI-2026-0028` covers posted untracked invoices and assignments with only
+assignment/picking-start activity. It preserves staff assignments and activity
+logs, and adds no pickup, handover, payment or commission records. The
+[manual SQL](../database/manual/2026_11_24_mark_legacy_sales_invoices_delivered.sql)
+is an alternative to deploying the matching migration.
+
 ### Salesman and weekly schedules
 
 In **Users**, add the **Salesman** role to an active login. Keep **Booker** on the

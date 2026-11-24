@@ -45,6 +45,7 @@ class DeliveryCollectionService
             $invoice = SalesInvoice::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $dispatch = Dispatch::where('sales_invoice_id', $invoice->id)->first();
             abort_unless($actor->is_active && $actor->can('dispatch.assigned') && $dispatch && (int) $dispatch->assigned_to === $actor->id, 404);
+            if ($dispatch->isHistoricalDelivery()) $this->treasury->fail('This historical delivery is read-only.');
             if (! $invoice->isPosted() || ! in_array($dispatch->status, ['partial', 'delivered'], true)) $this->treasury->fail('Record a delivery before reporting a collection.');
             $amount = Paisa::from($data['amount']);
             $method = $amount === 0 ? 'none' : $data['method'];

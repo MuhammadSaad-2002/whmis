@@ -76,7 +76,7 @@ class DispatchService
     public function syncReturns(SalesInvoice $invoice): void
     {
         $dispatch = Dispatch::where('sales_invoice_id', $invoice->id)->first();
-        if (! $dispatch?->custody_required) return;
+        if (! $dispatch?->custody_required || $dispatch->isHistoricalDelivery()) return;
         $progress = collect($this->progress($invoice));
         $before = $dispatch->status;
         if ($progress->sum('remaining') == 0 && $progress->sum('returned') > 0) {
@@ -97,6 +97,8 @@ class DispatchService
 
     public function availableActions(?Dispatch $dispatch, bool $manager): array
     {
+        if ($dispatch?->isHistoricalDelivery()) return [];
+
         if (! $dispatch?->custody_required) return $manager
             ? [...self::FIELD_ACTIONS, 'assign', 'correct_delivery', 'close_returned'] : self::FIELD_ACTIONS;
 
@@ -219,6 +221,10 @@ class DispatchService
             $limited = ! $actor->can('dispatch.manage');
             if (isset($data['expected_status'])) abort_unless(! $limited && $actor->is_active, 403);
             $dispatch = Dispatch::where('sales_invoice_id', $invoice->id)->first();
+            if ($dispatch?->isHistoricalDelivery()) {
+                abort_if($limited && (int) $dispatch->assigned_to !== $actor->id, 404);
+                $this->fail('This historical delivery is read-only.');
+            }
             if ($limited && $data['action'] !== 'accept_handover') {
                 abort_unless($actor->can('dispatch.assigned') && $actor->is_active, 403);
                 abort_unless($dispatch && (int) $dispatch->assigned_to === $actor->id, 404);

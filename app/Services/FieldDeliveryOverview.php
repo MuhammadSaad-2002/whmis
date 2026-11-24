@@ -13,7 +13,7 @@ class FieldDeliveryOverview
         [$complete, $bindings] = $this->completion();
 
         return $this->collections->invoiceBalances()->join('dispatches as d', 'd.sales_invoice_id', '=', 'sales_invoices.id')
-            ->addSelect('d.planned_date', 'd.status as dispatch_status', 'd.assigned_to')
+            ->addSelect('d.planned_date', 'd.status as dispatch_status', 'd.assigned_to', 'd.historical_delivered_at')
             ->selectRaw("{$complete} as is_complete", $bindings)
             ->where(fn ($rows) => $rows->where('d.assigned_to', $actorId)->orWhere('d.handover_to_id', $actorId))
             ->where(function ($rows) use ($date, $today) {
@@ -46,6 +46,6 @@ class FieldDeliveryOverview
         $pending = $this->collections->pendingReportsForInvoice()->selectRaw('1')->where('reported_paisa', '>', 0);
         $settled = '('.InvoiceBalanceService::DUE_SQL.") <= 0 AND NOT EXISTS ({$pending->toSql()})";
 
-        return ["CASE WHEN d.status = 'closed' OR (d.status = 'delivered' AND {$settled}) THEN 1 ELSE 0 END", $pending->getBindings()];
+        return ["CASE WHEN d.status = 'closed' OR (d.status = 'delivered' AND (d.historical_delivered_at IS NOT NULL OR ({$settled}))) THEN 1 ELSE 0 END", $pending->getBindings()];
     }
 }

@@ -1,1 +1,0 @@
-import{r as t,j as r}from"./app-DD83VllX.js";import{c as i}from"./utils-CiMRq3MP.js";import{S as c}from"./search-_N9WkNrF.js";const d=t.forwardRef(function({className:e,...a},s){return r.jsxs("label",{className:i("app-search-field",e),children:[r.jsx(c,{size:18,"aria-hidden":"true"}),r.jsx("input",{ref:s,type:"search",...a})]})});export{d as S};

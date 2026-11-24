@@ -130,7 +130,8 @@ class BookerWorkdayController extends Controller
             ->through(function ($invoice) use ($collections, $actorId) {
                 $pending = (int) $invoice->pending_collection_paisa;
                 $remaining = $collections->remainingPaisa($invoice->outstanding, $pending);
-                $canCollect = $remaining > 0 && (int) $invoice->assigned_to === $actorId && in_array($invoice->dispatch_status, ['partial', 'delivered'], true);
+                $canCollect = ! $invoice->historical_delivered_at && $remaining > 0
+                    && (int) $invoice->assigned_to === $actorId && in_array($invoice->dispatch_status, ['partial', 'delivered'], true);
 
                 return [
                     'id' => $invoice->id, 'invoice_number' => $invoice->invoice_number,

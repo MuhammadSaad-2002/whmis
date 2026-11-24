@@ -309,6 +309,79 @@ class DistributionOperationsTest extends TestCase
         $this->assertSame(0, Dispatch::count());
     }
 
+    public function test_imported_historical_delivery_is_delivered_and_read_only_without_recording_activity(): void
+    {
+        $legacy = $this->sale(['invoice_number' => 'SI-2026-0028']);
+        $cutoff = $this->sale(['invoice_number' => 'SI-2026-0029']);
+        DB::table('dispatches')->insert([
+            'sales_invoice_id' => $legacy->id, 'status' => 'delivered', 'custody_required' => false,
+            'created_at' => null, 'updated_at' => null,
+        ]);
+        $this->get(route('dispatch.index', ['status' => 'delivered']))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('invoices.data', 1)->where('invoices.data.0.id', $legacy->id));
+        $this->get(route('dispatch.show', $legacy))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('historicalDelivery', true)->where('dispatch.status', 'delivered')->where('dispatch.planned_date', null)
+            ->has('items', 0)->has('managerActions', 0)->where('canReportCollection', false));
+        $this->get(route('dispatch.picking-pdf', $legacy))->assertNotFound();
+        $this->action($legacy, 'correct_delivery', ['notes' => 'Test'])->assertSessionHasErrors('action');
+        $this->get(route('dispatch.show', $cutoff))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('historicalDelivery', false)->where('dispatch', null));
+        $this->assertDatabaseCount('dispatch_events', 0);
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertDatabaseCount('commission_awards', 0);
+    }
+
+    public function test_backfill_finishes_older_assignments_without_touching_cutoff_or_real_custody(): void
+    {
+        $this->booker->assignRole('Salesman');
+        $today = now('Asia/Karachi')->toDateString();
+        $archived = [];
+        foreach ([22 => 'picking', 23 => 'pending', 25 => 'pending', 26 => 'pending'] as $number => $status) {
+            $sale = $this->sale(['invoice_number' => sprintf('SI-2026-%04d', $number)]);
+            $dispatch = Dispatch::create(['sales_invoice_id' => $sale->id, 'status' => $status,
+                'assigned_to' => $this->booker->id, 'original_assignee_id' => $this->booker->id, 'planned_date' => $today]);
+            $dispatch->events()->create(['action' => 'assign', 'request_key' => (string) Str::uuid(), 'created_by' => $this->admin->id]);
+            if ($status === 'picking') {
+                $dispatch->events()->create(['action' => 'picking', 'request_key' => (string) Str::uuid(), 'created_by' => $this->admin->id]);
+            }
+            $archived[] = $dispatch;
+        }
+        $untracked = $this->sale(['invoice_number' => 'SI-2026-0001']);
+        $draft = $this->sale(['invoice_number' => 'SI-2026-0015', 'status' => 'draft']);
+        $cutoff = $this->sale(['invoice_number' => 'SI-2026-0029']);
+        $custody = $this->sale(['invoice_number' => 'SI-2026-0024']);
+        $cutoffDispatch = Dispatch::create(['sales_invoice_id' => $cutoff->id, 'status' => 'pending']);
+        $held = Dispatch::create(['sales_invoice_id' => $custody->id, 'status' => 'picking', 'custody_required' => true,
+            'assigned_to' => $this->booker->id, 'custodian_id' => $this->booker->id]);
+        $migration = require database_path('migrations/2026_11_24_000900_finish_untracked_legacy_dispatches.php');
+        $migration->up();
+        $migration->up();
+
+        foreach ($archived as $dispatch) {
+            $after = $dispatch->fresh();
+            $this->assertTrue($after->isHistoricalDelivery());
+            foreach (['assigned_to', 'original_assignee_id', 'planned_date', 'created_at', 'updated_at'] as $field) {
+                $this->assertEquals($dispatch->$field, $after->$field);
+            }
+        }
+        $this->assertDatabaseHas('dispatches', ['sales_invoice_id' => $untracked->id, 'status' => 'delivered']);
+        $this->assertDatabaseMissing('dispatches', ['sales_invoice_id' => $draft->id]);
+        $this->assertEquals($cutoffDispatch->fresh()->status, 'pending');
+        $this->assertEquals($held->fresh()->status, 'picking');
+        $this->assertDatabaseCount('dispatch_events', 5);
+        $this->assertDatabaseCount('delivery_collections', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+
+        $id = $archived[0]->sales_invoice_id;
+        $this->actingAs($this->booker->fresh())->get(route('booker.workday'))->assertInertia(fn (Assert $page) => $page
+            ->where('activeDeliveries', 1)->where('deliveries.data.1.is_complete', true)->where('deliveries.data.1.can_collect', false));
+        $this->get(route('dispatch.show', $id))->assertInertia(fn (Assert $page) => $page
+            ->where('historicalDelivery', true)->where('canReportCollection', false));
+        $this->postJson(route('distribution.report', $id), ['request_key' => (string) Str::uuid(), 'method' => 'cash', 'amount' => 1])
+            ->assertUnprocessable();
+    }
+
     public function test_admin_dispatch_pipeline_uses_live_counts_and_pages_each_view(): void
     {
         $low = $this->sale(['total_amount' => 250]);

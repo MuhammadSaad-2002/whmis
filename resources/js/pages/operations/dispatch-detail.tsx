@@ -14,6 +14,7 @@ export type DeliveryProps = {
     dispatch: { id: number; status: string; assigned_to: number | null; planned_date: string | null; assignee: Staff | null; events: Event[]; custody_required: boolean; pickup_confirmed_at: string | null; original_assignee?: Staff | null; custodian?: Staff | null } | null;
     items: Item[]; pickupLines: PickupLine[]; staff: Staff[]; scoped: boolean; canManage: boolean; canViewInvoice: boolean;
     fieldActions: string[]; managerActions: string[]; today: string; canReportCollection: boolean; collectiblePaisa: number; canRequestCorrection: boolean;
+    historicalDelivery: boolean;
 };
 
 export const actions: Record<string, string> = {
