@@ -9,8 +9,9 @@ use App\Models\LedgerEntry;
 use App\Models\PurchaseInvoice;
 use App\Models\SalesInvoice;
 use App\Services\DashboardService;
+use App\Services\ReportPdfRenderer;
 use App\Services\ReportService;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Services\ReportVisualizationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
@@ -100,15 +101,19 @@ class DashboardController extends Controller
         ]);
     }
 
-    /** One-page executive summary PDF (Admin / Super Admin only — gated on the route). */
-    public function exportPdf(Request $request, DashboardService $dashboard)
+    /** Print the selected executive period with charts before the detail tables. */
+    public function exportPdf(Request $request, DashboardService $dashboard, ReportVisualizationService $charts, ReportPdfRenderer $pdf)
     {
         [$from, $to, $period] = $this->resolvePeriod($request);
         $payload = $dashboard->executivePayload($from, $to, $period);
 
-        return Pdf::loadView('pdf.executive', $payload)
-            ->setPaper('a4', 'portrait')
-            ->stream('executive-summary.pdf');
+        $payload['charts'] = $charts->pdfCharts('product-sales', [
+            'chart' => $payload['monthlyTrend'],
+            'rows' => array_map(fn ($row) => ['product' => $row['label'], 'net_revenue' => $row['value']], $payload['topProducts']),
+        ]);
+
+        return $pdf->renderView('pdf.executive', $payload, 'portrait')->stream('executive-summary.pdf')
+            ->header('Cache-Control', 'private, no-store');
     }
 
     /**

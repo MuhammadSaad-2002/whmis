@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/select';
 import { useInvoiceHotkeys, useKeyboardGrid } from '@/hooks/use-keyboard-grid';
 import { usePermissions } from '@/hooks/use-permissions';
+import { useTreasuryPayment } from '@/hooks/use-treasury-payment';
 import { draftWasSaved, useDraftLeave } from '@/hooks/use-draft-leave';
 import AppLayout from '@/layouts/app-layout';
 import type { VisitOptions } from '@inertiajs/core';
@@ -47,6 +48,7 @@ interface InvoiceDto {
     invoice_date: string;
     due_date: string | null;
     purchase_type: string;
+    financial_account_id?: number | null;
     status: string;
     discount_percent: string;
     gst_percent: string;
@@ -95,6 +97,7 @@ const DECIMAL_KEYS: ReadonlySet<keyof ItemRow> = new Set([
 ] as (keyof ItemRow)[]);
 
 export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
+    const treasury = useTreasuryPayment();
     const { can } = usePermissions();
     const isDraft = !invoice || invoice.status === 'draft';
     const readonly = !isDraft;
@@ -105,6 +108,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
         invoice_date: invoice?.invoice_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
         due_date: invoice?.due_date?.slice(0, 10) ?? '',
         purchase_type: invoice?.purchase_type ?? 'credit',
+        financial_account_id: String(invoice?.financial_account_id ?? ''),
         discount_percent: invoice ? dec2(invoice.discount_percent) : '0.00',
         gst_percent: invoice ? dec2(invoice.gst_percent) : '0.00',
         notes: invoice?.notes ?? '',
@@ -293,6 +297,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
     const payload = () => ({
         ...header,
         company_id: header.company_id || null,
+        financial_account_id: header.financial_account_id || null,
         due_date: header.due_date || null,
         warehouse_id: warehouse.id,
         items: rows
@@ -529,7 +534,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                         <Label>Type</Label>
                         <Select
                             value={header.purchase_type}
-                            onValueChange={(v) => setHeader((h) => ({ ...h, purchase_type: v }))}
+                            onValueChange={(v) => setHeader((h) => ({ ...h, purchase_type: v, financial_account_id: v === 'cash' ? h.financial_account_id : '' }))}
                             disabled={readonly}
                         >
                             <SelectTrigger><SelectValue /></SelectTrigger>
@@ -539,6 +544,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                             </SelectContent>
                         </Select>
                     </div>
+                    {treasury.required && header.purchase_type === 'cash' && <div><Label htmlFor="purchase-cash-account">Pay from cash account</Label><select id="purchase-cash-account" className="h-9 w-full rounded-md border bg-background px-2" disabled={readonly} value={header.financial_account_id} onChange={e => setHeader(h => ({ ...h, financial_account_id: e.target.value }))}><option value="">Select an account</option>{treasury.accounts.filter(a => ['cash','petty_cash'].includes(a.kind)).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>}
                     <div>
                         <Label>Warehouse</Label>
                         <Input value={warehouse.name} disabled />

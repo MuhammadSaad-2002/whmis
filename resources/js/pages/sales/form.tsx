@@ -16,7 +16,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { draftWasSaved, useDraftLeave } from '@/hooks/use-draft-leave';
 import AppLayout from '@/layouts/app-layout';
 import type { VisitOptions } from '@inertiajs/core';
-import { amount, dec2, money, qty as fmtQty, toNumber } from '@/lib/format';
+import { amount, dec2, money, pakistanDate, qty as fmtQty, toNumber } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { combineEffects } from '@/lib/incentive';
 import { computeLine, computeTotals, effectiveDiscountPercent } from '@/lib/invoice-math';
@@ -46,6 +46,7 @@ interface InvoiceDto {
     invoice_number: string;
     customer_id: number;
     booker_id: number | null;
+    planned_salesman_id?: number | null;
     booker?: { id: number; name: string } | null;
     warehouse_id: number;
     invoice_date: string;
@@ -92,6 +93,7 @@ interface Props {
     customers: CustomerOption[];
     warehouse: { id: number; name: string };
     bookers: { id: number; name: string }[];
+    salesmen?: { id: number; name: string }[];
     invoice: InvoiceDto | null;
 }
 
@@ -134,7 +136,7 @@ const DECIMAL_KEYS: ReadonlySet<keyof ItemRow> = new Set([
     'trade_price', 'discount_percent', 'gst_percent',
 ] as (keyof ItemRow)[]);
 
-export default function SalesForm({ customers, warehouse, bookers, invoice }: Props) {
+export default function SalesForm({ customers, warehouse, bookers, invoice, salesmen = [] }: Props) {
     const { can } = usePermissions();
     const isDraft = !invoice || invoice.status === 'draft';
     const readonly = !isDraft;
@@ -143,7 +145,8 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
         invoice_number: '',
         customer_id: invoice ? String(invoice.customer_id) : '',
         booker_id: invoice?.booker_id ? String(invoice.booker_id) : '',
-        invoice_date: invoice?.invoice_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+        planned_salesman_id: invoice?.planned_salesman_id ? String(invoice.planned_salesman_id) : '',
+        invoice_date: invoice?.invoice_date?.slice(0, 10) ?? pakistanDate(),
         due_date: invoice?.due_date?.slice(0, 10) ?? '',
         sale_type: invoice?.sale_type ?? 'credit',
         sale_terms: invoice?.sale_terms ?? '',
@@ -374,6 +377,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
         invoice_number: header.invoice_number || null,
         customer_id: header.customer_id || null,
         booker_id: header.booker_id || null,
+        planned_salesman_id: header.planned_salesman_id || null,
         due_date: header.due_date || null,
         // Terms only apply to Sale Base; cleared otherwise.
         sale_terms: header.sale_type === 'sale_base' ? header.sale_terms.trim() || null : null,
@@ -568,13 +572,9 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
                         <SearchableSelect
                             value={header.customer_id}
                             onValueChange={(v) => {
-                                const picked = customers.find((c) => String(c.id) === v);
                                 setHeader((h) => ({
                                     ...h,
                                     customer_id: v,
-                                    // Auto-fill the booker from the customer's assigned
-                                    // booker, but never clobber one already chosen.
-                                    booker_id: h.booker_id || (picked?.booker_id ? String(picked.booker_id) : ''),
                                 }));
                                 setHeaderErrors((e) => { const n = { ...e }; delete n.customer_id; return n; });
                             }}
@@ -591,7 +591,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
                         <InputError message={headerErrors.customer_id} className="mt-1 text-xs" />
                     </div>
                     <div>
-                        <Label>Booker</Label>
+                        <Label>Booker / Sales Originator</Label>
                         <SearchableSelect
                             value={header.booker_id}
                             onValueChange={(v) => setHeader((h) => ({ ...h, booker_id: v }))}
@@ -604,6 +604,12 @@ export default function SalesForm({ customers, warehouse, bookers, invoice }: Pr
                                 ...bookers.map((b) => ({ value: String(b.id), label: b.name })),
                             ]}
                         />
+                    </div>
+                    <div>
+                        <Label htmlFor="sale-salesman">Planned Salesman</Label>
+                        <SearchableSelect id="sale-salesman" value={header.planned_salesman_id} disabled={readonly}
+                            onValueChange={v => setHeader(h => ({ ...h, planned_salesman_id: v }))}
+                            options={[{ value: '', label: 'Use customer schedule' }, ...salesmen.map(s => ({ value: String(s.id), label: s.name }))]}/>
                     </div>
                     <div>
                         <Label>Invoice #</Label>

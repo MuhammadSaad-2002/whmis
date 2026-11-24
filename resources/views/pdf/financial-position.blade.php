@@ -96,6 +96,7 @@
 
     <div class="meta" style="margin-top: 10px;">
         Employee salary payable: {{ number_format($t['employee_payable'], 2) }} · Employee advances: {{ number_format($t['employee_advances'], 2) }}<br>
+        Commission payable: {{ number_format($t['commission_payable'], 2) }} · Commission recovery: {{ number_format($t['commission_recovery'], 2) }} · Employee cash shortages: {{ number_format($t['employee_shortage'], 2) }}<br>
         Period payroll expense: {{ number_format($t['payroll_expense'], 2) }} · Employee cash out: {{ number_format($t['employee_cash_out'], 2) }} · Combined net cash flow: {{ number_format($t['net_cash_flow'], 2) }}
     </div>
 

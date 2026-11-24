@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\InvoicePostingService;
 use App\Services\NumberSeriesService;
 use App\Services\PaymentService;
+use App\Services\ReportPdfRenderer;
 use App\Services\ReturnService;
 use Closure;
 use Database\Seeders\RolePermissionSeeder;
@@ -176,6 +177,19 @@ class ListSummariesTest extends TestCase
         $csv = $this->get(route('sales.export', ['ids' => [$draft->id]]))->assertOk()->streamedContent();
         $this->assertStringContainsString($draft->invoice_number, $csv);
         $this->assertStringNotContainsString($this->sale->invoice_number, $csv);
+
+        $renderer = app(ReportPdfRenderer::class);
+        $this->mock(ReportPdfRenderer::class)->shouldReceive('render')->once()->withArgs(function ($data) use ($draft) {
+            $this->assertSame([$this->sale->invoice_number], array_column($data['rows'], 'invoice'));
+            $this->assertNotContains($draft->invoice_number, array_column($data['rows'], 'invoice'));
+            $this->assertEquals(1350, $data['totals']['net']);
+
+            return true;
+        })->andReturnUsing(fn ($data) => $renderer->render($data));
+        $pdf = $this->get(route('sales.list.pdf', $filter + ['ids' => [$this->sale->id, $draft->id]]));
+        $pdf->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF', $pdf->getContent());
+        $this->actingAs(User::factory()->create()->assignRole('Booker'))->get(route('sales.list.pdf'))->assertForbidden();
     }
 
     public function test_sales_preview_shows_real_items_and_completed_allocations(): void

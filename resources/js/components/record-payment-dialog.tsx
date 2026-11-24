@@ -1,5 +1,6 @@
 import '../../css/financial-position.css';
 import { useOpenInvoices } from '@/hooks/use-open-invoices';
+import { useTreasuryPayment } from '@/hooks/use-treasury-payment';
 import { amount, money, shortDate } from '@/lib/format';
 import { ageBucket, allocateOldestFirst, cents, invoiceAge, invoiceKey, type OpenInvoice, type PaymentParties, paymentMethods, paymentToday, type PartyType } from '@/lib/payment-allocation';
 import { useForm } from '@inertiajs/react';
@@ -20,6 +21,7 @@ interface Props {
 const noInvoices: OpenInvoice[] = [];
 
 export function RecordPaymentDialog({ selection, parties, close, onRecorded, today = paymentToday() }: Props) {
+    const treasury = useTreasuryPayment();
     const [manual, setManual] = useState<Record<string, string> | null>(null);
     const [revision, setRevision] = useState(0);
     const amountField = useRef<HTMLInputElement>(null);
@@ -31,6 +33,7 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
         method: 'cash',
         amount: '',
         payment_date: today,
+        financial_account_id: '',
         reference_no: '',
         bank_name: '',
         cheque_number: '',
@@ -168,10 +171,11 @@ export function RecordPaymentDialog({ selection, parties, close, onRecorded, tod
                                 </div>
                                 <div className="f">
                                     <label htmlFor="payment-method">Method</label>
-                                    <select id="payment-method" value={data.method} onChange={(event) => form.setData('method', event.target.value)}>
-                                        {Object.entries(paymentMethods).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                                    <select id="payment-method" value={data.method} onChange={(event) => form.setData({ ...data, method: event.target.value, financial_account_id: '' })}>
+                                        {Object.entries(paymentMethods).filter(([key]) => !treasury.required || key !== 'adjustment').map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                                     </select>
                                 </div>
+                                {treasury.required && <div className="f"><label htmlFor="payment-account">Cash or bank account *</label><select id="payment-account" required value={data.financial_account_id} onChange={event => form.setData('financial_account_id', event.target.value)}><option value="">Select an account</option>{treasury.accounts.filter(a => data.method === 'cash' ? a.kind !== 'bank' && a.kind !== 'custody' : a.kind === 'bank').map(a => <option value={a.id} key={a.id}>{a.name}</option>)}</select></div>}
                                 <div className="f">
                                     <label htmlFor="payment-amount">Amount (Rs) *</label>
                                     <div className="amt"><span aria-hidden="true">Rs</span>

@@ -9,6 +9,9 @@ use App\Models\PaymentAllocation;
 use App\Models\PurchaseInvoice;
 use App\Models\PurchaseReturn;
 use App\Models\SalesInvoice;
+use App\Models\FinancialAccount;
+use App\Models\FinanceWorkItem;
+use App\Support\Paisa;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -102,7 +105,7 @@ class PaymentService
             }
 
             return $this->record($party, $data, $allocations);
-        });
+        }, 3);
     }
 
     /**
@@ -113,6 +116,13 @@ class PaymentService
     {
         return DB::transaction(function () use ($party, $data, $allocations) {
             $direction = $party instanceof Customer ? Payment::DIRECTION_IN : Payment::DIRECTION_OUT;
+            $treasury = app(TreasuryService::class);
+            $account = null;
+            if ($treasury->live() || ! empty($data['financial_account_id'])) {
+                $treasury->assertDate($data['payment_date']);
+                if ($data['method'] === 'adjustment') $treasury->fail('Use the authorized correction workflow for non-cash adjustments.');
+                $account = $treasury->account((int) ($data['financial_account_id'] ?? 0), Auth::user(), $data['method']);
+            }
 
             $payment = Payment::create([
                 'payment_number' => $this->numbers->next($direction === 'in' ? 'payment_in' : 'payment_out'),
@@ -153,6 +163,16 @@ class PaymentService
                     .(! empty($data['notes']) ? " — {$data['notes']}" : ''),
             );
 
+            if ($account) {
+                $physical = $data['_verified_cash_paisa'] ?? Paisa::from($data['amount']);
+                if ($physical > 0) $treasury->entry($account, $direction === 'in' ? 'receipt' : 'supplier_payment', 'payment', $payment->id,
+                    $physical * ($direction === 'in' ? 1 : -1), $data['payment_date'], Auth::user(), $data['reference_no'] ?? null);
+            }
+            if ($direction === 'in') {
+                $ids = collect($allocations)->where('invoice_type', (new SalesInvoice)->getMorphClass())->pluck('invoice_id')->unique()->all();
+                foreach (SalesInvoice::whereKey($ids)->orderBy('id')->get() as $sale) app(CommissionService::class)->recalculate($sale);
+            }
+
             return $payment;
         });
     }
@@ -168,6 +188,7 @@ class PaymentService
             'amount' => (float) $invoice->total_amount,
             'payment_date' => $invoice->invoice_date,
             'notes' => "Cash settlement of {$invoice->invoice_number}",
+            'financial_account_id' => $invoice instanceof PurchaseInvoice ? $invoice->financial_account_id : null,
         ], [[
             'invoice_type' => $invoice->getMorphClass(),
             'invoice_id' => $invoice->id,
@@ -194,12 +215,29 @@ class PaymentService
         }
     }
 
-    public function cancel(Payment $payment): void
+    public function cancel(Payment $payment, ?FinanceWorkItem $correction = null): void
     {
-        DB::transaction(function () use ($payment) {
+        DB::transaction(function () use ($payment, $correction) {
+            $invoiceIds = $payment->allocations()->where('invoice_type', (new SalesInvoice)->getMorphClass())->pluck('invoice_id');
+            SalesInvoice::whereKey($invoiceIds->all())->orderBy('id')->lockForUpdate()->get(['id']);
             $payment = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
             if ($payment->status === 'cancelled') {
                 return;
+            }
+            foreach (SalesInvoice::whereKey($invoiceIds->all())->get() as $invoice) {
+                app(FinanceApprovalService::class)->assertUnconsumed($invoice);
+            }
+            $reported = DB::table('delivery_collections')->where('payment_id', $payment->id)->where('shortage_paisa', '>', 0)->lockForUpdate()->first();
+            if ($reported) {
+                if ($correction?->kind !== 'shortage_receipt_reverse' || $correction->status !== 'approved'
+                    || (int) ($correction->payload['collection_id'] ?? 0) !== (int) $reported->id
+                    || app(FinanceApprovalService::class)->shortageBalance($reported) !== (int) $reported->shortage_paisa) {
+                    app(TreasuryService::class)->fail('A shortage-backed receipt needs a matching approved correction and no prior employee repayments.');
+                }
+            }
+            if (DB::table('delivery_collections as c')->join('finance_work_events as e', 'e.source_id', '=', 'c.id')
+                ->where('c.payment_id', $payment->id)->where('e.source_type', 'collection')->where('e.action', 'opening_collection')->exists()) {
+                app(TreasuryService::class)->fail('The receipt is linked to a locked opening collection; correct it with Finance before reversal.');
             }
 
             $payment->update(['status' => 'cancelled']);
@@ -214,6 +252,13 @@ class PaymentService
                 $payment,
                 "Cancellation of {$payment->payment_number}",
             );
-        });
+            $treasury = app(TreasuryService::class);
+            foreach (DB::table('treasury_entries')->where('source_type', 'payment')->where('source_id', $payment->id)->whereNull('reverses_id')->orderBy('account_id')->get() as $entry) {
+                $account = $treasury->account((int) $entry->account_id, Auth::user());
+                $treasury->entry($account, 'reversal', 'payment', $payment->id, -(int) $entry->paisa,
+                    now('Asia/Karachi')->toDateString(), Auth::user(), $entry->reference, (int) $entry->id);
+            }
+            foreach (SalesInvoice::whereKey($invoiceIds->all())->orderBy('id')->get() as $sale) app(CommissionService::class)->recalculate($sale);
+        }, 3);
     }
 }

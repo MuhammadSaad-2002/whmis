@@ -68,6 +68,7 @@ class ReturnService
                     ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED))
                     ->selectRaw('SUM(quantity - bonus_quantity) as billed, SUM(bonus_quantity) as bonus')->first();
                 $alreadyReturned = (float) $previous->billed;
+                app(DispatchService::class)->assertCanReturnLine($invoice, $item->id, $qty + $bonus, $alreadyReturned + (float) $previous->bonus);
                 $returnable = (float) $item->quantity - $alreadyReturned;
                 if ($qty > $returnable + 1e-9) {
                     throw new RuntimeException(sprintf(
@@ -130,6 +131,8 @@ class ReturnService
                 );
             }
 
+            app(DispatchService::class)->syncReturns($invoice);
+            app(CommissionService::class)->recalculate($invoice);
             return $return->refresh();
         });
     }
@@ -143,7 +146,8 @@ class ReturnService
     public function cancelSalesReturn(SalesReturn $return): SalesReturn
     {
         return DB::transaction(function () use ($return) {
-            SalesInvoice::whereKey($return->sales_invoice_id)->lockForUpdate()->firstOrFail();
+            $invoice = SalesInvoice::whereKey($return->sales_invoice_id)->lockForUpdate()->firstOrFail();
+            app(FinanceApprovalService::class)->assertUnconsumed($invoice);
             $return = SalesReturn::whereKey($return->id)->lockForUpdate()->firstOrFail();
             if (! $return->isPosted()) {
                 throw new RuntimeException('Only a posted return can be cancelled.');
@@ -171,6 +175,8 @@ class ReturnService
                 'cancelled_by' => Auth::id(),
             ]);
 
+            app(DispatchService::class)->syncReturns($invoice);
+            app(CommissionService::class)->recalculate($invoice);
             return $return->refresh();
         });
     }

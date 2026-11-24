@@ -39,6 +39,7 @@ interface Position {
     payments: number;
     final_outstanding: number;
     refund_due: number;
+    applied_credit?: number;
     status: string;
 }
 
@@ -76,6 +77,8 @@ interface Invoice {
 interface Props {
     invoice: Invoice;
     position: Position;
+    paymentHistory?: {id: number; amount: string; payment: {payment_number: string; status: string; method: string; payment_date: string} | null}[];
+    refundHistory?: {id: number; kind: string; status: string; amount_paisa: number}[];
 }
 
 const statusMeta: Record<string, { label: string; className: string }> = {
@@ -84,7 +87,7 @@ const statusMeta: Record<string, { label: string; className: string }> = {
     fully_returned: { label: 'Fully Returned', className: 'text-red-600' },
 };
 
-export default function SalesSummary({ invoice, position }: Props) {
+export default function SalesSummary({ invoice, position, paymentHistory = [], refundHistory = [] }: Props) {
     const { can } = usePermissions();
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Sales', href: '/sales' },
@@ -116,6 +119,11 @@ export default function SalesSummary({ invoice, position }: Props) {
                         <p className={`mt-1 text-sm font-medium ${status.className}`}>{status.label}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                        {can('finance.request') && position.refund_due > 0 && <>
+                            <Button variant="outline" size="sm" asChild><Link href={`/finance-approvals?kind=refund&invoice_id=${invoice.id}`}>Process refund</Link></Button>
+                            <Button variant="outline" size="sm" asChild><Link href={`/finance-approvals?kind=credit_apply&invoice_id=${invoice.id}`}>Apply credit</Link></Button>
+                        </>}
+                        {can('finance.request') && can('commission.manage') && invoice.status === 'posted' && <Button variant="outline" size="sm" asChild><Link href={`/finance-approvals?kind=commission_share&invoice_id=${invoice.id}`}>Request commission split</Link></Button>}
                         {can('returns.manage') && invoice.status === 'posted' && position.status !== 'fully_returned' && (
                             <Button variant="outline" size="sm" asChild>
                                 <Link href={route('returns.sales.create', { invoice_id: invoice.id })}><Plus className="mr-1 size-4" /> New Return</Link>
@@ -203,6 +211,14 @@ export default function SalesSummary({ invoice, position }: Props) {
                     </CardContent>
                 </Card>
 
+                {(paymentHistory.length > 0 || refundHistory.length > 0) && <Card>
+                    <CardHeader><CardTitle>Settlement history</CardTitle></CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                        {paymentHistory.map(entry => <p key={entry.id}>{entry.payment?.payment_number ?? 'Payment'} · {entry.payment?.payment_date ? shortDate(entry.payment.payment_date) : '—'} · {entry.payment?.method} · {money(entry.amount)} · {entry.payment?.status}</p>)}
+                        {refundHistory.map(entry => <p key={entry.id}>{entry.kind.replaceAll('_',' ')} #{entry.id} · {money(Number(entry.amount_paisa) / 100)} · {entry.status}</p>)}
+                        {Number(position.applied_credit) > 0 && <p>Applied customer credit: {money(position.applied_credit ?? 0)}</p>}
+                    </CardContent>
+                </Card>}
                 {/* Section 2 — Return History */}
                 <Card>
                     <CardHeader>
@@ -234,6 +250,7 @@ export default function SalesSummary({ invoice, position }: Props) {
                                                         <Link href={route('returns.sales.show', r.id)} className="hover:underline">
                                                             {r.return_number}
                                                         </Link>
+                                                        {!off && can('finance.review') && <Link href={`/finance-reversals/return/${r.id}`} className="ml-2 text-xs underline">Reversal impact</Link>}
                                                     </TableCell>
                                                     <TableCell>{shortDate(r.date)}</TableCell>
                                                     <TableCell>

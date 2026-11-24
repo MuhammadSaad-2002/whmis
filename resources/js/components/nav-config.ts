@@ -38,7 +38,7 @@ export const navGroups: PermittedNavGroup[] = [
     {
         label: 'Transactions',
         items: [
-            { title: 'My Workday', url: '/booker/workday', icon: ClipboardList, permission: 'bookings.create' },
+            { title: 'My Workday', url: '/booker/workday', icon: ClipboardList, permission: 'bookings.create', alternatePermission: 'dispatch.assigned' },
             { title: 'Bookings', url: '/bookings', icon: ClipboardList, permission: 'bookings.view' },
             { title: 'Sales Invoices', url: '/sales', icon: TrendingUp, permission: 'sales.view' },
             { title: 'Purchase Invoices', url: '/purchases', icon: ShoppingCart, permission: 'purchases.view' },
@@ -67,6 +67,10 @@ export const navGroups: PermittedNavGroup[] = [
             { title: 'Payments', url: '/payments', icon: Banknote, permission: 'payments.view' },
             { title: 'Collections & Recovery', url: '/collections', icon: Banknote, permission: 'collections.view' },
             { title: 'Financial Position', url: '/ledger/position', icon: BookUser, permission: 'ledger.view' },
+            { title: 'My Collections', url: '/my-collections', icon: Banknote, permission: 'dispatch.assigned' },
+            { title: 'Daily Reconciliation', url: '/daily-reconciliation', icon: Banknote, permission: 'distribution.reconcile' },
+            { title: 'Cash & Bank', url: '/treasury', icon: Banknote, permission: 'treasury.view' },
+            { title: 'Finance Approvals', url: '/finance-approvals', icon: ShieldCheck, permission: 'finance.review' },
         ],
     },
     {
@@ -87,6 +91,7 @@ export const navGroups: PermittedNavGroup[] = [
             { title: 'Employee Finance', url: '/hr/finance', icon: BookUser, permission: 'hr.payroll.view' },
             { title: 'HR Settings', url: '/hr/settings', icon: UserCog, permission: 'hr.settings.manage' },
             { title: 'My HR', url: '/hr/my-profile', icon: Users, permission: 'hr.self.view' },
+            { title: 'Employee Commissions', url: '/commissions', icon: Banknote, permission: 'commission.self', alternatePermission: 'commission.manage' },
         ],
     },
     {
@@ -142,12 +147,12 @@ export const workspaceNavGroups: PermittedNavGroup[] = [
     {
         label: 'Finance & Recovery',
         icon: Banknote,
-        items: itemsFor('/collections', '/ledger/position'),
+        items: itemsFor('/collections', '/ledger/position', '/my-collections', '/daily-reconciliation', '/treasury', '/finance-approvals'),
     },
     {
         label: 'People & Payroll',
         icon: Users,
-        items: itemsFor('/hr/employees', '/hr/attendance', '/hr/leave', '/hr/payroll', '/hr/finance', '/hr/settings', '/hr/my-profile'),
+        items: itemsFor('/hr/employees', '/hr/attendance', '/hr/leave', '/hr/payroll', '/hr/finance', '/hr/settings', '/hr/my-profile', '/commissions'),
     },
     {
         label: 'Administration',

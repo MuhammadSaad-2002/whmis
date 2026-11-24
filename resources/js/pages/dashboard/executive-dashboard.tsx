@@ -27,6 +27,8 @@ interface Kpis {
 interface Financials {
     employee_payable: number;
     employee_advances: number;
+    commission_payable: number;
+    employee_recoveries: number;
     receivable: number;
     payable: number;
     net_position: number;
@@ -44,7 +46,7 @@ interface RecentSale {
 
 export interface ExecutiveProps {
     asOf: string;
-    hr: { expense: number };
+    hr: { expense: number; commission_expense: number };
     filterValues: { period: string; from: string; to: string; days: number };
     kpis: Kpis;
     financials: Financials;
@@ -283,7 +285,7 @@ const Header = memo(function Header({ asOf, filterValues, visibleSections, onSec
                     </PopoverContent>
                 </Popover>
                 <SectionControls visible={visibleSections} onChange={onSectionChange} />
-                <button className="exec-export" type="button" disabled={loading} onClick={() => window.print()}><FileDown size={14} aria-hidden="true" />Export PDF</button>
+                <a className="exec-export" href={route('dashboard.executive.pdf', { period: 'custom', from: filterValues.from, to: filterValues.to }, false)} target="_blank" rel="noopener"><FileDown size={14} aria-hidden="true" />Export PDF</a>
             </div>
         </section>
     );
@@ -393,6 +395,8 @@ export default function ExecutiveDashboard({ asOf, filterValues, kpis, financial
         { label: 'Payables', value: -financials.payable, color: '#f08a8a' },
         { label: 'Staff advances', value: financials.employee_advances, color: '#cbd5e1' },
         { label: 'Salary payable', value: -financials.employee_payable, color: '#cbd5e1' },
+        ...(financials.commission_payable ? [{ label: 'Commission payable', value: -financials.commission_payable, color: '#a4b9ce' }] : []),
+        ...(financials.employee_recoveries ? [{ label: 'Employee recoveries', value: financials.employee_recoveries, color: '#7dd3c7' }] : []),
     ], [financials]);
     const agingSlices = useMemo(() => aging.map((slice, index) => ({ ...slice, label: `${slice.label} days`, color: ['#99e0d6', '#14b8a6', '#0f6f66', '#dc2626'][index] })), [aging]);
     const agingTotal = agingSlices.reduce((sum, slice) => sum + slice.value, 0);
@@ -551,10 +555,12 @@ export default function ExecutiveDashboard({ asOf, filterValues, kpis, financial
                     <section className="exec-card">
                         <CardHead title="Payroll & Staff" tag="selected period" />
                         {([
-                            ['Payroll expense', hr.expense], ['Profit after payroll', kpis.profit - hr.expense],
+                            ['Payroll expense', hr.expense], ['Commission expense', hr.commission_expense],
+                            ['Profit after payroll & commission', kpis.profit - hr.expense - hr.commission_expense],
                             ['Employee salary payable', financials.employee_payable], ['Employee advances', financials.employee_advances],
+                            ['Commission payable', financials.commission_payable], ['Employee recoveries', financials.employee_recoveries],
                         ] as const).map(([label, value]) => <div className="exec-payroll-row" key={label}><span>{label}</span><b className="exec-num">{money(value)}</b></div>)}
-                        <p className="exec-note">{hr.expense === 0 ? 'No net payroll expense in this period — profit after payroll equals net profit.' : 'Payroll expense follows the selected period. Staff balances are as of now.'}</p>
+                        <p className="exec-note">Payroll and commission expenses follow the selected period. Staff balances are as of now.</p>
                     </section>
                 </div>
             </div>

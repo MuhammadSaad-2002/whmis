@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\CreditLimitExceededException;
 use App\Models\Batch;
+use App\Models\Booking;
 use App\Models\PurchaseInvoice;
 use App\Models\SalesInvoice;
 use App\Models\StockMovement;
@@ -188,6 +189,10 @@ class InvoicePostingService
                     $item->batch_id,
                 );
 
+                DB::table('sale_batch_allocations')->insert(array_map(fn ($allocation) => [
+                    'sales_invoice_item_id' => $item->id, 'batch_id' => $allocation['batch']->id, 'quantity' => $allocation['quantity'],
+                ], $allocations));
+
                 $cost = round(array_sum(array_column($allocations, 'cost')), 4);
                 $profitData = MarginCalculator::profit($line['net_amount'], $cost);
 
@@ -212,7 +217,7 @@ class InvoicePostingService
             ]);
 
             // Credit-limit gate: cash sales settle immediately and are exempt.
-            if ($invoice->sale_type !== 'cash') {
+            if ($invoice->sale_type !== 'cash' || app(TreasuryService::class)->live()) {
                 $customer = $invoice->customer;
                 $limit = (float) $customer->credit_limit;
                 if ($limit > 0) {
@@ -254,9 +259,13 @@ class InvoicePostingService
                 "Sales Invoice {$invoice->invoice_number}",
             );
 
-            if ($invoice->sale_type === 'cash') {
+            if ($invoice->sale_type === 'cash' && ! app(TreasuryService::class)->live()) {
                 $this->payments->createAutoSettlement($invoice, $invoice->customer);
             }
+
+            app(DeliveryPlanningService::class)->activateInvoice($invoice);
+            if (! $invoice->booking_id) app(CommissionService::class)->snapshot($invoice);
+            app(CommissionService::class)->recalculate($invoice);
 
             return $invoice->refresh();
         });
@@ -265,6 +274,7 @@ class InvoicePostingService
     public function cancelSale(SalesInvoice $invoice): SalesInvoice
     {
         return DB::transaction(function () use ($invoice) {
+            $booking = $invoice->booking_id ? Booking::whereKey($invoice->booking_id)->lockForUpdate()->first() : null;
             $invoice = SalesInvoice::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
 
             if ($invoice->status === SalesInvoice::STATUS_CANCELLED) {
@@ -272,6 +282,7 @@ class InvoicePostingService
             }
 
             if ($invoice->isPosted()) {
+                app(DispatchService::class)->assertCanCancel($invoice);
                 if ($invoice->postedReturns()->exists()) {
                     throw new RuntimeException('Cancel the posted sales returns first before cancelling this invoice.');
                 }
@@ -300,9 +311,18 @@ class InvoicePostingService
                 );
 
                 $this->payments->reverseAutoSettlement($invoice, $invoice->customer);
+            } elseif ($invoice->stock_reserved) {
+                foreach ($invoice->items as $item) {
+                    if ($item->batch_id) $this->inventory->releaseReservation(Batch::findOrFail($item->batch_id),
+                        (float) $item->quantity + (float) $item->bonus_quantity, $invoice);
+                }
+                $invoice->stock_reserved = false;
             }
 
-            $invoice->update(['status' => SalesInvoice::STATUS_CANCELLED]);
+            $invoice->fill(['status' => SalesInvoice::STATUS_CANCELLED])->save();
+            $conversions = app(BookingService::class);
+            if ($booking && $conversions->hasTrackedConversion($invoice)) $conversions->refreshConversionStatus($booking);
+            app(CommissionService::class)->recalculate($invoice);
 
             return $invoice->refresh();
         });

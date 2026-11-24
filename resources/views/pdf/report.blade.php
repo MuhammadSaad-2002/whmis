@@ -8,15 +8,17 @@
     ])
     <style>
         body { padding: 0; }
-        .report-chart { margin: 12px 0 16px; padding: {{ \App\Services\ReportPdfRenderer::CHART_PADDING }}pt; border: {{ \App\Services\ReportPdfRenderer::CHART_BORDER }}pt solid #d3e0e8; border-radius: 6px; page-break-inside: avoid; }
-        .report-chart h2 { margin: 0 0 3px; font-size: 15px; }
-        .report-chart .chart-meta { margin-bottom: 7px; font-size: 11px; color: #3e5367; }
-        .report-chart img { display: block; width: 100%; height: auto; }
-        .report-plot { position: relative; }
-        .report-plot-fixed img { position: absolute; top: 0; left: 0; }
-        .report-plot-label { position: absolute; font-size: 13px; line-height: 1.15; white-space: nowrap; }
+        @include('pdf.partials.report-chart-style')
+        table.items thead { display: table-header-group; }
         table.items.compact th { padding: 3px 3px; font-size: 7px; }
         table.items.compact td { padding: 3px 3px; font-size: 7.5px; }
+        @if(!empty($readable))
+            body { font-size: 10pt; }
+            .document-title { margin: 3pt 0; font-size: 14pt; }
+            table.items th, table.items.compact th { font-size: 8.5pt; }
+            table.items th.num { text-align: right; }
+            table.items.compact td { font-size: 9pt; }
+        @endif
         .negative-guide { margin: 8px 0; padding: 6px 8px; border-left: 3px solid #dc2626; background: #fff7f7; color: #7f1d1d; font-size: 8.5px; line-height: 1.45; }
         .negative-value { color: #b91c1c; font-weight: bold; }
         .section-title { margin-top: 14px; page-break-after: avoid; }
@@ -41,7 +43,11 @@
         <tr>
             <td>
                 @include('pdf.partials.header')
-                <div class="meta">{{ $title }} · {{ count($rows) }} rows</div>
+                @if(!empty($readable))
+                    <h2 class="document-title">{{ $title }}</h2>
+                @else
+                    <div class="meta">{{ $title }} · {{ count($rows) }} rows</div>
+                @endif
                 @if(!empty($headerLabel))
                     <div class="report-scope">{{ $headerLabel }}</div>
                 @endif
@@ -80,28 +86,18 @@
     @if($hasNegativeValues)
         <div class="negative-guide">
             <strong>Why values may be negative:</strong>
-            negative sales or revenue means returns exceed sales in the selected data;
-            negative profit means net costs and return effects exceed net revenue;
-            negative quantity means returns or outbound movement exceed incoming quantity;
-            and a negative balance generally represents an advance or credit balance.
+            @if(!empty($negativeGuide))
+                {{ $negativeGuide }}
+            @else
+                negative sales or revenue means returns exceed sales in the selected data;
+                negative profit means net costs and return effects exceed net revenue;
+                negative quantity means returns or outbound movement exceed incoming quantity;
+                and a negative balance generally represents an advance or credit balance.
+            @endif
         </div>
     @endif
 
-    @if(!empty($charts))
-        @foreach($charts as $chart)
-            <div class="report-chart">
-                <h2>{{ $chart['title'] }}</h2>
-                <div class="chart-meta">{{ $chart['subtitle'] }}</div>
-                @php $plotHeight = isset($chart['height_per_width']) ? round($chart['height_per_width'] * $chartPlotWidth, 3) : null; @endphp
-                <div class="report-plot @if($plotHeight !== null) report-plot-fixed @endif" @if($plotHeight !== null) style="height: {{ $plotHeight }}pt;" @endif>
-                    <img src="{{ $chart['image'] }}" alt="{{ $chart['title'] }}">
-                    @foreach($chart['labels'] ?? [] as $label)
-                        <span class="report-plot-label" style="left: {{ $label['x'] }}%; top: {{ round($label['y_per_plot_width'] * $chartPlotWidth, 3) }}pt; color: {{ $label['color'] }}; @if($label['width'] !== null) width: {{ $label['width'] }}%; text-align: center; @endif @if($label['bold']) font-weight: bold; @endif">{{ $label['text'] }}</span>
-                    @endforeach
-                </div>
-            </div>
-        @endforeach
-    @endif
+    @include('pdf.partials.report-charts')
 
     @if(!empty($sectionTitle))
         <h2 class="section-title">{{ $sectionTitle }}</h2>

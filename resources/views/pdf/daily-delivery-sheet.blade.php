@@ -3,17 +3,25 @@
 <head>
     <meta charset="utf-8">
     <title>Daily Delivery Sheet</title>
-    @include('pdf.partials.style')
+    @include('pdf.partials.style', ['pageMargins' => '12mm 12mm 14mm'])
     <style>
-        @page { margin: 16px 20px 48px; }
-        body { padding: 0; font-size: 9px; }
-        .header { margin-bottom: 8px; padding-bottom: 6px; }
-        table.items th, table.items td { padding: 3px 5px; vertical-align: top; }
-        table.items td { line-height: 1.25; }
-        .address { font-size: 8px; color: #496175; }
-        .status { color: #496175; font-size: 8px; }
-        .row-number { width: 24px; }
-        .signatures { page-break-inside: avoid; margin-top: 16px; width: 100%; }
+        body { padding: 0; font-size: 10.5pt; }
+        .header { margin-bottom: 8pt; padding-bottom: 6pt; }
+        .header h1 { font-size: 14pt; }
+        .header .meta { font-size: 9pt; }
+        table.items { table-layout: fixed; }
+        table.items thead { display: table-header-group; }
+        table.items tr { page-break-inside: avoid; }
+        table.items th, table.items td { padding: 4pt 5pt; vertical-align: top; }
+        table.items th { font-size: 9pt; line-height: 1.2; padding: 4pt 3.5pt; }
+        table.items td { line-height: 1.28; overflow-wrap: break-word; }
+        table.items .write-in { height: 22pt; }
+        table.items .num { text-align: right; }
+        table.items .stop-number { padding-right: 2pt; padding-left: 2pt; }
+        .invoice-number { font-size: 10pt; }
+        .detail { color: #496175; font-size: 9pt; }
+        .signatures { page-break-inside: avoid; margin-top: 12pt; width: 100%; }
+        .signatures td { width: 50%; }
     </style>
 </head>
 <body>
@@ -25,41 +33,53 @@
             </td>
             <td class="meta" style="text-align: right;">
                 {{ $date->format('l, d M Y') }}<br>
-                {{ $stops->count() }} stop(s) · {{ $invoiceCount }} invoice(s)
+                {{ $stops->count() }} stop(s) · {{ $invoiceCount }} invoice(s)<br>
+                Amounts in PKR
             </td>
         </tr>
     </table>
     <table class="items">
-        <thead><tr><th class="row-number">#</th><th>Customer / delivery address</th><th>Invoice / status</th><th style="width: 23%;">Receiver / remarks</th></tr></thead>
+        <thead><tr>
+            <th style="width: 3.5%;">#</th>
+            <th style="width: 17%;">Sales Inv #</th>
+            <th style="width: 14%;">Customer Name</th>
+            <th style="width: 21%;">Customer Address</th>
+            <th class="num" style="width: 13%;">Total Amount</th>
+            <th style="width: 16.5%;">Receiver / Remarks</th>
+            <th class="num" style="width: 15%;">Payment Received</th>
+        </tr></thead>
         <tbody>
             @forelse($stops as $stop)
                 @php
                     $customer = $stop->first()->invoice->customer;
                     $stopNumber = $loop->iteration;
-                    $place = collect([$customer?->address, $customer?->city])->filter()->implode(' · ');
-                    $contact = collect([$customer?->contact_person, $customer?->phone])->filter()->implode(' · ');
+                    $address = trim((string) $customer?->address);
+                    $city = trim((string) $customer?->city);
+                    $cityInAddress = $city !== '' && preg_match('/\b'.preg_quote($city, '/').'\b/iu', $address);
+                    $place = implode(' · ', array_filter([$address, $cityInAddress ? '' : $city]));
                 @endphp
-                @foreach($stop->chunk(12) as $deliveries)
+                @foreach($stop as $delivery)
+                @php
+                    $receiver = $delivery->events->last()?->receiver_name;
+                    $received = (int) $verifiedPayments->get($delivery->sales_invoice_id, 0);
+                @endphp
                 <tr>
-                    <td>{{ $stopNumber }}</td>
-                    <td>
-                        <strong>{{ $customer?->name ?? 'Customer #'.$stop->first()->invoice->customer_id }}</strong>
-                        @if($loop->first)
-                            <div class="address">{{ collect([$place, $contact])->filter()->implode(' · ') }}</div>
-                        @else
-                            <div class="address">Continued</div>
+                    <td class="stop-number">{{ $loop->first ? $stopNumber : '' }}</td>
+                    <td><strong class="invoice-number">{{ $delivery->invoice->invoice_number }}</strong></td>
+                    <td><strong>{{ $customer?->name ?? 'Customer #'.$delivery->invoice->customer_id }}</strong></td>
+                    <td>{{ $place ?: '—' }}</td>
+                    <td class="num">{{ number_format($delivery->invoice->total_amount, 2) }}</td>
+                    <td class="write-in">{{ $receiver }}</td>
+                    <td class="num write-in">
+                        @if($received > 0)
+                            {{ number_format($received / 100, 2) }}
+                            <div class="detail">Verified</div>
                         @endif
                     </td>
-                    <td>
-                        @foreach($deliveries as $delivery)
-                            <div>{{ $delivery->invoice->invoice_number }} <span class="status">· {{ ucfirst($delivery->status) }}</span></div>
-                        @endforeach
-                    </td>
-                    <td></td>
                 </tr>
                 @endforeach
             @empty
-                <tr><td colspan="4">No invoices planned for this staff member on this date.</td></tr>
+                <tr><td colspan="7">No invoices planned for this staff member on this date.</td></tr>
             @endforelse
         </tbody>
     </table>

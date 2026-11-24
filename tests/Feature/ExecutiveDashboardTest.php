@@ -211,9 +211,11 @@ class ExecutiveDashboardTest extends TestCase
     public function test_pdf_export_is_gated_to_admins(): void
     {
         $this->actingAs($this->admin);
-        $response = $this->get(route('dashboard.executive.pdf'));
+        $response = $this->get(route('dashboard.executive.pdf', ['period' => 'custom', 'from' => '2026-11-01', 'to' => '2026-11-24']));
         $response->assertOk();
         $this->assertStringContainsString('application/pdf', $response->headers->get('content-type'));
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+        $this->assertGreaterThanOrEqual(2, preg_match_all('/\/Type\s*\/Page\b/', $response->getContent()));
 
         $this->actingAs($this->accountant);
         $this->get(route('dashboard.executive.pdf'))->assertForbidden();

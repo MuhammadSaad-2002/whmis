@@ -6,6 +6,11 @@ changing cPanel/manual deployment assumptions.
 
 ## Main entities
 
+- The [integrated workflow](INTEGRATED_DISTRIBUTION.md) adds booking-to-invoice
+  line allocations, exact issued batch allocations, pickup event items, daily
+  collection submissions, maker-checker requests, named cash/bank entries,
+  and invoice/employee commission awards and compensating ledger entries.
+
 ### Distribution operations
 
 `booker_visits` is unique per Booker/customer/date. `dispatches` has one optional
@@ -35,6 +40,11 @@ times remain NULL; they must not be invented from `updated_at`.
 Deploy using the migration or
 `database/manual/2026_11_01_add_booking_lifecycle_timestamps.sql`, not both.
 These timestamps have no stock, ledger, or calculation effects.
+
+Booking dates, sales invoice dates, and sales due dates are calendar dates
+serialized as `YYYY-MM-DD`, not UTC timestamps. Conversion defaults the draft
+invoice date to the current Pakistan business date, separately from the source
+booking date and the timestamp used for dispatch scheduling.
 
 - Users, roles, and permissions drive access.
 - Companies are suppliers in the UI.

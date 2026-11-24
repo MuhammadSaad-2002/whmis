@@ -1,5 +1,9 @@
 # Distribution operations release — November 2026
 
+For the latest pickup, collection, reconciliation and commission flows, see
+[Integrated Distribution](INTEGRATED_DISTRIBUTION.md). The notes below describe
+the first release and remain relevant to legacy dispatch history.
+
 This is the first market-fit delivery: an online Booker workday, repeat booking,
 dispatch tracking, a collections worklist, and deployment readiness checks.
 
@@ -7,11 +11,17 @@ dispatch tracking, a collections worklist, and deployment readiness checks.
 
 Open **My Workday** from the workspace top bar (`/booker/workday`). Only the current login's
 active assigned customers appear, including primary and additional assignments.
-Use the date arrows or date picker for visits and search by customer or city.
+Use the date arrows or date picker to browse the route without changing the
+customer filter. **My customers** supports customer/city search, route and
+balance filters, and name, balance, or recent-order sorting. The summary counts
+cover all assigned customers, not only the visible page.
 The customer cards put order and visit actions together, with a bottom-sheet
 visit editor on phones. A visit can be planned, visited, no order, or closed
 (outlet closed). Future visits can only
 be planned. One record exists per Booker/customer/day; updates are audited.
+Salesmen also see assigned deliveries and their own reported collections.
+Collection reporting on Workday uses the same delivery and Finance verification
+rules as Dispatch & Delivery; it never posts a payment directly.
 
 The customer account balance comes from the existing customer ledger, including
 unallocated receipts. A negative balance is customer credit, not a loss.
@@ -65,7 +75,7 @@ invoice, purchasing, collections, or customer-directory permissions.
 In **Dispatch & Delivery → Booking & Delivery Schedules**, set each customer's
 booking days, delivery days, and default Salesman. Booking days create today's
 planned visits for active primary and additional Bookers. Find them in **My
-Workday → Visits only**. They do not create booking orders. For delivery, only
+Workday → Planned**. They do not create booking orders. For delivery, only
 new invoices posted after delivery scheduling was enabled are eligible. The
 schedule uses the first allowed weekday on or after posting or the day the
 planner runs, whichever is later, in Pakistan time. Drafts and historic invoices
@@ -77,9 +87,11 @@ The application scheduler runs the planner every 30 minutes. If needed, run
 existing Laravel cron (`php artisan schedule:run` every minute) for automation.
 
 In **Dispatch & Delivery → Daily delivery sheet**, choose a date and staff
-member. The PDF groups posted invoices by customer stop, shows contact details
-and statuses, and leaves space for remarks and signature. Ordinary runs fit one
-A4 page. Exceptionally long routes continue onto extra pages rather than omitting rows.
+member. The A4 PDF uses one row per posted invoice, grouped by customer stop,
+with the delivery address, invoice total, and space for receiver, remarks, and
+payment. For authorized payment viewers it shows verified collections for that
+salesman and business date; pending reports are not printed as received.
+Long routes continue onto extra pages with repeated column headings.
 
 ## Collections and recovery
 

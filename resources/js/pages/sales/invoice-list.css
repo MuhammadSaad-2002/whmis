@@ -180,7 +180,6 @@
         .hero::after{display:none}
         .hero .sub{color:var(--ink2)}
         .card{box-shadow:none}
-        &.print-selected .tblwrap tbody tr:not(.sel),&.print-selected tfoot{display:none}
     }
 }
 

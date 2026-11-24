@@ -3,8 +3,11 @@
 <head>
     <meta charset="utf-8">
     <title>Executive Summary</title>
-    @include('pdf.partials.style')
+    @include('pdf.partials.style', ['pageMargins' => '18pt '.\App\Services\ReportPdfRenderer::SIDE_MARGIN.'pt '.\App\Services\ReportPdfRenderer::BOTTOM_MARGIN.'pt'])
     <style>
+        @include('pdf.partials.report-chart-style')
+        body { padding: 0; }
+        .details-page { page-break-before: always; }
         .kpi-grid { width: 100%; border-collapse: collapse; margin-top: 8px; }
         .kpi-grid td { width: 25%; border: 1px solid #ddd; padding: 8px; vertical-align: top; }
         .kpi-grid .label { font-size: 8px; text-transform: uppercase; color: #777; }
@@ -30,12 +33,14 @@
             </td>
             <td style="text-align: right;" class="meta">
                 Period: {{ $filterValues['from'] }} — {{ $filterValues['to'] }}<br>
-                Generated {{ now()->format('d M Y H:i') }}
+                Generated {{ $generatedAt }} PKT
             </td>
         </tr>
     </table>
 
-    <h2>Performance · this period</h2>
+    @include('pdf.partials.report-charts')
+
+    <h2 @if(!empty($charts)) class="details-page" @endif>Performance · this period</h2>
     <table class="kpi-grid">
         <tr>
             <td><div class="label">Net Sales</div><div class="value">{{ $rs($kpis['sales']) }}</div><div class="delta">{{ $sign($kpis['sales_delta']) }}</div></td>
@@ -46,7 +51,7 @@
     </table>
 
     <h2 style="margin-top:14px;">Financial position · as of now</h2>
-    <p>Payroll expense (period): {{ $rs($hr['expense']) }} · Profit after payroll: {{ $rs($kpis['profit'] - $hr['expense']) }}</p>
+    <p>Payroll expense (period): {{ $rs($hr['expense']) }} · Commission expense: {{ $rs($hr['commission_expense']) }} · Profit after payroll and commissions: {{ $rs($kpis['profit'] - $hr['expense'] - $hr['commission_expense']) }}</p>
     <p>Employee salary payable: {{ $rs($financials['employee_payable']) }} · Recoverable advances: {{ $rs($financials['employee_advances']) }}</p>
     <table class="kpi-grid">
         <tr>
@@ -136,6 +141,5 @@
         </table>
     </div>
 
-    @include('pdf.partials.footer')
 </body>
 </html>

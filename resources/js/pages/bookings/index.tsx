@@ -43,7 +43,7 @@ const statusVariant = (status: string) =>
 
 const statusLabels: Record<string, string> = {
     draft: 'Draft', pending: 'Pending approval', approved: 'Approved',
-    converted: 'Converted', rejected: 'Rejected', cancelled: 'Cancelled',
+    converted: 'Converted', partially_invoiced: 'Partially invoiced', rejected: 'Rejected', cancelled: 'Cancelled',
 };
 
 const statusTimestamp = (booking: BookingRow) =>
@@ -268,7 +268,7 @@ function BookingCard(props: BookingActionsProps) {
 function BookingActions({ booking, canApprove, canConvert, canViewSale, mobile = false }: BookingActionsProps) {
     const [processing, setProcessing] = useState(false);
     const approve = booking.status === 'pending' && canApprove;
-    const convert = booking.status === 'approved' && canConvert;
+    const convert = ['approved', 'partially_invoiced'].includes(booking.status) && canConvert;
     const invoice = booking.status === 'converted' && canViewSale ? booking.sales_invoice_id : null;
     if (!approve && !convert && !invoice) return null;
 
@@ -295,7 +295,7 @@ function BookingActions({ booking, canApprove, canConvert, canViewSale, mobile =
                     </Button>
                 </>
             )}
-            {convert && <Button type="button" variant="outline" size="sm" className={mobileButton} disabled={processing} onClick={() => post('convert')}><ArrowRight aria-hidden="true" /> Convert</Button>}
+            {convert && <Button variant="outline" size="sm" className={mobileButton} asChild><Link href={route('bookings.edit', booking.id)}><ArrowRight aria-hidden="true" /> Invoice quantities</Link></Button>}
             {invoice && <Button variant={mobile ? 'outline' : 'ghost'} size="sm" className={mobileButton} asChild><Link href={route('sales.edit', invoice)}>Invoice <ArrowRight aria-hidden="true" /></Link></Button>}
         </div>
     );

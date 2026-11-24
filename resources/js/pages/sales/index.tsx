@@ -77,7 +77,6 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
     const [previewId, setPreviewId] = useState<number>();
     const [posting, setPosting] = useState(false);
     const [loading, setLoading] = useState(false);
-    const printRoot = useRef<HTMLDivElement>(null);
     const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const pageCheckbox = useRef<HTMLInputElement>(null);
     const preview = invoices.data.find((invoice) => invoice.id === previewId);
@@ -109,11 +108,6 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
     useEffect(() => {
         if (pageCheckbox.current) pageCheckbox.current.indeterminate = selection.length > 0 && !allSelected;
     }, [selection.length, allSelected]);
-    useEffect(() => {
-        const reset = () => printRoot.current?.classList.remove('print-selected');
-        window.addEventListener('afterprint', reset);
-        return () => window.removeEventListener('afterprint', reset);
-    }, []);
 
     function visit(next: Filters, page = 1, replace = false) {
         clearTimeout(searchTimer.current);
@@ -165,11 +159,6 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
         });
     }
 
-    function print(selectedOnly: boolean) {
-        printRoot.current?.classList.toggle('print-selected', selectedOnly);
-        window.print();
-    }
-
     function post(rows: InvoiceRow[]) {
         if (posting || !rows.length || !canPost) return;
         if (!window.confirm(`Post ${rows.length === 1 ? rows[0].invoice_number : count(rows.length, 'draft invoice')}? This updates inventory and the ledger.`)) return;
@@ -188,14 +177,14 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
 
     return <AppLayout>
         <Head title="Sales Invoices" />
-        <div className="sales-invoices" ref={printRoot} aria-busy={loading || posting}>
+        <div className="sales-invoices" aria-busy={loading || posting}>
             <section className="hero">
                 <div className="intro"><h1>Sales Invoices</h1>
                     <p className="sub">Invoices issued to pharmacies · {count(headerCounts.total, 'invoice')} · {count(headerCounts.drafts, 'draft')} awaiting posting</p>
                 </div>
                 <div className="sp" />
                 <a className="hbtn" href={exportUrl} download><Download className="i" />Export CSV</a>
-                <button className="hbtn" type="button" onClick={() => print(false)}><Printer className="i" />Print list</button>
+                <a className="hbtn" href={route('sales.list.pdf', { ...filters, page: invoices.current_page, per_page: invoices.per_page }, false)} target="_blank" rel="noopener"><Printer className="i" />Print list</a>
                 {can('sales.create') && <Link className="hbtn pri" href={route('sales.create', {}, false)}><Plus className="i" />New Sale</Link>}
             </section>
             <section className="kpis" aria-label="Sales summary">
@@ -243,7 +232,7 @@ export default function SalesIndex({ invoices, customers, filters, summary, coun
                 {selection.length > 0 && <div className="bulk show" aria-label="Selected invoices">
                     <b>{selection.length} selected</b><span className="selection-sum">· {money(selectionTotal)} · {count(drafts.length, 'draft')}</span><div className="sp" />
                     {canPost && <button type="button" disabled={posting || drafts.length === 0} onClick={() => post(drafts)}><Check className="i" />Post drafts</button>}
-                    <button type="button" onClick={() => print(true)}><Printer className="i" />Print</button>
+                    <a href={route('sales.list.pdf', { ...filters, ids: selection.map((row) => row.id) }, false)} target="_blank" rel="noopener"><Printer className="i" />Print</a>
                     <a href={route('sales.export', { ...filters, ids: selection.map((row) => row.id) }, false)} download><Download className="i" />Export</a>
                     <button type="button" onClick={() => setSelected(new Set())}>Clear</button>
                 </div>}

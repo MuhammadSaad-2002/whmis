@@ -85,7 +85,7 @@ class DashboardService
 
         return [
             'kpis' => $this->periodKpis($from, $to),
-            'hr' => app(HrReportService::class)->totals($from, $to),
+            'hr' => app(HrReportService::class)->totals($from, $to) + ['commission_expense' => app(CommissionService::class)->totals($from, $to)['expense']],
             'monthlyTrend' => $this->reports->salesProfitTrend($from, $to),
             'topProducts' => $this->topProducts($productRows),
             'salesBySupplier' => $supplierRows->take(8)->values()->all(),
@@ -170,13 +170,17 @@ class DashboardService
             ->selectRaw('COALESCE(SUM(credit - debit), 0) as v')->value('v');
         $inventory = (float) Batch::selectRaw('COALESCE(SUM(qty_available * effective_cost), 0) as v')->value('v');
         $hr = app(HrReportService::class)->totals();
+        $commission = app(CommissionService::class)->totals();
+        $shortage = app(TreasuryService::class)->shortageReceivable();
 
         return [
             'receivable' => $receivable,
             'payable' => $payable,
-            'net_position' => round($receivable + $hr['advance'] - $payable - $hr['payable'], 2),
+            'net_position' => round($receivable + $hr['advance'] + $commission['recovery'] + $shortage - $payable - $hr['payable'] - $commission['payable'], 2),
             'employee_payable' => $hr['payable'],
             'employee_advances' => $hr['advance'],
+            'commission_payable' => $commission['payable'],
+            'employee_recoveries' => $commission['recovery'] + $shortage,
             'inventory_value' => $inventory,
         ];
     }

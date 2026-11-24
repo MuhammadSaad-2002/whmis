@@ -54,9 +54,11 @@ class SaleNetPositionService
 
         $payments = (float) PaymentAllocation::where('invoice_type', $invoice->getMorphClass())
             ->where('invoice_id', $invoice->getKey())
+            ->whereHas('payment', fn ($q) => $q->where('status', 'completed'))
             ->sum('amount');
 
-        $balance = round($net['receivable'] - $payments, 2);
+        $snapshot = app(InvoiceBalanceService::class)->sales()->whereKey($invoice->id)->first();
+        $balance = $snapshot ? (float) $snapshot->outstanding : 0;
 
         return [
             'original' => $this->round($original),
@@ -65,7 +67,8 @@ class SaleNetPositionService
             'net' => $net,
             'payments' => round($payments, 2),
             'final_outstanding' => max($balance, 0.0),
-            'refund_due' => $balance < 0 ? round(-$balance, 2) : 0.0,
+            'refund_due' => app(FinanceApprovalService::class)->refundable($invoice) / 100,
+            'applied_credit' => (float) ($snapshot?->applied_credit ?? 0),
             'status' => $invoice->return_status,
         ];
     }

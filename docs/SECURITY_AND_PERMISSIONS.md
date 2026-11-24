@@ -1,5 +1,9 @@
 # WHMIS Security and Permissions
 
+Cash & Bank, collections and commission permissions and the delegated
+maker-checker rules are documented in
+[Integrated Distribution](INTEGRATED_DISTRIBUTION.md#deployment-and-permission-checklist).
+
 Distribution operations add `dispatch.view/manage`, `collections.view/manage`,
 and `system.health`. Default grants, scoped Booker workday, and safe assignee
 selection are detailed in [DISTRIBUTION_OPERATIONS.md](DISTRIBUTION_OPERATIONS.md).

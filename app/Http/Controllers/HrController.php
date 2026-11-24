@@ -229,7 +229,7 @@ class HrController extends Controller
 
     public function cash(Request $request)
     {
-        $d=$request->validate(['employee_id'=>['required','exists:employees,id'],'kind'=>['required',Rule::in(['salary_payment','advance','advance_repayment'])],'payroll_item_id'=>['nullable','exists:payroll_items,id'],'date'=>['required','date_format:Y-m-d','before_or_equal:today'],'amount'=>['required','numeric','min:0.01','max:999999999'],'method'=>['required',Rule::in(['cash','bank','online'])],'reference'=>['nullable','string','max:255'],'notes'=>['required','string','max:2000']]);
+        $d=$request->validate(['employee_id'=>['required','exists:employees,id'],'kind'=>['required',Rule::in(['salary_payment','advance','advance_repayment'])],'payroll_item_id'=>['nullable','exists:payroll_items,id'],'date'=>['required','date_format:Y-m-d','before_or_equal:today'],'amount'=>['required','numeric','min:0.01','max:999999999'],'method'=>['required',Rule::in(['cash','bank','online'])],'reference'=>['nullable','string','max:255'],'notes'=>['required','string','max:2000'],'financial_account_id'=>['nullable','integer']]);
         $this->hr->cash(Employee::findOrFail($d['employee_id']),$d); return back()->with('success','Employee transaction recorded.');
     }
 

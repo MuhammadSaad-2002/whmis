@@ -67,7 +67,7 @@ export default function DeliverySchedules({ customers, salesmen, search }: { cus
             }}>{running ? 'Generating…' : 'Generate plan now'}</Button>
         </div>}>
         <div className="rounded-xl border bg-muted/30 p-3 text-sm">
-            Booking days create visits in My Workday for assigned Bookers. Delivery days schedule new posted invoices for the next allowed day. Existing jobs are not reassigned when a schedule changes.
+            Booking days create visits in My Workday. Posted invoices go to the customer’s default salesman on the next selected delivery day, or today if no days are selected. Saving a default also assigns eligible pending invoices without changing existing assignments.
         </div>
         {!salesmen.length && <p className="rounded-lg border p-3 text-sm">No active Salesmen yet. In Users, add the Salesman role to a staff login. A login can keep its Booker role.</p>}
         <form className="flex flex-wrap gap-2" onSubmit={(event) => {

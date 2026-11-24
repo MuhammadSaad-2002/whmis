@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\{Batch, Booking, BookerVisit, CollectionFollowUp, Company, Customer, Dispatch, DispatchEvent, LedgerEntry, Payment, Product, SalesInvoice, SalesReturn, StockMovement, User};
 use App\Services\{DeliveryPlanningService, DispatchService, PaymentService, SystemHealthService};
+use Barryvdh\DomPDF\Facade\Pdf;
 use Database\Seeders\{RolePermissionSeeder, SystemSeeder};
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -62,13 +63,19 @@ class DistributionOperationsTest extends TestCase
         $this->action($assigned, 'assign', ['assigned_to' => $this->booker->id, 'planned_date' => '2026-11-23'])
             ->assertSessionHasNoErrors();
         $this->action($other, 'assign')->assertSessionHasNoErrors();
+        $this->get(route('dispatch.show', $assigned))->assertOk()->assertInertia(fn (Assert $p) => $p
+            ->where('scoped', false)->where('canManage', true)->where('canViewInvoice', true));
         $this->actingAs($this->booker->refresh());
         $this->get(route('booker.workday'))->assertOk();
         $this->get(route('dispatch.index', ['assignee_id' => $this->admin->id]))->assertOk()->assertInertia(fn (Assert $p) => $p
             ->where('scoped', true)->where('canPlan', false)->has('invoices.data', 1)->where('invoices.data.0.id', $assigned->id));
         $this->get(route('dispatch.show', $other))->assertNotFound();
+        $this->get(route('dispatch.picking-pdf', $other))->assertNotFound();
+        $pickPdf = $this->get(route('dispatch.picking-pdf', $assigned))->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF', $pickPdf->getContent());
         $this->get(route('dispatch.show', $assigned))->assertOk()->assertInertia(fn (Assert $p) => $p
-            ->where('canManage', false)->has('staff', 0)->where('dispatch.planned_date', '2026-11-23'));
+            ->where('scoped', true)->where('canManage', false)->where('canViewInvoice', false)
+            ->has('staff', 0)->where('dispatch.planned_date', '2026-11-23'));
         $this->get(route('dispatch.schedules'))->assertForbidden();
         $this->get(route('dispatch.sheet', ['date' => '2026-11-23', 'assignee_id' => $this->booker->id]))->assertForbidden();
 
@@ -149,6 +156,85 @@ class DistributionOperationsTest extends TestCase
             ->assertInertia(fn (Assert $p) => $p->has('invoices.data', 2));
     }
 
+    public function test_daily_sheet_prints_separate_invoice_rows_and_only_verified_route_collections(): void
+    {
+        $day = '2026-11-23';
+        $this->booker->assignRole('Salesman');
+        $this->customer->update([
+            'name' => 'Route Pharmacy', 'address' => '111 Delivery Avenue, RAWALPINDI', 'city' => 'Rawalpindi',
+            'contact_person' => 'Office Contact', 'phone' => '03009990000',
+        ]);
+        $first = $this->sale(['invoice_number' => 'SI-2026-0111', 'total_amount' => 5123.45]);
+        $second = $this->sale(['invoice_number' => 'SI-2026-0222', 'total_amount' => 8787.55]);
+        foreach ([$first, $second] as $sale) {
+            $this->action($sale, 'assign', ['assigned_to' => $this->booker->id, 'planned_date' => $day])->assertSessionHasNoErrors();
+        }
+        $dispatch = Dispatch::where('sales_invoice_id', $first->id)->sole();
+        $dispatch->events()->create([
+            'action' => 'delivered', 'request_key' => (string) Str::uuid(), 'created_by' => $this->booker->id,
+            'assigned_to' => $this->booker->id, 'receiver_name' => 'Counter Receiver', 'notes' => 'Internal note',
+        ]);
+        foreach ([
+            [$day, 43221, 43221, 'completed'],
+            [$day, 76420, null, null],
+            [$day, 17099, 17099, 'cancelled'],
+            ['2026-11-22', 98765, 98765, 'completed'],
+        ] as $index => [$date, $reported, $verified, $status]) {
+            $collectionDay = DB::table('collection_days')->insertGetId(['salesman_id' => $this->booker->id, 'business_date' => $date, 'revision' => $index + 1]);
+            $payment = $status === null ? null : Payment::create([
+                'payment_number' => 'PAY-ROUTE-'.$index, 'party_type' => 'customer', 'party_id' => $this->customer->id,
+                'direction' => 'in', 'method' => 'cash', 'amount' => $verified / 100, 'payment_date' => $date, 'status' => $status,
+            ]);
+            DB::table('delivery_collections')->insert([
+                'collection_day_id' => $collectionDay, 'sales_invoice_id' => $first->id, 'reporter_id' => $this->booker->id,
+                'request_key' => (string) Str::uuid(), 'method' => 'cash', 'reported_paisa' => $reported, 'previous_paid_paisa' => 0,
+                'verified_paisa' => $verified, 'payment_id' => $payment?->id, 'recorded_at' => $verified === null ? null : now(),
+            ]);
+        }
+        $document = app('dompdf.wrapper');
+        Pdf::swap($document);
+        $this->get(route('dispatch.sheet', ['date' => $day, 'assignee_id' => $this->booker->id]))
+            ->assertOk()->assertHeader('content-type', 'application/pdf');
+        $pdf = $document->output(['compress' => false]);
+        $margin = $document->getDomPDF()->getCss()->get_page_styles()['base'];
+        $this->assertEqualsWithDelta(34.0, $margin->length_in_pt($margin->margin_left), 0.2);
+        $this->assertEqualsWithDelta(34.0, $margin->length_in_pt($margin->margin_right), 0.2);
+        preg_match_all('~\bBT [\d.]+ [\d.]+ Td /F\d+ ([\d.]+) Tf[^\r\n]*?\[\((.*?)\)\] TJ ET~', $pdf, $lines);
+        $textRuns = array_map(fn (string $line) => mb_convert_encoding($line, 'UTF-8', 'UTF-16BE'), $lines[2]);
+        $printed = implode(' ', $textRuns);
+        foreach (['Amounts in PKR', 'SALES INV #', 'CUSTOMER NAME', 'CUSTOMER ADDRESS', 'TOTAL AMOUNT', 'RECEIVER / REMARKS', 'PAYMENT RECEIVED',
+            'SI-2026-0111', 'SI-2026-0222', 'Route Pharmacy', '111 Delivery Avenue', '5,123.45', '8,787.55', 'Counter Receiver', '432.21'] as $text) {
+            $this->assertStringContainsString($text, $printed);
+        }
+        foreach (['764.20', '170.99', '987.65', 'Internal note', 'Pending', 'Office Contact', '03009990000', 'RAWALPINDI · Rawalpindi'] as $text) {
+            $this->assertStringNotContainsString($text, $printed);
+        }
+        $this->assertContains('10.0', $lines[1]);
+        $this->assertContains('10.5', $lines[1]);
+    }
+
+    public function test_long_daily_delivery_sheet_repeats_column_headings_without_omitting_invoices(): void
+    {
+        $day = '2026-11-23';
+        $this->booker->assignRole('Salesman');
+        $this->customer->update(['address' => 'Delivery Avenue North Gate Warehouse District', 'city' => 'Rawalpindi']);
+        foreach (range(1, 40) as $index) {
+            $sale = $this->sale(['invoice_number' => 'SI-2026-'.str_pad($index, 4, '0', STR_PAD_LEFT)]);
+            Dispatch::create(['sales_invoice_id' => $sale->id, 'assigned_to' => $this->booker->id, 'planned_date' => $day]);
+        }
+        $document = app('dompdf.wrapper');
+        Pdf::swap($document);
+        $this->get(route('dispatch.sheet', ['date' => $day, 'assignee_id' => $this->booker->id]))->assertOk();
+        $pdf = $document->output(['compress' => false]);
+        $encode = fn (string $text) => mb_convert_encoding($text, 'UTF-16BE', 'UTF-8');
+        $pages = preg_match_all('/\/Type\s*\/Page\b/', $pdf);
+        $this->assertGreaterThan(1, $pages);
+        $this->assertSame($pages, substr_count($pdf, $encode('SALES INV #')));
+        foreach (range(1, 40) as $index) {
+            $this->assertSame(1, substr_count($pdf, $encode('SI-2026-'.str_pad($index, 4, '0', STR_PAD_LEFT))), 'Missing or repeated invoice '.$index);
+        }
+    }
+
     public function test_dispatch_partial_delivery_retry_and_correction_do_not_touch_stock_or_money(): void
     {
         $sale = $this->sale(); $line = $sale->items()->firstOrFail();
@@ -189,6 +275,69 @@ class DistributionOperationsTest extends TestCase
         $this->get(route('dispatch.index', ['status' => 'untracked']))->assertOk()->assertInertia(fn (Assert $p) => $p
             ->has('invoices.data', 1)->where('invoices.data.0.dispatch_status', 'untracked'));
         $this->assertSame(0, Dispatch::count());
+    }
+
+    public function test_admin_dispatch_pipeline_uses_live_counts_and_pages_each_view(): void
+    {
+        $low = $this->sale(['total_amount' => 250]);
+        $high = $this->sale(['total_amount' => 2750]);
+        foreach (range(1, 9) as $i) $this->sale();
+        $closed = $this->sale();
+        $this->sale(['status' => 'draft']);
+        $this->sale(['status' => 'cancelled']);
+        $yesterday = now('Asia/Karachi')->subDay()->toDateString();
+        foreach ([[$low, 'partial'], [$high, 'dispatched'], [$closed, 'closed']] as [$invoice, $status]) {
+            Dispatch::create(['sales_invoice_id' => $invoice->id, 'assigned_to' => $this->admin->id, 'status' => $status, 'planned_date' => $yesterday]);
+        }
+        $this->get(route('dispatch.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('pipeline.untracked.count', 9)->where('pipeline.dispatched.count', 2)
+            ->where('pipeline.dispatched.value', fn ($value) => (float) $value === 3000.0)
+            ->where('pipeline.dispatched.overdue', 2)->where('pipeline.failed.overdue', 0)
+            ->where('pipeline.failed.count', 1)->where('board.untracked.total', 9)->has('board.untracked.data', 8)
+            ->has('board.dispatched.data', 2)->where('invoices.total', 12));
+        $this->get(route('dispatch.index', ['view' => 'list', 'stage' => 'dispatched', 'sort' => 'value', 'dir' => 'asc']))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+                ->has('board', 0)->where('invoices.total', 2)->where('invoices.data.0.id', $low->id)
+                ->where('invoices.data.0.items_count', 1)->where('invoices.data.1.id', $high->id));
+        $this->get(route('dispatch.index', ['assignee_id' => $this->admin->id, 'date' => $yesterday]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('pipeline.untracked.count', 0)->where('invoices.total', 3));
+        $this->assertDatabaseCount('dispatches', 3);
+        $this->assertDatabaseCount('dispatch_events', 0);
+    }
+
+    public function test_admin_dispatch_preview_and_pick_list_are_read_only_and_permission_scoped(): void
+    {
+        $sale = $this->sale();
+        $draft = $this->sale(['status' => 'draft']);
+        $this->action($sale, 'assign', ['assigned_to' => $this->admin->id])->assertSessionHasNoErrors();
+        $this->getJson(route('dispatch.preview', $sale))->assertOk()->assertJsonPath('events.0.action', 'assign')
+            ->assertJsonPath('events.0.by', $this->admin->name);
+        $this->getJson(route('dispatch.preview', $draft))->assertNotFound();
+        $response = $this->get(route('dispatch.pick-list', ['ids' => [$sale->id, $draft->id]]));
+        $response->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+        $this->booker->assignRole('Salesman');
+        $this->actingAs($this->booker->refresh())->getJson(route('dispatch.preview', $sale))->assertForbidden();
+        $this->get(route('dispatch.pick-list'))->assertForbidden();
+        $this->assertDatabaseCount('dispatch_events', 1);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_dropping_an_untracked_invoice_into_pending_offers_the_default_salesman_and_upcoming_day(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-23 07:00:00', 'Asia/Karachi'));
+        $this->booker->assignRole('Salesman');
+        $sale = $this->sale(['posted_at' => now()->subDay()]);
+        app(DeliveryPlanningService::class)->save($this->customer, ['salesman_id' => $this->booker->id, 'delivery_days' => [5]]);
+        $this->assertDatabaseMissing('dispatches', ['sales_invoice_id' => $sale->id]);
+        $this->getJson(route('dispatch.move-options', $sale))->assertOk()->assertJsonPath('status', 'untracked')
+            ->assertJsonPath('assigned_to', $this->booker->id)->assertJsonPath('planned_date', '2026-11-27')
+            ->assertJsonFragment(['action' => 'assign', 'stage' => 'pending', 'verify' => false]);
+        $data = ['action' => 'assign', 'expected_status' => 'untracked', 'request_key' => (string) Str::uuid()];
+        $this->post(route('dispatch.record', $sale), $data)->assertSessionHasErrors(['assigned_to', 'planned_date']);
+        $this->post(route('dispatch.record', $sale), $data + ['assigned_to' => $this->booker->id, 'planned_date' => '2026-11-27'])
+            ->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('dispatches', ['sales_invoice_id' => $sale->id, 'assigned_to' => $this->booker->id, 'planned_date' => '2026-11-27', 'status' => 'pending']);
     }
 
     public function test_posted_returns_reduce_delivery_balance_and_cancelled_returns_do_not(): void
@@ -285,6 +434,31 @@ class DistributionOperationsTest extends TestCase
         $this->assertSame(1, BookerVisit::count());
         $this->assertSame('no_order', BookerVisit::first()->outcome);
         $this->put(route('booker.visit', $this->customer), array_replace($payload, ['visit_date' => now()->addDays(2)->toDateString()]))->assertSessionHasErrors('visit_date');
+    }
+
+    public function test_workday_directory_filters_and_totals_include_later_pages_without_exposing_other_customers(): void
+    {
+        $date = now('Asia/Karachi')->toDateString();
+        $later = Customer::create(['name' => 'Zebra Pharmacy', 'city' => 'Rawalpindi', 'booker_id' => $this->booker->id]);
+        foreach (range(1, 12) as $number) {
+            Customer::create(['name' => 'Clinic '.$number, 'booker_id' => $this->booker->id]);
+        }
+        $private = Customer::create(['name' => 'Private Pharmacy', 'city' => 'Rawalpindi']);
+        $ledger = app(\App\Services\LedgerService::class);
+        $ledger->post($later, 'adjustment', $date, 250, 0);
+        $ledger->post($private, 'adjustment', $date, 9999, 0);
+        $booking = Booking::create(['booking_number' => 'BK-WORKDAY', 'customer_id' => $later->id, 'booker_id' => $this->booker->id, 'warehouse_id' => 1, 'booking_date' => $date]);
+        BookerVisit::create(['booker_id' => $this->booker->id, 'customer_id' => $this->customer->id, 'visit_date' => $date, 'outcome' => 'planned']);
+        BookerVisit::create(['booker_id' => $this->booker->id, 'customer_id' => $private->id, 'visit_date' => $date, 'outcome' => 'planned']);
+
+        $this->actingAs($this->booker)->get(route('booker.workday', ['date' => $date]))->assertInertia(fn (Assert $page) => $page
+            ->where('customers.total', 14)->has('customers.data', 12)->where('bookerStats.all', 14)
+            ->where('bookerStats.due', 1)->where('bookerStats.dueAmount', fn ($amount) => (float) $amount === 250.0)
+            ->where('bookerStats.ordered', 1)->where('bookerStats.orders', 1)->where('bookerStats.none', 13)
+            ->where('visits.total', 1)->where('visits.data.0.customer.id', $this->customer->id)->where('collections', null));
+        $this->get(route('booker.workday', ['date' => $date, 'search' => 'Rawalpindi', 'filter' => 'due', 'sort' => 'balance']))
+            ->assertInertia(fn (Assert $page) => $page->where('customers.total', 1)->where('customers.data.0.id', $later->id)
+                ->where('customers.data.0.last_booking.id', $booking->id)->where('visits.total', 1)->where('bookerStats.all', 14));
     }
 
     public function test_repeat_booking_uses_current_prices_resets_promotions_and_checks_ownership(): void

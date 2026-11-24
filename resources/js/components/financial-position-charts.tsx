@@ -16,15 +16,19 @@ function animated() {
     return typeof window !== 'undefined' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-export function PositionBridge({ receivable, payable, advances, salary, net }: { receivable: number; payable: number; advances: number; salary: number; net: number }) {
+export function PositionBridge({ receivable, payable, advances, salary, net, commission = 0, recovery = 0 }: { receivable: number; payable: number; advances: number; salary: number; net: number; commission?: number; recovery?: number }) {
     const [narrow, setNarrow] = useState(false);
     const trade = receivable - payable;
     const afterAdvances = trade + advances;
+    const afterSalary = afterAdvances - salary;
+    const afterCommission = afterSalary - commission;
     const rows = [
         { name: 'Receivables', range: [0, receivable], amount: receivable, color: '#14b8a6' },
         { name: 'Payables', range: [receivable, trade], amount: -payable, color: '#e76f6f' },
         { name: 'Staff advances', range: [trade, afterAdvances], amount: advances, color: '#cbd5e1' },
-        { name: 'Salary payable', range: [afterAdvances, net], amount: -salary, color: '#cbd5e1' },
+        { name: 'Salary payable', range: [afterAdvances, afterSalary], amount: -salary, color: '#cbd5e1' },
+        ...(commission ? [{ name: 'Commission payable', range: [afterSalary, afterCommission], amount: -commission, color: '#cbd5e1' }] : []),
+        ...(recovery ? [{ name: 'Employee recoveries', range: [afterCommission, net], amount: recovery, color: '#14b8a6' }] : []),
         { name: 'Net position', range: [0, net], amount: net, color: net < 0 ? '#dc2626' : '#059669' },
     ];
     return <div className="chart">

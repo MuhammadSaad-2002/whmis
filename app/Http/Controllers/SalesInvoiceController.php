@@ -15,6 +15,7 @@ use App\Services\InvoiceBalanceService;
 use App\Services\InvoicePostingService;
 use App\Services\MarginCalculator;
 use App\Services\NumberSeriesService;
+use App\Services\ReportPdfRenderer;
 use App\Services\SaleNetPositionService;
 use App\Services\SalesInvoiceList;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -118,6 +119,41 @@ class SalesInvoiceController extends Controller
         }, 'sales-invoices.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
+    public function printList(Request $request, SalesInvoiceList $list, ReportPdfRenderer $pdf)
+    {
+        $filters = $this->listFilters($request);
+        $selection = $request->validate([
+            'ids' => 'sometimes|array|min:1|max:50', 'ids.*' => 'required|integer|min:1|distinct',
+            'page' => 'nullable|integer|min:1',
+        ]);
+        $page = (int) ($selection['page'] ?? 1);
+        $query = $list->sort($list->filterStatus($list->query($filters), $filters['status'] ?? null), $filters);
+        $invoices = isset($selection['ids']) ? $query->whereKey($selection['ids'])->get() : $query->forPage($page, (int) ($filters['per_page'] ?? 15))->get();
+        $rows = $invoices->map(fn (SalesInvoice $sale) => [
+            'invoice' => $sale->invoice_number, 'customer' => $sale->customer?->name, 'date' => $sale->invoice_date?->toDateString(),
+            'type' => ucfirst(str_replace('_', ' ', $sale->sale_type ?? '')), 'status' => ucfirst($sale->status),
+            'total' => $sale->total_amount, 'returns' => $sale->returned_amount, 'net' => $sale->net_amount,
+            'profit' => $sale->net_profit ?? '—', 'margin' => $sale->margin === null ? '—' : number_format((float) $sale->margin, 1).'%',
+        ]);
+        $totals = ['invoice' => 'TOTAL SHOWN', 'total' => $rows->sum('total'), 'returns' => $rows->sum('returns'), 'net' => $rows->sum('net')];
+        if ($invoices->contains(fn ($sale) => $sale->net_profit !== null)) $totals['profit'] = $invoices->sum('net_profit');
+        $columns = [
+            ['key' => 'invoice', 'label' => 'Invoice #', 'nowrap' => true], ['key' => 'customer', 'label' => 'Customer', 'wrap' => true],
+            ['key' => 'date', 'label' => 'Invoice date', 'format' => 'date'], ['key' => 'type', 'label' => 'Type'],
+            ['key' => 'status', 'label' => 'Status'],
+        ];
+        foreach (['total' => 'Gross', 'returns' => 'Returns', 'net' => 'Net', 'profit' => 'Net profit'] as $key => $label) {
+            $columns[] = ['key' => $key, 'label' => $label, 'align' => 'right', 'format' => 'money'];
+        }
+        $columns[] = ['key' => 'margin', 'label' => 'Margin', 'align' => 'right'];
+
+        return $pdf->render([
+            'title' => 'Sales Invoice List', 'context' => isset($selection['ids']) ? 'Selected invoices' : "Filtered invoice list · Page {$page}",
+            'filters' => $filters, 'columns' => $columns, 'rows' => $rows->all(), 'totals' => $rows->isEmpty() ? [] : $totals, 'readable' => true,
+            'notes' => $rows->isEmpty() ? ['No invoices match this selection.'] : ['Amounts in PKR. Totals apply to rows in this document. Profit and margin are only shown for posted invoices.'],
+        ])->stream('sales-invoice-list.pdf')->header('Cache-Control', 'private, no-store');
+    }
+
     public function preview(SalesInvoice $sale, InvoiceBalanceService $balances)
     {
         $sale->load([
@@ -159,6 +195,7 @@ class SalesInvoiceController extends Controller
             'customers' => Customer::active()->orderBy('name')->get(['id', 'name', 'city', 'credit_limit', 'booker_id']),
             'warehouse' => Warehouse::default()->only(['id', 'name']),
             'bookers' => User::role('Booker')->orderBy('name')->get(['id', 'name']),
+            'salesmen' => app(\App\Services\DeliveryPlanningService::class)->activeSalesmen()->orderBy('name')->get(['id', 'name']),
             'invoice' => null,
         ]);
     }
@@ -209,6 +246,7 @@ class SalesInvoiceController extends Controller
             'customers' => Customer::active()->orderBy('name')->get(['id', 'name', 'city', 'credit_limit', 'booker_id']),
             'warehouse' => $sale->warehouse->only(['id', 'name']),
             'bookers' => User::role('Booker')->orderBy('name')->get(['id', 'name']),
+            'salesmen' => app(\App\Services\DeliveryPlanningService::class)->activeSalesmen()->orderBy('name')->get(['id', 'name']),
             'invoice' => $sale,
         ]);
     }
@@ -227,14 +265,26 @@ class SalesInvoiceController extends Controller
 
         try {
             DB::transaction(function () use ($sale, $data) {
+                $sale = SalesInvoice::whereKey($sale->id)->lockForUpdate()->firstOrFail();
+                if (! $sale->isDraft()) throw new RuntimeException('Only draft invoices can be edited.');
+                $booking = app(\App\Services\BookingService::class);
                 if (! empty($data['invoice_number']) && $data['invoice_number'] !== $sale->invoice_number) {
                     $sale->invoice_number = $data['invoice_number'];
                     $sale->manual_number = true;
                 }
                 $this->releaseItems($sale); // return the old reservation before re-syncing
-                $sale->fill($this->headerAttributes($data))->save();
-                $sale->items()->delete();
-                $this->syncItems($sale, $data['items']);
+                if ($booking->hasTrackedConversion($sale)) {
+                    $booking->assertDraftComposition($sale, $data['items']);
+                    if ((int) $data['customer_id'] !== $sale->customer_id || (int) $data['warehouse_id'] !== $sale->warehouse_id) {
+                        throw new RuntimeException('Customer and warehouse are locked by the originating booking.');
+                    }
+                    $sale->fill(\Illuminate\Support\Arr::except($this->headerAttributes($data), ['customer_id', 'warehouse_id', 'booker_id', 'sale_type']))->save();
+                    $this->updateConversionItems($sale, $data['items']);
+                } else {
+                    $sale->fill($this->headerAttributes($data))->save();
+                    $sale->items()->delete();
+                    $this->syncItems($sale, $data['items']);
+                }
                 $this->reserveItems($sale); // reserve the new lines
             });
         } catch (RuntimeException $e) {
@@ -320,7 +370,14 @@ class SalesInvoiceController extends Controller
             return back()->with('error', 'Only draft invoices can be deleted.');
         }
 
+        if (app(\App\Services\BookingService::class)->hasTrackedConversion($sale)) {
+            $this->posting->cancelSale($sale);
+            return redirect()->route('sales.index')->with('success', 'Draft cancelled; its booking allocation was released.');
+        }
+
         DB::transaction(function () use ($sale) {
+            $sale = SalesInvoice::whereKey($sale->id)->lockForUpdate()->firstOrFail();
+            abort_unless($sale->isDraft(), 409);
             $this->releaseItems($sale); // return the reserved stock
             $sale->delete();
         });
@@ -355,6 +412,10 @@ class SalesInvoiceController extends Controller
         return Inertia::render('sales/summary', [
             'invoice' => $sale,
             'position' => $this->netPosition->positionFor($sale),
+            'paymentHistory' => $sale->paymentAllocations()->with('payment:id,payment_number,method,status,payment_date')->latest('id')->get(),
+            'refundHistory' => request()->user()->can('finance.review')
+                ? \App\Models\FinanceWorkItem::whereIn('kind', ['refund','credit_apply','refund_recovery','refund_correction'])->where('payload->invoice_id', $sale->id)
+                    ->oldest('id')->get(['id','kind','status','amount_paisa','posted_at']) : [],
         ]);
     }
 
@@ -383,6 +444,9 @@ class SalesInvoiceController extends Controller
             'invoice_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date'],
             'sale_type' => ['required', 'in:cash,credit,sale_base,booking,direct'],
+            'planned_salesman_id' => ['nullable', 'integer', function ($attribute, $value, $fail) {
+                if (! app(\App\Services\DeliveryPlanningService::class)->activeSalesmen()->whereKey($value)->exists()) $fail('Choose an active Salesman.');
+            }],
             'sale_terms' => ['nullable', 'string', 'max:2000', 'required_if:sale_type,sale_base'],
             'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'gst_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
@@ -405,7 +469,7 @@ class SalesInvoiceController extends Controller
     {
         return collect($data)->only([
             'customer_id', 'booker_id', 'warehouse_id', 'invoice_date', 'due_date',
-            'sale_type', 'sale_terms', 'discount_percent', 'gst_percent', 'notes',
+            'sale_type', 'sale_terms', 'discount_percent', 'gst_percent', 'notes', 'planned_salesman_id',
         ])->map(fn ($v) => $v ?? null)->all();
     }
 
@@ -472,6 +536,26 @@ class SalesInvoiceController extends Controller
             $this->recordIncentives($invoice, $line, $breakdowns[$i]);
         }
 
+        $invoice->update($computed['totals']);
+    }
+
+    private function updateConversionItems(SalesInvoice $invoice, array $items): void
+    {
+        $saved = $invoice->items()->get()->keyBy('product_id');
+        if ($saved->count() !== count($items)) throw new RuntimeException('Convert each booked product once; use FIFO to issue it across batches.');
+        $payload = [];
+        foreach ($items as $item) {
+            $old = $saved[$item['product_id']];
+            $payload[] = [
+                'product_id' => $item['product_id'], 'batch_id' => $this->resolveBatchId($invoice, $item),
+                'quantity' => $old->quantity, 'bonus_quantity' => $old->bonus_quantity,
+                'trade_price' => $item['trade_price'], 'discount_percent' => $item['discount_percent'] ?? 0,
+                'gst_percent' => $item['gst_percent'] ?? 0, 'incentive_discount' => $old->incentive_discount,
+                'remarks' => $item['remarks'] ?? null,
+            ];
+        }
+        $computed = MarginCalculator::computeSalesItems($payload, $invoice->only(['discount_percent', 'gst_percent']));
+        foreach ($computed['items'] as $item) $saved[$item['product_id']]->update($item);
         $invoice->update($computed['totals']);
     }
 

@@ -1,63 +1,41 @@
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import AppLayout from '@/layouts/app-layout';
 import { qty, shortDate } from '@/lib/format';
-import { Link, useForm } from '@inertiajs/react';
-import { Errors, Field, Layout, selectClass, StaffSelect, stamp, Status, type Staff } from './shared';
+import { Head } from '@inertiajs/react';
+import { AdminDelivery } from './dispatch-admin';
+import type { DeliveryProps } from './dispatch-detail';
+import { FieldDelivery } from './dispatch-field';
 
-type Item = { id: number; product: string; batch: string | null; expiry: string | null; units: number; returned: number; delivered: number; remaining: number };
-type Event = { id: number; action: string; created_at: string; notes: string | null; receiver_name: string | null; creator: Staff | null; assignee: Staff | null; items: { sales_invoice_item_id: number; quantity: string }[] };
-type Props = {
-    invoice: { id: number; invoice_number: string; customer: string | null; status: string; address: string | null; city: string | null; phone: string | null };
-    dispatch: { id: number; status: string; assigned_to: number | null; planned_date: string | null; assignee: Staff | null; events: Event[] } | null;
-    items: Item[]; staff: Staff[]; canManage: boolean; fieldActions: string[]; today: string;
-};
-const actions: Record<string, string[]> = {
-    pending: ['picking', 'assign'], picking: ['packed', 'assign'], packed: ['dispatched', 'assign'],
-    dispatched: ['delivered', 'failed', 'assign'], partial: ['delivered', 'dispatched', 'failed', 'correct_delivery', 'assign'],
-    failed: ['dispatched', 'correct_delivery', 'assign'], delivered: ['correct_delivery'], closed: ['correct_delivery'],
-};
-export default function DispatchPage(p: Props) {
-    return <Layout title={`Delivery · ${p.invoice.invoice_number}`} description={`${p.invoice.customer ?? ''} · Invoice ${p.invoice.status}`} actions={<div className="flex gap-2 print:hidden"><Button variant="outline" asChild><Link href="/dispatch">Dispatch list</Link></Button><Button variant="outline" onClick={() => window.print()}>Print picking list</Button></div>}>
-        <div className="flex flex-wrap items-center gap-3"><Status value={p.dispatch?.status ?? 'untracked'}/><p className="text-sm text-muted-foreground">Assigned to: {p.dispatch?.assignee?.name ?? 'Unassigned'} · {p.dispatch?.planned_date ? `Planned ${shortDate(p.dispatch.planned_date)}` : 'No planned date'}</p></div>
-        {(p.invoice.address || p.invoice.city || p.invoice.phone) && <div className="rounded-lg border p-3 text-sm">
-            <p className="font-medium">Delivery contact</p>
-            <p className="break-words">{[p.invoice.address, p.invoice.city, p.invoice.phone].filter(Boolean).join(' · ')}</p>
-        </div>}
-        <div className="rounded-lg bg-muted/50 p-3 text-sm print:hidden">Delivery tracking does not move stock or record receipts. Record physical returns in Returns and actual payments in Payments. Quantities include bonus units; posted returns reduce remaining delivery quantities.</div>
-        <div className="overflow-x-auto rounded-xl border"><table className="w-full text-sm"><thead className="bg-muted/50 text-left"><tr>{['Product / batch', 'Units', 'Returned', 'Delivered', 'Remaining'].map(h => <th key={h} className="whitespace-nowrap p-3">{h}</th>)}</tr></thead><tbody>{p.items.map(item => <tr key={item.id} className="border-t"><td className="min-w-48 p-3"><p className="font-medium">{item.product}</p><p className="text-xs text-muted-foreground">{item.batch ?? 'See invoice batch allocations'}{item.expiry ? ` · ${shortDate(item.expiry)}` : ''}</p></td>{[item.units, item.returned, item.delivered, item.remaining].map((n, i) => <td key={i} className="p-3 tabular-nums">{qty(n)}</td>)}</tr>)}</tbody></table></div>
-        {(p.canManage || p.fieldActions.length > 0) && p.invoice.status === 'posted' && <ActionForm key={p.dispatch?.events.at(-1)?.id ?? 'new'} {...p}/>}
-        <section className="space-y-3 print:hidden"><h2 className="text-lg font-semibold">Delivery history</h2>{!p.dispatch?.events.length && <p className="text-sm text-muted-foreground">No fulfilment activity recorded yet.</p>}{p.dispatch?.events.map(event => <article key={event.id} className="space-y-2 rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><Status value={event.action}/><span className="text-xs text-muted-foreground">{stamp(event.created_at)} · {event.creator?.name}</span></div><p className="text-xs text-muted-foreground">Responsible: {event.assignee?.name ?? 'Unassigned'}</p>{event.receiver_name && <p>Received by: {event.receiver_name}</p>}{event.items.map((item, i) => <p key={i}>{p.items.find(line => line.id === item.sales_invoice_item_id)?.product}: {qty(item.quantity)} units</p>)}{event.notes && <p className="whitespace-pre-wrap break-words">{event.notes}</p>}</article>)}</section>
-    </Layout>;
+export default function DispatchPage(props: DeliveryProps) {
+    const Detail = props.scoped ? FieldDelivery : AdminDelivery;
+    const revision = [props.invoice.id, props.dispatch?.status, props.dispatch?.events.at(-1)?.id].join(':');
+
+    return <AppLayout>
+        <Head title={'Delivery · ' + props.invoice.invoice_number} />
+        <div className="print:hidden"><Detail key={revision} {...props} /></div>
+        <PickingList {...props} />
+    </AppLayout>;
 }
-function ActionForm(p: Props) {
-    const state = p.dispatch?.status ?? 'pending';
-    const settledByReturns = p.items.reduce((s, i) => s + i.remaining, 0) === 0 && p.items.some(i => i.returned > 0);
-    const available = [...(actions[state] ?? []), ...(settledByReturns && !['delivered', 'closed'].includes(state) ? ['close_returned'] : [])]
-        .filter(action => p.canManage || p.fieldActions.includes(action));
-    const form = useForm({ action: available[0] ?? '', assigned_to: p.dispatch?.assigned_to ? String(p.dispatch.assigned_to) : '',
-        planned_date: p.dispatch?.planned_date ?? p.today, request_key: crypto.randomUUID(), receiver_name: '', notes: '',
-        items: p.items.map(item => ({ sales_invoice_item_id: item.id, quantity: '0' })) });
-    const quantities = ['delivered', 'correct_delivery'].includes(form.data.action);
-    if (!available.length) return null;
-    return <form className="space-y-3 rounded-xl border p-4 print:hidden" onSubmit={e => {
-        e.preventDefault();
-        form.transform(({ assigned_to, planned_date, ...data }) => p.canManage && data.action === 'assign' ? { ...data, assigned_to, planned_date } : data);
-        form.post(`/dispatch/${p.invoice.id}/events`, { preserveScroll: true, onSuccess: () => form.setData('request_key', crypto.randomUUID()) });
-    }}>
-        <h2 className="font-semibold">Update delivery</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Action"><select className={selectClass} value={form.data.action} onChange={e => form.setData('action', e.target.value)}>{available.map(action =>
-                <option key={action} value={action}>{action === 'delivered' ? 'Record delivered quantities' : action === 'assign' ? 'Assign / reschedule' : action.replaceAll('_', ' ')}</option>)}</select></Field>
-            {p.canManage && form.data.action === 'assign' && <>
-                <Field label="Responsible staff"><StaffSelect staff={p.staff} value={form.data.assigned_to} onChange={v => form.setData('assigned_to', v)} /></Field>
-                <Field label="Planned delivery date"><Input type="date" value={form.data.planned_date} onChange={e => form.setData('planned_date', e.target.value)} /></Field>
-            </>}
+
+function PickingList({ invoice, dispatch, items, pickupLines }: DeliveryProps) {
+    const rows = pickupLines.length
+        ? pickupLines.map(line => ({ ...line, units: line.quantity }))
+        : items;
+    return <section className="hidden space-y-3 p-4 text-black print:block">
+        <h1 className="text-2xl font-bold">Picking List · {invoice.invoice_number}</h1>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+            <p><strong>Customer:</strong> {invoice.customer ?? '—'}</p>
+            <p><strong>Planned delivery:</strong> {shortDate(dispatch?.planned_date)}</p>
+            <p><strong>Address:</strong> {[invoice.address, invoice.city].filter(Boolean).join(', ') || '—'}</p>
+            <p><strong>Assigned to:</strong> {dispatch?.assignee?.name ?? 'Unassigned'}</p>
         </div>
-        {form.data.action === 'delivered' && <Field label="Received by *"><Input required maxLength={150} value={form.data.receiver_name} onChange={e => form.setData('receiver_name', e.target.value)}/></Field>}
-        {form.data.action === 'correct_delivery' && <p className="text-sm text-amber-700">Enter quantities to remove from an incorrectly recorded delivery. This corrects the delivery record only; use Returns for goods physically returned.</p>}
-        {form.data.action === 'delivered' && <Button variant="outline" type="button" onClick={() => form.setData('items',
-            p.items.map(item => ({ sales_invoice_item_id: item.id, quantity: String(item.remaining) })))}>Fill all remaining quantities</Button>}
-        {quantities && <div className="space-y-2">{p.items.map((item, index) => <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-3 rounded-lg bg-muted/30 p-2"><label htmlFor={`delivery-${item.id}`} className="text-sm">{item.product}<span className="block text-xs text-muted-foreground">Maximum {qty(form.data.action === 'delivered' ? item.remaining : item.delivered)}</span></label><Input id={`delivery-${item.id}`} type="number" inputMode="decimal" min="0" step="0.01" max={form.data.action === 'delivered' ? item.remaining : item.delivered} value={form.data.items[index].quantity} onChange={e => form.setData('items', form.data.items.map((v, i) => i === index ? { ...v, quantity: e.target.value } : v))}/></div>)}</div>}
-        <Field label="Notes / reason"><textarea className="min-h-20 w-full rounded-md border p-2 text-base" maxLength={1000} required={['failed', 'correct_delivery', 'close_returned'].includes(form.data.action)} value={form.data.notes} onChange={e => form.setData('notes', e.target.value)}/></Field><Errors errors={form.errors}/><Button disabled={form.processing}>{form.processing ? 'Saving…' : 'Record activity'}</Button>
-    </form>;
+        <table className="w-full border-collapse border text-left text-sm">
+            <thead className="table-header-group"><tr>{['Product', 'Batch', 'Expiry', 'Invoice units', ...(pickupLines.length ? ['Recorded pickup', 'Still to pick'] : [])].map(column => <th scope="col" key={column} className="border px-2 py-1.5">{column}</th>)}</tr></thead>
+            <tbody>{rows.map(row => <tr key={row.id} className="break-inside-avoid">
+                <td className="border px-2 py-1.5">{row.product}</td><td className="border px-2 py-1.5">{row.batch || '—'}</td>
+                <td className="border px-2 py-1.5">{shortDate(row.expiry)}</td><td className="border px-2 py-1.5 text-right">{qty(row.units)}</td>
+                {'picked' in row && <><td className="border px-2 py-1.5 text-right">{qty(row.picked)}</td><td className="border px-2 py-1.5 text-right">{qty(row.remaining)}</td></>}
+            </tr>)}</tbody>
+        </table>
+        <p className="text-xs">All quantities include bonus units.</p>
+    </section>;
 }

@@ -8,6 +8,17 @@ const qtyFormatter = new Intl.NumberFormat('en-PK', {
     maximumFractionDigits: 2,
 });
 
+const pakistanDateFormatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Karachi',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+});
+
+export function pakistanDate(now = new Date()): string {
+    return pakistanDateFormatter.format(now);
+}
+
 export function money(value: number | string | null | undefined): string {
     const n = Number(value ?? 0);
     return `Rs ${rsFormatter.format(Number.isFinite(n) ? n : 0)}`;
@@ -32,7 +43,18 @@ export function shortDate(value: string | null | undefined): string {
     if (!value) return '—';
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return '—';
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const calendarOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: calendarOnly ? 'UTC' : undefined });
+}
+
+export function shiftDate(date: string, days: number): string {
+    const day = new Date(date + 'T00:00:00Z');
+    day.setUTCDate(day.getUTCDate() + days);
+    return day.toISOString().slice(0, 10);
+}
+
+export function weekdayDate(date: string): string {
+    return new Date(date + 'T00:00:00Z').toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 export function toNumber(value: string | number | null | undefined): number {

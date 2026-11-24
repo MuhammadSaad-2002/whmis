@@ -11,7 +11,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { money, shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { Ban, Plus } from 'lucide-react';
 import { useState } from 'react';
 
@@ -135,6 +135,7 @@ export default function PaymentsIndex({ payments, customers, companies, filters,
                                         </Badge>
                                     </TableCell>
                                     <TableCell>
+                                        {payment.status === 'completed' && payment.direction === 'in' && can('finance.review') && <Button size="sm" variant="ghost" asChild><Link href={`/finance-reversals/receipt/${payment.id}`}>Reversal impact</Link></Button>}
                                         {payment.status === 'completed' && can('payments.manage') && (
                                             <Button
                                                 variant="ghost" size="icon" title="Cancel & reverse"

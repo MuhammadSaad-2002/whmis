@@ -215,6 +215,7 @@ class PurchaseInvoiceController extends Controller
             'invoice_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date'],
             'purchase_type' => ['required', 'in:cash,credit'],
+            'financial_account_id' => ['nullable', 'integer'],
             'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'gst_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'notes' => ['nullable', 'string'],
@@ -238,7 +239,7 @@ class PurchaseInvoiceController extends Controller
     {
         return collect($data)->only([
             'company_id', 'warehouse_id', 'supplier_invoice_number', 'invoice_date',
-            'due_date', 'purchase_type', 'discount_percent', 'gst_percent', 'notes',
+            'due_date', 'purchase_type', 'discount_percent', 'gst_percent', 'notes', 'financial_account_id',
         ])->map(fn ($v) => $v ?? null)->all();
     }
 

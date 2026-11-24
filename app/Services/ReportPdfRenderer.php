@@ -19,17 +19,23 @@ class ReportPdfRenderer
 
     public function render(array $data, ?string $orientation = null): PdfDocument
     {
-        $generatedAt = now('Asia/Karachi')->format('d M Y H:i');
         $widest = max([
             count($data['columns']),
             ...array_map(fn ($section) => count($section['columns']), $data['sections'] ?? []),
         ]);
         $orientation ??= $widest > 6 ? 'landscape' : 'portrait';
+
+        return $this->renderView('pdf.report', $data, $orientation);
+    }
+
+    public function renderView(string $view, array $data, string $orientation): PdfDocument
+    {
+        $generatedAt = now('Asia/Karachi')->format('d M Y H:i');
         $paperWidth = CPDF::$PAPER_SIZES['a4'][$orientation === 'landscape' ? 3 : 2];
         // Dompdf resolves percent-top against the page for auto-height blocks.
         // Scale the label offsets in points to the same width as the plot image.
         $chartPlotWidth = $paperWidth - 2 * (self::SIDE_MARGIN + self::CHART_PADDING + self::CHART_BORDER);
-        $document = Pdf::loadView('pdf.report', $data + compact('generatedAt', 'chartPlotWidth'))
+        $document = Pdf::loadView($view, $data + compact('generatedAt', 'chartPlotWidth'))
             ->setPaper('a4', $orientation);
         $document->render();
 

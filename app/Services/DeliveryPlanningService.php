@@ -27,6 +27,34 @@ class DeliveryPlanningService
                 ->orWhereHas('roles.permissions', fn ($p) => $p->where('name', 'dispatch.assigned')->where('guard_name', 'web')));
     }
 
+    /** Active invoice override first, then the customer's default; no weekdays means the next available day is today. */
+    public function assignmentDefaults(SalesInvoice $invoice): array
+    {
+        $schedule = CustomerDeliverySchedule::where('customer_id', $invoice->customer_id)->first();
+        $candidates = array_values(array_unique(array_filter([(int) $invoice->planned_salesman_id, (int) $schedule?->salesman_id])));
+        $active = $this->activeSalesmen()->whereKey($candidates)->pluck('id')->flip();
+        $salesman = collect($candidates)->first(fn ($id) => $active->has($id));
+        $date = $this->nextDate(Carbon::today('Asia/Karachi'), $schedule?->delivery_days ?? []);
+
+        return ['assigned_to' => $salesman, 'planned_date' => $salesman ? $date : null];
+    }
+
+    private function nextDate(Carbon $from, array $days): string
+    {
+        $date = $from->copy();
+        for ($i = 0; $days && $i < 7 && ! in_array($date->isoWeekday(), $days, true); $i++) $date->addDay();
+
+        return $date->toDateString();
+    }
+
+    /** Activate operational work under the invoice lock, without moving warehouse stock. */
+    public function activateInvoice(SalesInvoice $invoice): void
+    {
+        $defaults = $this->assignmentDefaults($invoice);
+        Dispatch::create($defaults + ['sales_invoice_id' => $invoice->id, 'custody_required' => true,
+            'original_assignee_id' => $defaults['assigned_to'], 'status' => 'pending']);
+    }
+
     public function save(Customer $customer, array $data): void
     {
         $bookingDays = $this->days($data['booking_days'] ?? []);
@@ -41,13 +69,14 @@ class DeliveryPlanningService
             $schedule = $customer->deliverySchedule()->firstOrNew();
             $schedule->fill([
                 'booking_days' => $bookingDays, 'delivery_days' => $deliveryDays, 'salesman_id' => $salesman,
-                'delivery_enabled_at' => $deliveryDays ? ($schedule->delivery_enabled_at ?? now()) : null,
+                'delivery_enabled_at' => $salesman ? ($schedule->delivery_enabled_at ?? now()) : null,
             ]);
             $schedule->save();
             AuditLogger::action($customer, 'delivery_schedule_updated', [
                 'salesman_id' => $salesman, 'booking_days' => $bookingDays, 'delivery_days' => $deliveryDays,
             ]);
         });
+        if ($salesman) $this->planOpenInvoices(Carbon::today('Asia/Karachi'), $customer->id);
     }
 
     /** Generate today's PKT visits and schedule new, eligible posted invoices. Safe to repeat. */
@@ -58,7 +87,6 @@ class DeliveryPlanningService
         $activeBookers = User::where('is_active', true)
             ->whereHas('roles', fn ($roles) => $roles->where('name', 'Booker')->where('guard_name', 'web'))
             ->pluck('id')->flip();
-        $activeSalesmen = $this->activeSalesmen()->pluck('id');
 
         CustomerDeliverySchedule::whereHas('customer', fn ($customer) => $customer->active())
             ->with(['customer:id,booker_id', 'customer.bookers:id'])
@@ -76,18 +104,31 @@ class DeliveryPlanningService
                 }
             });
 
+        $count['dispatches'] = $this->planOpenInvoices($today);
+
+        return $count;
+    }
+
+    private function planOpenInvoices(Carbon $today, ?int $customerId = null): int
+    {
+        $count = 0;
         SalesInvoice::query()->where('sales_invoices.status', SalesInvoice::STATUS_POSTED)
             ->whereNotNull('sales_invoices.posted_at')
+            ->when($customerId, fn ($q) => $q->where('sales_invoices.customer_id', $customerId))
             ->join('customer_delivery_schedules as schedule', 'schedule.customer_id', '=', 'sales_invoices.customer_id')
-            ->whereColumn('sales_invoices.posted_at', '>=', 'schedule.delivery_enabled_at')
-            ->whereIn('schedule.salesman_id', $activeSalesmen)
+            ->where(fn ($q) => $q->whereColumn('sales_invoices.posted_at', '>=', 'schedule.delivery_enabled_at')
+                ->orWhereExists(fn ($rows) => $rows->selectRaw('1')->from('dispatches')->whereColumn('dispatches.sales_invoice_id', 'sales_invoices.id')
+                    ->where('custody_required', true)->whereNull('assigned_to')->whereNull('original_assignee_id')))
+            ->whereIn('schedule.salesman_id', $this->activeSalesmen()->select('users.id'))
             ->whereHas('customer', fn ($customer) => $customer->active())
             ->whereNotExists(fn ($query) => $query->selectRaw('1')->from('dispatches')
-                ->whereColumn('dispatches.sales_invoice_id', 'sales_invoices.id'))
+                ->whereColumn('dispatches.sales_invoice_id', 'sales_invoices.id')
+                ->where(fn ($rows) => $rows->whereNotNull('assigned_to')->orWhereNotNull('original_assignee_id')
+                    ->orWhere('custody_required', false)->orWhere('status', '!=', 'pending')))
             ->select('sales_invoices.id')
             ->chunkById(100, function ($invoices) use (&$count, $today) {
                 foreach ($invoices as $invoice) {
-                    $count['dispatches'] += (int) $this->planInvoice($invoice->id, $today);
+                    $count += (int) $this->planInvoice($invoice->id, $today);
                 }
             }, 'sales_invoices.id', 'id');
 
@@ -98,27 +139,25 @@ class DeliveryPlanningService
     {
         return DB::transaction(function () use ($id, $today) {
             $invoice = SalesInvoice::whereKey($id)->lockForUpdate()->first();
-            if (! $invoice?->isPosted() || ! $invoice->posted_at || Dispatch::where('sales_invoice_id', $id)->exists()) return false;
+            $dispatch = Dispatch::where('sales_invoice_id', $id)->first();
+            if (! $invoice?->isPosted() || ! $invoice->posted_at || ($dispatch && (! $dispatch->custody_required || $dispatch->assigned_to
+                || $dispatch->original_assignee_id || $dispatch->status !== 'pending'))) return false;
 
             $customer = Customer::active()->whereKey($invoice->customer_id)->first();
             $schedule = $customer?->deliverySchedule()->lockForUpdate()->first();
-            if (! $schedule?->delivery_enabled_at || ! $schedule->delivery_days || ! $schedule->salesman_id
-                || $invoice->posted_at->lt($schedule->delivery_enabled_at)
+            if (! $schedule?->salesman_id
+                || (! $dispatch && (! $schedule->delivery_enabled_at || $invoice->posted_at->lt($schedule->delivery_enabled_at)))
                 || ! $this->activeSalesmen()->whereKey($schedule->salesman_id)->exists()
                 || array_sum(array_column($this->dispatch->progress($invoice), 'remaining')) <= 0) return false;
 
             $date = $today->copy()->max($invoice->posted_at->copy()->setTimezone('Asia/Karachi')->startOfDay());
-            for ($i = 0; $i < 7; $i++, $date->addDay()) {
-                if (! in_array($date->isoWeekday(), $schedule->delivery_days, true)) continue;
-                Dispatch::create([
-                    'sales_invoice_id' => $id, 'assigned_to' => $schedule->salesman_id,
-                    'planned_date' => $date->toDateString(), 'status' => 'pending',
-                ]);
+            ($dispatch ?? new Dispatch)->fill([
+                'sales_invoice_id' => $id, 'assigned_to' => $schedule->salesman_id,
+                'original_assignee_id' => $schedule->salesman_id,
+                'planned_date' => $this->nextDate($date, $schedule->delivery_days ?? []), 'status' => 'pending',
+            ])->save();
 
-                return true;
-            }
-
-            return false;
+            return true;
         });
     }
 

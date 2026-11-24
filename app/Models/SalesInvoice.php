@@ -28,8 +28,8 @@ class SalesInvoice extends Model implements AuditableContract
     protected function casts(): array
     {
         return [
-            'invoice_date' => 'date',
-            'due_date' => 'date',
+            'invoice_date' => 'date:Y-m-d',
+            'due_date' => 'date:Y-m-d',
             'posted_at' => 'datetime',
             'manual_number' => 'boolean',
             'stock_reserved' => 'boolean',
@@ -88,6 +88,11 @@ class SalesInvoice extends Model implements AuditableContract
     public function postedReturns(): HasMany
     {
         return $this->returns()->where('status', SalesReturn::STATUS_POSTED);
+    }
+
+    public function paymentAllocations(): HasMany
+    {
+        return $this->hasMany(PaymentAllocation::class, 'invoice_id')->where('invoice_type', $this->getMorphClass());
     }
 
     public function isDraft(): bool

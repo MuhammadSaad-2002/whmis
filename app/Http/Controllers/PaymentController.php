@@ -54,6 +54,7 @@ class PaymentController extends Controller
             'method' => ['required', 'in:cash,bank,cheque,online,adjustment'],
             'amount' => ['required', 'numeric', 'gt:0', 'decimal:0,2', 'max:9999999999999.99'],
             'payment_date' => ['required', 'date'],
+            'financial_account_id' => ['nullable', 'integer'],
             'bank_name' => ['nullable', 'string', 'max:100'],
             'cheque_number' => ['nullable', 'string', 'max:100'],
             'cheque_date' => ['nullable', 'date'],

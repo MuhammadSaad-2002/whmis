@@ -1,5 +1,9 @@
 # Employees and HR
 
+For automatic Booker/Salesman commission see
+[Integrated Distribution](INTEGRATED_DISTRIBUTION.md). Its separate commission
+ledger does not replace the original manual payroll adjustment field.
+
 Implemented October 2026. Source of truth: `HrController`, `HrService`,
 `HrReportService`, the HR migration, and `HrModuleTest`. No existing employee,
 salary, leave allowance, commission percentage, or opening balance is guessed.
@@ -81,7 +85,8 @@ days. This report does **not** automatically calculate commissions.
 
 These are explicit application policies, not a claim of statutory payroll
 compliance. Automated tax, EOBI, provident fund, gratuity, leave accrual/carryover,
-biometric imports, shifts, and automatic commission schemes are not implemented.
+biometric imports and shifts are not implemented. Automatic distribution
+commissions are separate from the payroll adjustment field.
 Leave allowance is a configured flat annual limit, with no joining-date accrual.
 Split leave across calendar years into separate requests.
 

@@ -26,7 +26,10 @@ class SystemHealthService
         $check('Workflow schema', function () {
             $required = ['employees' => ['is_booker', 'user_id'], 'booker_customer' => ['booker_id', 'customer_id'],
                 'booker_assignment_logs' => ['changed_by'], 'bookings' => ['submitted_at', 'last_edited_at'],
-                'dispatches' => ['status', 'assigned_to', 'planned_date'], 'dispatch_events' => ['request_key'],
+                'dispatches' => ['status', 'assigned_to', 'planned_date', 'pickup_confirmed_at'], 'dispatch_events' => ['request_key'],
+                'booking_invoice_lines' => ['booking_item_id', 'quantity'], 'sale_batch_allocations' => ['batch_id', 'quantity'],
+                'delivery_collections' => ['reported_paisa','verified_paisa'], 'treasury_entries' => ['account_id','source_key'],
+                'commission_entries' => ['employee_id','payable_paisa','recovery_paisa'],
                 'customer_delivery_schedules' => ['booking_days', 'delivery_days', 'salesman_id', 'delivery_enabled_at'],
                 'dispatch_event_items' => ['quantity'], 'collection_follow_ups' => ['next_follow_up'], 'booker_visits' => ['visit_date']];
             $missing = [];
@@ -36,7 +39,8 @@ class SystemHealthService
             return [! $missing, $missing ? 'Missing: '.implode(', ', $missing) : 'Booker, HR and operations columns are available.'];
         });
         $check('Operations permissions', function () {
-            $names = [...\Database\Seeders\DistributionPermissionSeeder::PERMISSIONS, 'bookers.assign'];
+            $names = [...\Database\Seeders\DistributionPermissionSeeder::PERMISSIONS,
+                ...\Database\Seeders\DistributionPermissionSeeder::FINANCE_PERMISSIONS, 'bookers.assign', 'commission.manage'];
             $missing = array_diff($names, Permission::where('guard_name', 'web')->pluck('name')->all());
             $root = Role::where('name', 'Super Admin')->where('guard_name', 'web')->first();
             $ungranted = array_diff($names, $root?->permissions->pluck('name')->all() ?? []);

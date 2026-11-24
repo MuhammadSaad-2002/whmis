@@ -18,7 +18,7 @@ likely to matter when changing each module.
   Snapshot cards keep their timestamp; **Refresh dashboard data** in the period
   menu updates them without navigating away. Charts draw immediately on first
   load, then animate data changes unless reduced motion is enabled.
-- Executive Overview's Export PDF opens the browser's print-to-PDF view with charts. The server-generated summary remains at `/dashboard/executive/pdf`.
+- Executive Overview's Export PDF opens a server-generated report for the applied date range. Charts appear before the detail tables.
 - The Executive Overview **Sections** menu can hide or show the Operational snapshot and Needs attention independently. Both start visible; the browser remembers choices for each account on that device.
 - Top Products shows full product names in ranked rows, with exact net revenue or percentage share beside each bar. Share uses all positive product net revenue for the selected period, not only the rows shown.
 - Workspace: `/workspace`. Ordinary links and the top bar navigate in the
@@ -53,6 +53,10 @@ likely to matter when changing each module.
 
 ## Transactions
 
+The [integrated distribution workflow](INTEGRATED_DISTRIBUTION.md) covers split
+booking invoices, batch pickup and custody, Salesman Workday, daily collection
+verification, Cash & Bank, refunds, and employee commissions.
+
 - Booker Workday (`/booker/workday`): assigned-customer visit planning, account
   balances, customer-preselected bookings and repeat quantities at current prices.
 - Dispatch (`/dispatch`): posted invoice picking/packing, staff assignment, dated
@@ -60,6 +64,11 @@ likely to matter when changing each module.
   list printing. Tracking does not move stock or create payments.
   Salesmen work their assigned deliveries, and Admins can set customer booking
   and delivery weekdays and print a daily stop sheet per assignee.
+  The Admin queue offers a live stage pipeline, board, sortable list, invoice
+  activity preview, and a picking PDF for pending or picking invoices. The
+  individual delivery detail also exports its recorded picking or delivery
+  quantities for Admins and the authorized Salesman. Stage changes still run
+  through the individual delivery workflow.
 - Collections (`/collections`): live positive invoice balances, return/payment
   breakdown, overdue/latest-follow-up filters, responsible staff and promises.
   Follow-ups do not settle invoices. See [DISTRIBUTION_OPERATIONS.md](DISTRIBUTION_OPERATIONS.md).
@@ -67,7 +76,8 @@ likely to matter when changing each module.
 - Purchases: list/create/edit/post/cancel/duplicate/print under `/purchases`.
 - Sales: list/create/edit/post/cancel/print/summary/net-position under `/sales`.
   The list includes status counts, date presets, sortable net-of-return figures,
-  an invoice preview, CSV export, and printing or posting selected rows. Posting
+  an invoice preview, CSV export, a PDF for the current filtered page or selected
+  rows, and posting selected drafts. Posting
   still requires `sales.post` and uses the same stock and credit checks as the
   invoice editor.
 - Bookings: draft, submit, approve, reject, cancel, and convert to linked draft sales invoice.
@@ -276,6 +286,10 @@ balances. PDFs render the same negative values in red with a printable guide.
 ## PDFs and documents
 
 - Purchase invoice, sales invoice, statements, sales net position, financial position, executive dashboard, samples, and generic reports use Blade PDF views under `resources/views/pdf/`.
+- Daily Payment Reconciliation and Daily Collection Summary offer a tabular PDF
+  for the applied Pakistan business date. Reconciliation respects the salesman
+  filter; the personal summary only includes the signed-in Salesman's reports.
+  These PDFs use saved counts and recorded payments, never unsaved screen inputs.
 - The sales invoice summary and net-position PDF show original stock out as
   billed plus bonus units. A sales return can restore either or both. Bonus
   returns reverse COGS but issue no customer credit. An invoice is fully

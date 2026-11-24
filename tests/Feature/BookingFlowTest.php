@@ -14,6 +14,7 @@ use App\Services\InvoicePostingService;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -239,6 +240,64 @@ class BookingFlowTest extends TestCase
         $this->get(route('sales.print', $invoice))
             ->assertOk()
             ->assertHeader('content-type', 'application/pdf');
+    }
+
+    public function test_conversion_uses_pakistan_business_date_even_before_utc_midnight(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-22 19:30:00', 'UTC'), function () {
+            $booking = $this->createBooking();
+            $this->post(route('bookings.submit', $booking))->assertSessionHas('success');
+            $this->actingAs($this->admin)->post(route('bookings.approve', $booking))->assertSessionHas('success');
+            $this->post(route('bookings.convert', $booking))->assertSessionHas('success');
+
+            $invoice = $booking->salesInvoices()->sole();
+            $this->assertSame('2026-11-23', $invoice->invoice_date->toDateString());
+            $this->assertTrue($invoice->isDraft());
+        });
+    }
+
+    public function test_calendar_dates_survive_edit_and_save_with_the_app_in_pakistan_time(): void
+    {
+        $previousTimezone = date_default_timezone_get();
+        date_default_timezone_set('Asia/Karachi');
+        try {
+            $this->travelTo(Carbon::parse('2026-11-23 20:00:00', 'Asia/Karachi'), function () {
+                $booking = $this->createBooking();
+                $this->get(route('bookings.edit', $booking))->assertInertia(
+                    fn (Assert $page) => $page->where('booking.booking_date', '2026-11-23'),
+                );
+                $this->post(route('bookings.submit', $booking))->assertSessionHas('success');
+                $this->actingAs($this->admin)->post(route('bookings.approve', $booking))->assertSessionHas('success');
+                $this->post(route('bookings.convert', $booking))->assertSessionHas('success');
+
+                $invoice = $booking->salesInvoices()->sole();
+                $invoice->update(['due_date' => '2026-11-25']);
+                $batch = \App\Models\Batch::create([
+                    'product_id' => $this->product->id, 'warehouse_id' => 1,
+                    'batch_number' => 'DATE-TEST', 'qty_available' => 30,
+                ]);
+                $editor = $this->get(route('sales.edit', $invoice))->assertInertia(fn (Assert $page) => $page
+                    ->where('invoice.invoice_date', '2026-11-23')
+                    ->where('invoice.due_date', '2026-11-25'));
+                $header = $editor->viewData('page')['props']['invoice'];
+
+                $this->put(route('sales.update', $invoice), [
+                    'customer_id' => $this->customer->id, 'warehouse_id' => 1,
+                    'invoice_date' => $header['invoice_date'], 'due_date' => $header['due_date'],
+                    'sale_type' => 'booking', 'notes' => 'Edit unrelated to dates.',
+                    'items' => [[
+                        'product_id' => $this->product->id, 'batch_id' => $batch->id, 'quantity' => 20,
+                        'bonus_quantity' => 2, 'trade_price' => 100, 'discount_percent' => 5,
+                    ]],
+                ])->assertSessionHas('success');
+                $invoice->refresh();
+                $this->assertSame('2026-11-23', $invoice->invoice_date->toDateString());
+                $this->assertSame('2026-11-25', $invoice->due_date->toDateString());
+                $this->assertSame('Edit unrelated to dates.', $invoice->notes);
+            });
+        } finally {
+            date_default_timezone_set($previousTimezone);
+        }
     }
 
     public function test_rejected_booking_cannot_convert(): void

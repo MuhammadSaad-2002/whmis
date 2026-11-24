@@ -254,14 +254,26 @@ class HrService
                 $this->require($data['date'] >= $payroll->posting_date->toDateString(), 'Payment date precedes payroll posting.');
                 $due = round((float) $item->transactions()->lockForUpdate()->get(['payable'])->sum('payable'), 2);
                 $this->require($amount <= $due + 0.001, 'Payment exceeds the remaining salary payable.');
-                return $this->entry($employee->id, $data['kind'], $data['date'], 0, -$amount, 0, $amount, $data['notes'], $item->id, $data);
+                return $this->cashEntry($employee->id, $data, -$amount, 0, $amount, $item->id);
             }
             $this->require(in_array($data['kind'], ['advance','advance_repayment']), 'Unsupported employee transaction.');
             $this->require(! $item, 'Only salary payments can reference a payslip.');
             if ($data['kind'] === 'advance_repayment') $this->require($amount <= $this->balance($employee->id, 'advance') + 0.001, 'Repayment exceeds the employee advance balance.');
             $sign = $data['kind'] === 'advance' ? 1 : -1;
-            return $this->entry($employee->id, $data['kind'], $data['date'], 0, 0, $sign * $amount, $sign * $amount, $data['notes'], null, $data);
+            return $this->cashEntry($employee->id, $data, 0, $sign * $amount, $sign * $amount);
         });
+    }
+
+    private function cashEntry(int $employee, array $data, float $payable, float $advance, float $cash, ?int $item = null): HrTransaction
+    {
+        $treasury = app(TreasuryService::class);
+        $entry = $this->entry($employee, $data['kind'], $data['date'], 0, $payable, $advance, $cash, $data['notes'], $item, $data);
+        if ($treasury->live() || ! empty($data['financial_account_id'])) {
+            $account = $treasury->account((int) ($data['financial_account_id'] ?? 0), Auth::user(), $data['method']);
+            $treasury->entry($account, $data['kind'], 'hr', $entry->id, -\App\Support\Paisa::from($cash),
+                $data['date'], Auth::user(), $data['reference'] ?? null);
+        }
+        return $entry;
     }
 
     public function reverseCash(HrTransaction $transaction, string $date, string $reason): void
@@ -273,6 +285,12 @@ class HrService
             $this->require(in_array($transaction->kind, ['salary_payment','advance','advance_repayment']), 'Reverse payroll from the payroll screen.');
             $this->require($this->balance($transaction->employee_id, 'advance') - (float) $transaction->advance >= -0.001, 'This advance has been recovered. Reverse its recoveries first.');
             $this->reverseEntry($transaction, $date, $reason);
+            $cash = DB::table('treasury_entries')->where('source_type', 'hr')->where('source_id', $transaction->id)->whereNull('reverses_id')->first();
+            if ($cash) {
+                $treasury = app(TreasuryService::class);
+                $account = $treasury->account((int) $cash->account_id, Auth::user());
+                $treasury->entry($account, 'reversal', 'hr', $transaction->id, -(int) $cash->paisa, $date, Auth::user(), null, (int) $cash->id);
+            }
         });
     }
 

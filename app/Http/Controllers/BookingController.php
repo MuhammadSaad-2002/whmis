@@ -121,6 +121,12 @@ class BookingController extends Controller
             'warehouse' => $booking->warehouse->only(['id', 'name']),
             'bookers' => $this->bookerOptions($request),
             'booking' => $booking,
+            'conversion' => $showSupplier && $request->user()->can('bookings.convert') && in_array($booking->status, ['approved', 'partially_invoiced', 'converted'], true)
+                ? ['lines' => array_values($this->bookings->quantities($booking)),
+                    'invoices' => $booking->salesInvoices()->oldest('id')->get(['id', 'invoice_number', 'status']),
+                    'legacy' => $booking->status === 'converted' && ! DB::table('booking_invoice_lines')
+                        ->whereIn('booking_item_id', $booking->items->pluck('id'))->exists() && ! $booking->remainder_closed_at]
+                : null,
         ]);
     }
 
@@ -218,7 +224,7 @@ class BookingController extends Controller
     {
         $this->authorizeView($request, $booking);
 
-        if (in_array($booking->status, [Booking::STATUS_CONVERTED, Booking::STATUS_CANCELLED])) {
+        if (in_array($booking->status, [Booking::STATUS_PARTIALLY_INVOICED, Booking::STATUS_CONVERTED, Booking::STATUS_CANCELLED])) {
             return back()->with('error', 'This booking can no longer be cancelled.');
         }
 
@@ -227,22 +233,37 @@ class BookingController extends Controller
         return back()->with('success', "Booking {$booking->booking_number} cancelled.");
     }
 
-    public function convert(Booking $booking)
+    public function convert(Request $request, Booking $booking)
     {
+        $this->authorizeView($request, $booking);
+        $data = $request->validate([
+            'lines' => ['sometimes', 'array', 'min:1'],
+            'lines.*.id' => ['required', 'integer', 'distinct'],
+            'lines.*.quantity' => ['required', 'numeric', 'decimal:0,2', 'min:0'],
+            'lines.*.bonus_quantity' => ['required', 'numeric', 'decimal:0,2', 'min:0'],
+        ]);
         try {
-            $invoice = $this->bookings->convertToSale($booking);
+            $invoice = $this->bookings->convertToSale($booking, $data['lines'] ?? null);
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }
 
-        \App\Support\AuditLogger::action($booking, 'converted', [
-            'booking_number' => $booking->booking_number,
-            'invoice_number' => $invoice->invoice_number,
-        ]);
-
         return redirect()
             ->route('sales.edit', $invoice)
             ->with('success', "Booking converted to draft invoice {$invoice->invoice_number}. Review and post it.");
+    }
+
+    public function closeRemainder(Request $request, Booking $booking)
+    {
+        $this->authorizeView($request, $booking);
+        $data = $request->validate(['reason' => 'required|string|max:1000']);
+        try {
+            $this->bookings->closeRemainder($booking, $data['reason']);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'The uninvoiced quantities were closed.');
     }
 
     private function authorizeView(Request $request, Booking $booking): void

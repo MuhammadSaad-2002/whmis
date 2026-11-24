@@ -29,7 +29,7 @@ function WorkspaceSession({ tabScope, searchableReports }: WorkspaceProps) {
     const home = useMemo(() => {
         const permissions = auth?.permissions ?? [];
         if (permissions.includes('dashboard.view')) return { url: '/dashboard', title: 'Dashboard' };
-        if (permissions.includes('dispatch.assigned')) return { url: '/dispatch', title: 'My Deliveries' };
+        if (permissions.includes('dispatch.assigned')) return { url: '/booker/workday', title: 'My Workday' };
         if (permissions.includes('employees.view')) return { url: '/hr/employees', title: 'Employees' };
         if (permissions.includes('hr.self.view')) return { url: '/hr/my-profile', title: 'My HR' };
         return auth.canManageOwnAccount

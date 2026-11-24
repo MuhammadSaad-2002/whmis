@@ -1,5 +1,6 @@
 import InputError from '@/components/input-error';
 import { BookingActivity, type BookingTimestamps } from '@/components/booking-timestamps';
+import { BookingConversion, type Conversion } from './conversion';
 import { ProductSearchCell, type ProductHit } from '@/components/product-search-cell';
 import { ProductSearchDialog } from '@/components/product-search-dialog';
 import { RulePickerDialog, type RuleHit } from '@/components/rule-picker-dialog';
@@ -18,7 +19,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { draftWasSaved, useDraftLeave } from '@/hooks/use-draft-leave';
 import AppLayout from '@/layouts/app-layout';
 import type { VisitOptions } from '@inertiajs/core';
-import { amount, dec2, money, qty, toNumber } from '@/lib/format';
+import { amount, dec2, money, pakistanDate, qty, toNumber } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { combineEffects } from '@/lib/incentive';
 import { computeLine, computeTotals, effectiveDiscountPercent } from '@/lib/invoice-math';
@@ -92,6 +93,7 @@ interface Props {
     // null for field bookers, who are always booked as themselves.
     bookers?: { id: number; name: string }[] | null;
     booking: BookingDto | null;
+    conversion?: Conversion | null;
 }
 
 const emptyRow = (): ItemRow => ({
@@ -133,7 +135,7 @@ const statusVariant = (status: string) =>
     status === 'approved' || status === 'converted' ? 'default'
         : status === 'rejected' || status === 'cancelled' ? 'destructive' : 'secondary';
 
-export default function BookingForm({ customers, warehouse, bookers, booking, bookingPrefill }: Props) {
+export default function BookingForm({ customers, warehouse, bookers, booking, bookingPrefill, conversion }: Props) {
     const { can, canViewSupplierDetails } = usePermissions();
     const showAdminDetails = can('bookings.approve');
     const showSupplier = showAdminDetails && canViewSupplierDetails;
@@ -144,7 +146,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
     const [header, setHeader] = useState({
         customer_id: booking ? String(booking.customer_id) : bookingPrefill ? String(bookingPrefill.customer_id) : '',
         booker_id: booking?.booker?.id ? String(booking.booker.id) : '',
-        booking_date: booking?.booking_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+        booking_date: booking?.booking_date?.slice(0, 10) ?? pakistanDate(),
         notes: booking?.notes ?? '',
     });
 
@@ -463,7 +465,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
     const cancelBooking = () => {
         if (booking && confirm('Cancel this booking?')) router.post(route('bookings.cancel', booking.id));
     };
-    const canCancel = booking && !['converted', 'cancelled'].includes(booking.status);
+    const canCancel = booking && !['converted', 'partially_invoiced', 'cancelled'].includes(booking.status);
     const mobileActionClass = 'h-11 flex-1 min-w-0 px-2';
     const hasMobileErrors = isMobile && (Object.keys(headerErrors).length > 0 || Object.keys(rowErrors).length > 0);
     const actions = (mobile: boolean) => (
@@ -482,9 +484,9 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                     </Button>
                 </>
             )}
-            {booking?.status === 'approved' && can('bookings.convert') && (
-                <Button size="sm" className={mobile ? mobileActionClass : undefined} onClick={() => router.post(route('bookings.convert', booking.id))}>
-                    <ArrowRight aria-hidden="true" /> Convert to Sale
+            {conversion && !conversion.legacy && conversion.lines.some(line => line.remaining || line.remaining_bonus) && (
+                <Button size="sm" className={mobile ? mobileActionClass : undefined} onClick={() => document.getElementById('booking-invoicing')?.scrollIntoView({ block: 'start' })}>
+                    <ArrowRight aria-hidden="true" /> Invoice quantities
                 </Button>
             )}
             {!mobile && canCancel && <Button variant="outline" size="sm" onClick={cancelBooking}><XCircle aria-hidden="true" className="text-destructive" /> Cancel</Button>}
@@ -566,6 +568,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                     {can('bookings.approve') ? 'No active customers are available. Add or activate a customer in Customers first.' : 'No active customers are assigned to your login. Ask your administrator to open Employees → your profile → Assign Customers. Then reopen New Booking.'}
                 </div>}
                 {booking && !isMobile && <BookingActivity booking={booking} />}
+                {booking && conversion && <BookingConversion key={JSON.stringify(conversion.lines)} id={booking.id} value={conversion} canLink={can('sales.view')} />}
                 {bookingPrefill?.source && <div className="rounded-lg border bg-muted/40 p-3 text-sm">
                     Repeating quantities from {bookingPrefill.source}. Current catalogue prices apply; review bonus quantities, discounts and incentive rules before saving.
                     {bookingPrefill.skipped.length > 0 && <p className="mt-1 text-destructive">Unavailable products omitted: {bookingPrefill.skipped.join(', ')}.</p>}

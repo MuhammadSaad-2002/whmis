@@ -42,6 +42,9 @@ interface PaymentLog {
 interface Totals {
     employee_payable: number;
     employee_advances: number;
+    commission_payable: number;
+    commission_recovery: number;
+    employee_shortage: number;
     payroll_expense: number;
     employee_cash_out: number;
     net_cash_flow: number;
@@ -119,6 +122,7 @@ function Overview({ totals, ar, ap, arRows, apRows }: { totals: Totals; ar: numb
     ];
     const staff: [string, number, string][] = [
         ['Salary Payable', totals.employee_payable, 'now'], ['Employee Advances', totals.employee_advances, 'now'],
+        ['Commission Payable', totals.commission_payable, 'now'], ['Commission Recovery', totals.commission_recovery, 'now'], ['Cash Shortage Receivable', totals.employee_shortage, 'now'],
         ['Payroll Expense', totals.payroll_expense, 'period'], ['Received − Paid', totals.received - totals.paid, 'period'],
         ['Employee Cash Out', totals.employee_cash_out, 'period'],
     ];
@@ -150,7 +154,8 @@ function Overview({ totals, ar, ap, arRows, apRows }: { totals: Totals; ar: numb
         <section className="grid" aria-label="Financial position analysis">
             <div className="card c5">
                 <div className="ch"><h3>Position Bridge</h3><span className="tag">how net position is built</span></div>
-                <PositionBridge receivable={receivable} payable={payable} advances={totals.employee_advances} salary={totals.employee_payable} net={totals.net} />
+                <PositionBridge receivable={receivable} payable={payable} advances={totals.employee_advances} salary={totals.employee_payable} net={totals.net}
+                    commission={totals.commission_payable} recovery={totals.commission_recovery + totals.employee_shortage} />
             </div>
             <div className="card c4">
                 <div className="ch"><h3>Aging: Receivables vs Payables</h3><div className="sp" />

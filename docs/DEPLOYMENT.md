@@ -75,6 +75,9 @@ database before importing. Use only the files for changes not yet applied:
 - Dispatch and collections: follow the file order in
   [DISTRIBUTION_OPERATIONS.md](DISTRIBUTION_OPERATIONS.md) if that upgrade has not
   already been applied.
+- Integrated dispatch, Treasury, commission, and daily reconciliation: follow
+  the [deployment and permission checklist](INTEGRATED_DISTRIBUTION.md#deployment-and-permission-checklist).
+  The new report PDF layouts require no additional SQL once that workflow is installed.
 
 Skip schema SQL already applied by a migration. These schema files register
 their matching migrations.

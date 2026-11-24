@@ -15,6 +15,7 @@ class Booking extends Model implements AuditableContract
     public const STATUS_DRAFT = 'draft';
     public const STATUS_PENDING = 'pending';
     public const STATUS_APPROVED = 'approved';
+    public const STATUS_PARTIALLY_INVOICED = 'partially_invoiced';
     public const STATUS_CONVERTED = 'converted';
     public const STATUS_REJECTED = 'rejected';
     public const STATUS_CANCELLED = 'cancelled';
@@ -24,7 +25,7 @@ class Booking extends Model implements AuditableContract
     protected function casts(): array
     {
         return [
-            'booking_date' => 'date',
+            'booking_date' => 'date:Y-m-d',
             'approved_at' => 'datetime',
             'last_edited_at' => 'datetime',
             'submitted_at' => 'datetime',
@@ -61,6 +62,11 @@ class Booking extends Model implements AuditableContract
     public function salesInvoice(): BelongsTo
     {
         return $this->belongsTo(SalesInvoice::class);
+    }
+
+    public function salesInvoices(): HasMany
+    {
+        return $this->hasMany(SalesInvoice::class);
     }
 
     public function approver(): BelongsTo

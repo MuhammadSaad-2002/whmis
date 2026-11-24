@@ -59,6 +59,13 @@ class HandleInertiaRequests extends Middleware
                 'error' => $request->session()->get('error'),
             ],
             'license' => app(LicenseService::class)->sharePayload($request->user()),
+            ...($user && $request->routeIs('payments.index','ledger.position','purchases.create','purchases.edit','hr.index') ? [
+                'treasuryPayment' => function () use ($user) {
+                    $treasury = app(\App\Services\TreasuryService::class);
+                    $required = $treasury->live();
+                    return ['required' => $required, 'accounts' => $required ? $treasury->options($user) : []];
+                },
+            ] : []),
         ]);
     }
 }

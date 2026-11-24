@@ -241,6 +241,18 @@ class LedgerService
         $totalPayable = round((float) $payables->sum('balance'), 2);
         $hr = app(HrReportService::class)->totals();
         $hrPeriod = app(HrReportService::class)->totals($from, $to);
+        $commissions = app(CommissionService::class)->totals();
+        $commissionPeriod = app(CommissionService::class)->totals($from, $to);
+        $treasury = app(TreasuryService::class);
+        $shortage = $treasury->shortageReceivable();
+        $flow = $received - $paid - $hrPeriod['cash_out'];
+        if ($treasury->live()) {
+            $cutover = Carbon::parse($treasury->control()->go_live_date);
+            $legacy = $payments->filter(fn (Payment $p) => $p->payment_date->lt($cutover));
+            $legacyHr = $from->lt($cutover) ? app(HrReportService::class)->totals($from, $to->min($cutover->copy()->subDay()))['cash_out'] : 0;
+            $flow = $legacy->where('direction', 'in')->sum('amount') - $legacy->where('direction', 'out')->sum('amount') - $legacyHr
+                + $treasury->cashTotals($from, $to)['net'] / 100;
+        }
 
         return [
             'receivables' => $receivables->all(),
@@ -249,12 +261,16 @@ class LedgerService
             'totals' => [
                 'total_receivable' => $totalReceivable,
                 'total_payable' => $totalPayable,
-                'net' => round($totalReceivable + $hr['advance'] - $totalPayable - $hr['payable'], 2),
+                'net' => round($totalReceivable + $hr['advance'] + $commissions['recovery'] + $shortage - $totalPayable - $hr['payable'] - $commissions['payable'], 2),
                 'employee_payable' => $hr['payable'],
                 'employee_advances' => $hr['advance'],
                 'payroll_expense' => $hrPeriod['expense'],
                 'employee_cash_out' => $hrPeriod['cash_out'],
-                'net_cash_flow' => round($received - $paid - $hrPeriod['cash_out'], 2),
+                'net_cash_flow' => round($flow, 2),
+                'commission_expense' => $commissionPeriod['expense'],
+                'commission_payable' => $commissions['payable'],
+                'commission_recovery' => $commissions['recovery'],
+                'employee_shortage' => $shortage,
                 // Counts cover outstanding parties only; settled shown separately.
                 'customer_count' => $receivables->where('balance', '!=', 0.0)->count(),
                 'supplier_count' => $payables->where('balance', '!=', 0.0)->count(),

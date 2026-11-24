@@ -1529,11 +1529,14 @@ class ReportService
             $netSales = round($grossSales - $retSales, 2);
             $netProfit = round((float) $group->sum('total_profit') - ($retSales - $retCost), 2);
             $payrollExpense = app(HrReportService::class)->totals($month->copy()->startOfMonth(), $month->copy()->endOfMonth())['expense'];
+            $commissionExpense = app(CommissionService::class)->totals($month->copy()->startOfMonth(), $month->copy()->endOfMonth())['expense'];
 
             return [
                 'month' => $month->format('M Y'),
                 'payroll_expense' => $payrollExpense,
                 'profit_after_payroll' => round($netProfit - $payrollExpense, 2),
+                'commission_expense' => $commissionExpense,
+                'profit_after_staff' => round($netProfit - $payrollExpense - $commissionExpense, 2),
                 'sales' => round($grossSales, 2),
                 'returns' => round($retSales, 2),
                 'net_sales' => $netSales,
@@ -1548,6 +1551,8 @@ class ReportService
                 ['key' => 'month', 'label' => 'Month'],
                 ['key' => 'payroll_expense', 'label' => 'Payroll Expense', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'profit_after_payroll', 'label' => 'Profit after Payroll', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'commission_expense', 'label' => 'Commission Expense', 'align' => 'right', 'format' => 'money'],
+                ['key' => 'profit_after_staff', 'label' => 'Profit after Payroll & Commission', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'sales', 'label' => 'Gross Sales', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'returns', 'label' => 'Returns', 'align' => 'right', 'format' => 'money'],
                 ['key' => 'net_sales', 'label' => 'Net Sales', 'align' => 'right', 'format' => 'money'],
@@ -1564,6 +1569,8 @@ class ReportService
                 'profit' => (float) $rows->sum('profit'),
                 'payroll_expense' => (float) $rows->sum('payroll_expense'),
                 'profit_after_payroll' => (float) $rows->sum('profit_after_payroll'),
+                'commission_expense' => (float) $rows->sum('commission_expense'),
+                'profit_after_staff' => (float) $rows->sum('profit_after_staff'),
             ],
             'chart' => $rows->map(fn ($row) => [
                 'label' => $row['month'],

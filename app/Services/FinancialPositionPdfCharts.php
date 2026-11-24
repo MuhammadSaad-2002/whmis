@@ -17,11 +17,16 @@ class FinancialPositionPdfCharts
         $net = $t['net'];
         $trade = $ar - $ap;
         $withAdvances = $trade + $t['employee_advances'];
+        $afterSalary = $withAdvances - $t['employee_payable'];
+        $commission = $t['commission_payable'] ?? 0;
+        $recovery = ($t['commission_recovery'] ?? 0) + ($t['employee_shortage'] ?? 0);
         $bridge = [
             ['Receivables', 0, $ar, '#0c9484'],
             ['Payables', $ar, $trade, '#c84a51'],
             ['Staff advances', $trade, $withAdvances, '#507992'],
-            ['Salary payable', $withAdvances, $net, '#507992'],
+            ['Salary payable', $withAdvances, $afterSalary, '#507992'],
+            ...($commission ? [['Commission payable', $afterSalary, $afterSalary - $commission, '#507992']] : []),
+            ...($recovery ? [['Employee recoveries', $afterSalary - $commission, $net, '#0c9484']] : []),
             ['Net position', 0, $net, $net < 0 ? '#c84a51' : '#0c9484'],
         ];
         $receivables = $this->buckets($data['receivables']);

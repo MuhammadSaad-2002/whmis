@@ -42,6 +42,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('manage-own-account', fn (User $user) => ! $user->isFieldBooker());
 
         Relation::enforceMorphMap([
+            'finance_work_item' => \App\Models\FinanceWorkItem::class,
             'hr_department' => \App\Models\HrDepartment::class,
             'hr_designation' => \App\Models\HrDesignation::class,
             'employee' => \App\Models\Employee::class,

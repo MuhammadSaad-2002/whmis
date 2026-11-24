@@ -18,7 +18,7 @@
             <tr>
                 @foreach($columns as $column)
                     @php $value = $row[$column['key']] ?? ''; @endphp
-                    <td class="{{ ($column['align'] ?? '') === 'right' ? 'num' : '' }} {{ !($column['wrap'] ?? false) && is_numeric($value) && (float) $value < 0 ? 'negative-value' : '' }}">
+                    <td class="{{ ($column['align'] ?? '') === 'right' ? 'num' : '' }} {{ !($column['wrap'] ?? false) && is_numeric($value) && (float) $value < 0 ? 'negative-value' : '' }}" @if($column['nowrap'] ?? false) style="white-space: nowrap;" @endif>
                         @if($column['wrap'] ?? false)
                             <span style="white-space: pre-wrap; overflow-wrap: break-word;">{{ $value }}</span>
                         @elseif(in_array($column['format'] ?? '', ['money']))

@@ -4,9 +4,11 @@ use App\Http\Controllers\AuditController;
 use App\Http\Controllers\BookerAssignmentController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\CompanyController;
+use App\Http\Controllers\CommissionController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\IncentiveRuleController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DistributionFinanceController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\LedgerController;
 use App\Http\Controllers\LicenseController;
@@ -37,7 +39,7 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     Route::get('hr/my-profile', [\App\Http\Controllers\HrController::class, 'selfProfile'])->middleware('can:hr.self.view')->name('hr.self');
     Route::get('hr/employees/{employee}', [\App\Http\Controllers\HrController::class, 'employee'])->middleware('can:employees.view')->name('hr.employee');
     Route::put('hr/employees/{employee}/customers', [\App\Http\Controllers\HrController::class, 'assignCustomers'])->middleware(['can:employees.view', 'can:bookers.assign'])->name('hr.employee.customers');
-    Route::get('booker/workday', [\App\Http\Controllers\BookerWorkdayController::class, 'index'])->middleware('can:bookings.create')->name('booker.workday');
+    Route::get('booker/workday', [\App\Http\Controllers\BookerWorkdayController::class, 'index'])->middleware(AuthorizeOperations::class.':bookings.create,dispatch.assigned')->name('booker.workday');
     Route::put('booker/customers/{customer}/visit', [\App\Http\Controllers\BookerWorkdayController::class, 'visit'])->middleware('can:bookings.create')->name('booker.visit');
     Route::middleware(AuthorizeOperations::class.':dispatch.plan')->group(function () {
         Route::get('dispatch/schedules', [\App\Http\Controllers\DeliveryPlanningController::class, 'index'])->name('dispatch.schedules');
@@ -46,9 +48,36 @@ Route::middleware(['auth', 'licensed'])->group(function () {
         Route::get('dispatch/daily-sheet', [\App\Http\Controllers\DeliveryPlanningController::class, 'sheet'])->name('dispatch.sheet');
     });
     Route::get('dispatch', [\App\Http\Controllers\OperationsController::class, 'dispatches'])->middleware(AuthorizeOperations::class.':dispatch.view,dispatch.assigned')->name('dispatch.index');
+    Route::get('dispatch/pick-list', [\App\Http\Controllers\OperationsController::class, 'dispatchPickList'])->middleware(AuthorizeOperations::class.':dispatch.view')->name('dispatch.pick-list');
+    Route::get('dispatch/{sale}/preview', [\App\Http\Controllers\OperationsController::class, 'dispatchPreview'])->middleware(AuthorizeOperations::class.':dispatch.view')->name('dispatch.preview');
+    Route::get('dispatch/{sale}/move-options', [\App\Http\Controllers\OperationsController::class, 'dispatchMoveOptions'])->middleware(AuthorizeOperations::class.':dispatch.manage')->name('dispatch.move-options');
+    Route::get('my-collections', [DistributionFinanceController::class, 'daily'])->middleware('can:dispatch.assigned')->name('distribution.my-collections');
+    Route::post('dispatch/{sale}/collection', [DistributionFinanceController::class, 'report'])->middleware('can:dispatch.assigned')->name('distribution.report');
+    Route::post('my-collections/{id}/submit', [DistributionFinanceController::class, 'submit'])->middleware('can:dispatch.assigned')->name('distribution.submit');
+    Route::get('dispatch/{sale}/picking-pdf', [\App\Http\Controllers\OperationsController::class, 'dispatchPickingPdf'])->middleware(AuthorizeOperations::class.':dispatch.view,dispatch.assigned')->name('dispatch.picking-pdf');
     Route::get('dispatch/{sale}', [\App\Http\Controllers\OperationsController::class, 'dispatch'])->middleware(AuthorizeOperations::class.':dispatch.view,dispatch.assigned')->name('dispatch.show');
     Route::post('dispatch/{sale}/events', [\App\Http\Controllers\OperationsController::class, 'dispatchAction'])->middleware(AuthorizeOperations::class.':dispatch.manage,dispatch.assigned')->name('dispatch.record');
     Route::get('collections', [\App\Http\Controllers\OperationsController::class, 'collections'])->middleware(AuthorizeOperations::class.':collections.view')->name('collections.index');
+    Route::controller(DistributionFinanceController::class)->group(function () {
+        Route::get('daily-reconciliation', 'daily')->middleware('can:distribution.reconcile')->name('distribution.reconcile');
+        Route::post('daily-reconciliation/{id}/count', 'countCash')->middleware('can:distribution.reconcile');
+        Route::post('daily-reconciliation/{id}/post-matching-cash', 'recordMatchingCash')->middleware(['can:distribution.reconcile', 'can:payments.manage'])->name('distribution.post-matching-cash');
+        Route::post('daily-reconciliation/collection/{id}', 'record')->middleware(['can:distribution.reconcile', 'can:payments.manage']);
+        Route::post('daily-reconciliation/{id}/close', 'close')->middleware('can:distribution.reconcile');
+        Route::get('treasury', 'treasury')->middleware('can:treasury.view')->name('treasury.index');
+        Route::get('treasury/accounts/{id}/csv', 'accountExport')->middleware('can:treasury.view');
+        Route::post('treasury/accounts', 'saveAccount')->middleware('can:treasury.manage');
+        Route::post('treasury/limits', 'limits')->middleware('can:treasury.manage');
+        Route::get('finance-approvals', 'approvals')->middleware('can:finance.review')->name('finance.approvals');
+        Route::post('finance-approvals', 'createApproval')->middleware('can:finance.request');
+        Route::post('finance-approvals/{id}/approve', 'approve')->middleware('can:finance.approve');
+        Route::post('finance-approvals/{id}/post', 'postApproval')->middleware('can:finance.post');
+        Route::post('finance-approvals/{id}/withdraw', 'withdraw')->middleware('can:finance.request');
+        Route::get('finance-approvals/{id}/evidence', 'evidence')->middleware('can:finance.review');
+        Route::get('finance-reversals/{kind}/{id}', 'reversalPreview')->whereIn('kind',['receipt','return'])->middleware('can:finance.review');
+    });
+    Route::get('commissions', [CommissionController::class, 'index'])->middleware(AuthorizeOperations::class.':commission.self,commission.manage')->name('commissions.index');
+    Route::post('commissions/rules', [CommissionController::class, 'store'])->middleware('can:commission.manage');
     Route::get('collections/{sale}', [\App\Http\Controllers\OperationsController::class, 'collection'])->middleware(AuthorizeOperations::class.':collections.view')->name('collections.show');
     Route::post('collections/{sale}/follow-ups', [\App\Http\Controllers\OperationsController::class, 'followUp'])->middleware(AuthorizeOperations::class.':collections.manage')->name('collections.follow-up');
     Route::get('system/health', fn (\App\Services\SystemHealthService $health) => \Inertia\Inertia::render('operations/health', ['checks' => $health->checks()]))->middleware(AuthorizeOperations::class.':system.health')->name('system.health');
@@ -152,6 +181,7 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     Route::middleware(['can:sales.view', 'can:view-supplier-details'])->group(function () {
         Route::get('sales', [SalesInvoiceController::class, 'index'])->name('sales.index');
         Route::get('sales/export', [SalesInvoiceController::class, 'exportList'])->name('sales.export');
+        Route::get('sales/list/pdf', [SalesInvoiceController::class, 'printList'])->name('sales.list.pdf');
         Route::post('sales/post-selected', [SalesInvoiceController::class, 'postSelected'])
             ->middleware('can:sales.post')->name('sales.post-selected');
         Route::get('sales/create', [SalesInvoiceController::class, 'create'])
@@ -192,6 +222,8 @@ Route::middleware(['auth', 'licensed'])->group(function () {
         Route::post('bookings/{booking}/cancel', [BookingController::class, 'cancel'])->name('bookings.cancel');
         Route::post('bookings/{booking}/convert', [BookingController::class, 'convert'])
             ->middleware(['can:bookings.convert', 'can:view-supplier-details'])->name('bookings.convert');
+        Route::post('bookings/{booking}/close-remainder', [BookingController::class, 'closeRemainder'])
+            ->middleware(['can:bookings.convert', 'can:view-supplier-details'])->name('bookings.close-remainder');
     });
 
     // Samples — free-of-charge stock in (receipts) and out (issues), segregated

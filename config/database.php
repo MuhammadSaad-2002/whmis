@@ -44,6 +44,9 @@ return [
 
         'mysql' => [
             'driver' => 'mysql',
+            // Posting services lock the source first, then re-read live allocations
+            // and cash balances. A snapshot taken before a lock wait must not win.
+            'isolation_level' => 'READ COMMITTED',
             'url' => env('DB_URL'),
             'host' => env('DB_HOST', '127.0.0.1'),
             'port' => env('DB_PORT', '3306'),
@@ -64,6 +67,7 @@ return [
 
         'mariadb' => [
             'driver' => 'mariadb',
+            'isolation_level' => 'READ COMMITTED',
             'url' => env('DB_URL'),
             'host' => env('DB_HOST', '127.0.0.1'),
             'port' => env('DB_PORT', '3306'),

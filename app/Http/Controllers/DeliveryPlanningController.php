@@ -7,6 +7,7 @@ use App\Services\{DeliveryPlanningService, OperationsAccess};
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class DeliveryPlanningController extends Controller
@@ -54,8 +55,25 @@ class DeliveryPlanningController extends Controller
         $staff = User::findOrFail($data['assignee_id']);
         $dispatches = Dispatch::where('assigned_to', $staff->id)->where('planned_date', $data['date'])
             ->whereHas('invoice', fn ($q) => $q->where('status', 'posted'))
-            ->with(['invoice:id,customer_id,invoice_number', 'invoice.customer:id,name,address,city,phone,contact_person'])
+            ->with([
+                'invoice:id,customer_id,invoice_number,total_amount',
+                'invoice.customer:id,name,address,city',
+                'events' => fn ($events) => $events->where('action', 'delivered')->whereNotNull('receiver_name')
+                    ->select('id', 'dispatch_id', 'receiver_name'),
+            ])
             ->orderBy('id')->get();
+        $verifiedPayments = $request->user()->can('payments.view') && $dispatches->isNotEmpty()
+            ? DB::table('delivery_collections as collection')
+                ->join('collection_days as day', 'day.id', '=', 'collection.collection_day_id')
+                ->join('payments as payment', 'payment.id', '=', 'collection.payment_id')
+                ->where('day.business_date', $data['date'])->where('day.salesman_id', $staff->id)
+                ->whereIn('collection.sales_invoice_id', $dispatches->pluck('sales_invoice_id'))
+                ->whereNotNull('collection.recorded_at')->where('collection.verified_paisa', '>', 0)
+                ->where('payment.status', 'completed')->where('payment.direction', 'in')
+                ->groupBy('collection.sales_invoice_id')
+                ->selectRaw('collection.sales_invoice_id, SUM(collection.verified_paisa) as total_paisa')
+                ->pluck('total_paisa', 'sales_invoice_id')
+            : collect();
         $stops = $dispatches->groupBy(fn ($dispatch) => $dispatch->invoice->customer_id)
             ->sortBy(fn ($group) => strtolower(
                 ($group->first()->invoice->customer?->city ?? '').'|'.($group->first()->invoice->customer?->name ?? '')
@@ -63,7 +81,7 @@ class DeliveryPlanningController extends Controller
 
         return Pdf::loadView('pdf.daily-delivery-sheet', [
             'staff' => $staff, 'date' => Carbon::parse($data['date'], 'Asia/Karachi'), 'stops' => $stops,
-            'invoiceCount' => $dispatches->count(),
+            'invoiceCount' => $dispatches->count(), 'verifiedPayments' => $verifiedPayments,
         ])->setPaper('a4')->stream('delivery-sheet-'.$data['date'].'.pdf');
     }
 }
