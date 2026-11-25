@@ -19,8 +19,9 @@
     table.items { width: 100%; border-collapse: collapse; margin-top: 8pt; }
     table.items thead { display: table-header-group; }
     table.items tr { page-break-inside: avoid; }
-    table.items th, table.items td { border: 1px solid #d3e0e8; padding: 4pt 5pt; vertical-align: top; overflow-wrap: break-word; }
-    table.items th { background: #edf3f6; font-size: 8.5pt; line-height: 1.2; text-transform: uppercase; text-align: left; }
+    table.items th, table.items td { border: 1px solid #d3e0e8; vertical-align: top; overflow-wrap: break-word; }
+    table.items th { background: #edf3f6; font-size: 8.5pt; text-transform: uppercase; text-align: left; }
+    @include('pdf.partials.item-table-density')
     table.items th.num, .num { text-align: right; font-variant-numeric: tabular-nums; }
     .subtotal { background: #edf3f6; font-weight: bold; }
     table.totals { width: 260pt; border-collapse: collapse; margin: 10pt 0 0 auto; page-break-inside: avoid; }

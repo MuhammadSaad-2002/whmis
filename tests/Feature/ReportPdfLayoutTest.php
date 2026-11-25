@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\ReportPdfRenderer;
 use App\Services\ReportVisualizationService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Tests\TestCase;
 
 class ReportPdfLayoutTest extends TestCase
@@ -60,6 +61,38 @@ class ReportPdfLayoutTest extends TestCase
             $this->assertCount(1, $positions);
             $this->assertGreaterThan($table[0], $positions[0]);
             $this->assertLessThan($title[0], $positions[0]);
+        }
+    }
+
+    public function test_item_rows_are_compact_in_document_and_readable_report_pdfs(): void
+    {
+        $styles = view('pdf.partials.document-style')->render();
+        $document = Pdf::loadHTML(<<<HTML
+            <html><head>{$styles}</head><body>
+                <table class="items"><tbody>
+                    <tr><td>First item</td></tr><tr><td>Second item</td></tr>
+                </tbody></table>
+            </body></html>
+            HTML)->setPaper('a4')->output(['compress' => false]);
+        $reportData = [
+            'title' => 'Table Density', 'filters' => [], 'readable' => true,
+            'columns' => [['key' => 'item', 'label' => 'Product']],
+            'rows' => [['item' => 'First item'], ['item' => 'Second item']], 'totals' => [],
+        ];
+        $renderer = app(ReportPdfRenderer::class);
+        $report = $renderer->render($reportData)->output(['compress' => false]);
+        $reportData['columns'] = [...$reportData['columns'], ...array_map(
+            fn ($i) => ['key' => 'c'.$i, 'label' => 'Column '.$i], range(1, 8),
+        )];
+        $wideReport = $renderer->render($reportData)->output(['compress' => false]);
+
+        foreach ([[$document, 22.5], [$report, 22.5], [$wideReport, 18.5]] as [$pdf, $maxSpacing]) {
+            $first = $this->baselines($pdf, 'First item');
+            $second = $this->baselines($pdf, 'Second item');
+            $this->assertCount(1, $first);
+            $this->assertCount(1, $second);
+            $this->assertGreaterThan(12, $first[0] - $second[0]);
+            $this->assertLessThanOrEqual($maxSpacing, $first[0] - $second[0]);
         }
     }
 

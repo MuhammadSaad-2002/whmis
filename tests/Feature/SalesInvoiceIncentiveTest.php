@@ -160,7 +160,6 @@ class SalesInvoiceIncentiveTest extends TestCase
         $this->assertStringNotContainsString('Getz Pharma', $html);
         $this->assertStringNotContainsString('Invoice discount', $html);
         $this->assertStringNotContainsString('Booked discount', $html);
-        $this->assertStringContainsString('class="items items--compact"', $html);
         $this->assertMatchesRegularExpression('/<td class="num item-rate">87\.50\s+<span class="meta">\(17\.5%\)<\/span>/', $html);
         $this->assertMatchesRegularExpression('/<td class="num item-rate">41\.25\s+<span class="meta">\(10%\)<\/span>/', $html);
         $this->assertStringContainsString('Invoice line note', $html);

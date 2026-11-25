@@ -15,8 +15,9 @@
     .header td { vertical-align: top; }
     .meta { font-size: 9px; color: #496175; line-height: 1.5; }
     table.items { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    table.items th { background: #edf3f6; border: 1px solid #d3e0e8; padding: 4px 5px; font-size: 8.5px; text-transform: uppercase; text-align: left; }
-    table.items td { border: 1px solid #d3e0e8; padding: 4px 5px; }
+    table.items th { background: #edf3f6; border: 1px solid #d3e0e8; font-size: 8.5px; text-transform: uppercase; text-align: left; }
+    table.items td { border: 1px solid #d3e0e8; }
+    @include('pdf.partials.item-table-density')
     .num { text-align: right; font-variant-numeric: tabular-nums; }
     .totals { width: 260px; margin-top: 10px; margin-left: auto; border-collapse: collapse; }
     .totals td { padding: 3px 6px; }

@@ -1,0 +1,18 @@
+.party-ledger {
+    min-height: 100%;
+    background: var(--background);
+
+    .hero .intro { min-width: 0; }
+    .hero :is(h1, .sub) { overflow-wrap: anywhere; }
+    .hero .hbtn { width: fit-content; }
+    .tblwrap .ledger-entries { min-width: 600px; }
+    .ledger-entries .ledger-description { width: 100%; min-width: 170px; }
+    .ledger-entries .ledger-opening td { background: var(--line2); font-weight: 700; }
+    .ledger-entries tfoot small { font-weight: 500; }
+    .filters .filter-error { flex-basis: 100%; }
+
+    @media (max-width: 760px) {
+        .filters .register-date input { width: 100%; }
+        .kpi:first-child { grid-column: 1 / -1; }
+    }
+}

@@ -10,8 +10,8 @@
         body { padding: 0; }
         @include('pdf.partials.report-chart-style')
         table.items thead { display: table-header-group; }
-        table.items.compact th { padding: 3px 3px; font-size: 7px; }
-        table.items.compact td { padding: 3px 3px; font-size: 7.5px; }
+        table.items.compact th { padding: 2px 3px; font-size: 7px; }
+        table.items.compact td { padding: 2px 3px; font-size: 7.5px; }
         @if(!empty($readable))
             body { font-size: 10pt; }
             .document-title { margin: 3pt 0; font-size: 14pt; }

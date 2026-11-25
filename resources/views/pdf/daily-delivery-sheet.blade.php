@@ -6,7 +6,8 @@
     @include('pdf.partials.document-style')
     <style>
         table.items { table-layout: fixed; }
-        table.items .write-in { height: 22pt; }
+        /* Keep a single handwriting line in the receiver and payment columns. */
+        table.items .write-in { height: 18pt; }
         table.items .stop-number { padding-right: 2pt; padding-left: 2pt; }
         .signatures { page-break-inside: avoid; margin-top: 12pt; width: 100%; }
         .signatures td { width: 50%; }

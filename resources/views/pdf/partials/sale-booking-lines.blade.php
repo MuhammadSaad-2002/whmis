@@ -1,4 +1,4 @@
-<table class="items{{ $isSale ? ' items--compact' : '' }}">
+<table class="items">
     <thead>
         <tr>
             <th>#</th><th>Product</th>@if($isSale)<th>Batch</th>@endif
