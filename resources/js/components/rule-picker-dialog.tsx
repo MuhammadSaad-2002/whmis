@@ -29,6 +29,7 @@ interface Props {
     price: number;
     date?: string | null;
     applied?: RuleHit[]; // rules already stacked on this line (single-rule callers omit)
+    bonusLocked?: boolean;
     onAdd: (rule: RuleHit) => void;
     onRemove: (rule: RuleHit) => void;
 }
@@ -42,36 +43,37 @@ function effectLabel(effect: RuleHit['effect']): string {
     return parts.join(' · ') || 'no effect at this qty';
 }
 
-export function RulePickerDialog({ open, onOpenChange, productId, customerId, qty, price, date, applied = [], onAdd, onRemove }: Props) {
-    const [rules, setRules] = useState<RuleHit[]>([]);
-    const [loading, setLoading] = useState(false);
+export function RulePickerDialog({ open, onOpenChange, productId, customerId, qty, price, date, applied = [], bonusLocked = false, onAdd, onRemove }: Props) {
+    const context = open && productId ? new URLSearchParams({
+        product_id: String(productId), qty: String(qty || 0), price: String(price || 0),
+        ...(customerId ? { customer_id: String(customerId) } : {}), ...(date ? { date } : {}),
+    }).toString() : null;
+    const [result, setResult] = useState<{ context: string; rules: RuleHit[]; failed?: boolean } | null>(null);
+    const loading = context !== null && result?.context !== context;
+    const rules = context && result?.context === context ? result.rules : [];
+    const failed = context !== null && result?.context === context && result.failed;
 
     useEffect(() => {
-        if (!open || !productId) return;
+        if (!context) {
+            setResult(null);
+            return;
+        }
         const controller = new AbortController();
         (async () => {
-            setLoading(true);
             try {
-                const params = new URLSearchParams({
-                    product_id: String(productId),
-                    qty: String(qty || 0),
-                    price: String(price || 0),
-                });
-                if (customerId) params.set('customer_id', String(customerId));
-                if (date) params.set('date', date);
-                const response = await fetch(`/lookup/rules?${params}`, {
+                const response = await fetch(`/lookup/rules?${context}`, {
                     signal: controller.signal,
                     headers: { Accept: 'application/json' },
                 });
-                if (response.ok) setRules(await response.json());
+                if (!response.ok) throw new Error('Incentive rules unavailable');
+                const rules: RuleHit[] = await response.json();
+                if (!controller.signal.aborted) setResult({ context, rules });
             } catch {
-                /* aborted */
-            } finally {
-                setLoading(false);
+                if (!controller.signal.aborted) setResult({ context, rules: [], failed: true });
             }
         })();
         return () => controller.abort();
-    }, [open, productId, customerId, qty, price, date]);
+    }, [context]);
 
     // Stack stays open while toggling so several incentives can be combined; a
     // line may hold at most one rule per type, so a type already taken by a
@@ -85,17 +87,19 @@ export function RulePickerDialog({ open, onOpenChange, productId, customerId, qt
             <CommandInput placeholder="Search incentive rules…" className="pr-8 text-base sm:text-sm" />
             {productId && (
                 <div className="shrink-0 border-b px-3 py-2 text-xs text-muted-foreground">
-                    {loading ? 'Loading rules…' : `${rules.length} matching rule${rules.length === 1 ? '' : 's'}`}
+                    {loading ? 'Loading rules…' : failed ? 'Rules unavailable' : `${rules.length} matching rule${rules.length === 1 ? '' : 's'}`}
                     {!loading && lockedCount > 0 && ` · ${lockedCount} locked until quantity qualifies`}
                 </div>
             )}
             <CommandList className="min-h-0 max-h-[55dvh] flex-1 overscroll-contain">
                 <CommandEmpty>
-                    {!productId ? 'Pick a product first.' : loading ? 'Loading…' : 'No rules apply to this line.'}
+                    {!productId ? 'Pick a product first.' : loading ? 'Loading…' : failed ? 'Could not load rules. Close and reopen to retry.' : 'No rules apply to this line.'}
                 </CommandEmpty>
                 {rules.map((rule) => {
                     const isApplied = appliedIds.has(rule.id);
-                    const locked = rule.eligible === false;
+                    const lockedBonus = bonusLocked && ['qty_bonus', 'slab_bonus'].includes(rule.rule_type);
+                    const locked = lockedBonus || (!isApplied && rule.eligible === false);
+                    const lockLabel = lockedBonus ? 'Bonus set by the booking' : (rule.eligibility_label ?? 'increase qty');
                     const blocked = !isApplied && takenTypes.has(rule.rule_type);
                     return (
                         <CommandItem
@@ -111,18 +115,18 @@ export function RulePickerDialog({ open, onOpenChange, productId, customerId, qt
                             <div className="min-w-0 max-w-full">
                                 <div className="flex flex-wrap items-center gap-2">
                                     <span className="break-words font-medium">{rule.name}</span>
-                                    {isApplied && <Badge variant="default">applied · ✕ remove</Badge>}
+                                    {isApplied && <Badge variant="default">{locked ? 'applied' : 'applied · ✕ remove'}</Badge>}
                                     {blocked && (
                                         <Badge variant="outline">{TYPE_LABELS[rule.rule_type] ?? rule.rule_type} taken</Badge>
                                     )}
-                                    {locked && <Badge variant="outline">{rule.eligibility_label ?? 'increase qty'}</Badge>}
+                                    {locked && <Badge variant="outline">{lockLabel}</Badge>}
                                 </div>
                                 <div className="break-words text-xs text-muted-foreground sm:truncate">
                                     {rule.summary} · {rule.scope}
                                 </div>
                             </div>
                             <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                                {locked ? (rule.eligibility_label ?? 'increase qty') : effectLabel(rule.effect)}
+                                {locked ? lockLabel : effectLabel(rule.effect)}
                             </span>
                         </CommandItem>
                     );

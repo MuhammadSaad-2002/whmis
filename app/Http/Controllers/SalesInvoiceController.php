@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\IncentiveRule;
 use App\Models\Product;
 use App\Models\SalesInvoice;
+use App\Models\SalesInvoiceItem;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\IncentiveEngine;
@@ -22,6 +23,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use RuntimeException;
 
@@ -241,12 +243,23 @@ class SalesInvoiceController extends Controller
             'booker:id,name',
         ]);
 
+        $trackedConversion = app(\App\Services\BookingService::class)->hasTrackedConversion($sale);
+        if ($trackedConversion) {
+            foreach ($sale->items as $line) {
+                $allocations = $line->allocatedIncentiveDiscounts();
+                foreach ($line->incentives as $award) {
+                    $award->setAttribute('allocated_discount', $allocations[$award->id] ?? null);
+                }
+            }
+        }
+
         return Inertia::render('sales/form', [
             'customers' => Customer::active()->orderBy('name')->get(['id', 'name', 'city', 'credit_limit', 'booker_id']),
             'warehouse' => $sale->warehouse->only(['id', 'name']),
             'bookers' => User::role('Booker')->orderBy('name')->get(['id', 'name']),
             'salesmen' => app(\App\Services\DeliveryPlanningService::class)->activeSalesmen()->orderBy('name')->get(['id', 'name']),
             'invoice' => $sale,
+            'trackedConversion' => $trackedConversion,
         ]);
     }
 
@@ -273,6 +286,7 @@ class SalesInvoiceController extends Controller
                 }
                 $this->releaseItems($sale); // return the old reservation before re-syncing
                 if ($booking->hasTrackedConversion($sale)) {
+                    // The booking allocation is read-only here. Edits belong to the sale and its own lines.
                     $booking->assertDraftComposition($sale, $data['items']);
                     if ((int) $data['customer_id'] !== $sale->customer_id || (int) $data['warehouse_id'] !== $sale->warehouse_id) {
                         throw new RuntimeException('Customer and warehouse are locked by the originating booking.');
@@ -388,7 +402,8 @@ class SalesInvoiceController extends Controller
     {
         $sale->load(['items.product.company', 'items.batch', 'items.incentives', 'customer', 'warehouse', 'booking.booker']);
 
-        return $pdf->renderView('pdf.sales-invoice', ['invoice' => $sale], 'portrait')->stream("{$sale->invoice_number}.pdf");
+        return $pdf->renderView('pdf.sales-invoice', ['invoice' => $sale], 'portrait')
+            ->stream("{$sale->invoice_number}.pdf")->header('Cache-Control', 'private, no-store');
     }
 
     /** Read-only summary of a posted invoice: original → returns → net position. */
@@ -501,6 +516,7 @@ class SalesInvoiceController extends Controller
                 (float) $item['trade_price'],
                 $item['incentive_rule_ids'] ?? [],
                 $date,
+                "items.{$i}.incentive_rule_ids",
             );
             $breakdown = $combined['breakdown'];
             $hasBonusRule = collect($breakdown)
@@ -538,22 +554,70 @@ class SalesInvoiceController extends Controller
 
     private function updateConversionItems(SalesInvoice $invoice, array $items): void
     {
-        $saved = $invoice->items()->get()->keyBy('product_id');
+        $saved = $invoice->items()->with('incentives')->get()->keyBy('product_id');
         if ($saved->count() !== count($items)) throw new RuntimeException('Convert each booked product once; use FIFO to issue it across batches.');
         $payload = [];
-        foreach ($items as $item) {
+        foreach (array_values($items) as $index => $item) {
             $old = $saved[$item['product_id']];
+            $incentive = $this->updateConversionIncentives($invoice, $old, $item, "items.{$index}.incentive_rule_ids");
             $payload[] = [
                 'product_id' => $item['product_id'], 'batch_id' => $this->resolveBatchId($invoice, $item),
                 'quantity' => $old->quantity, 'bonus_quantity' => $old->bonus_quantity,
-                'trade_price' => $item['trade_price'], 'discount_percent' => $item['discount_percent'] ?? 0,
-                'gst_percent' => $item['gst_percent'] ?? 0, 'incentive_discount' => $old->incentive_discount,
+                'trade_price' => $incentive['trade_price'], 'discount_percent' => $item['discount_percent'] ?? 0,
+                'gst_percent' => $item['gst_percent'] ?? 0, 'incentive_discount' => $incentive['incentive_discount'],
+                'applied_rule_id' => $incentive['applied_rule_id'],
                 'remarks' => $item['remarks'] ?? null,
             ];
         }
         $computed = MarginCalculator::computeSalesItems($payload, $invoice->only(['discount_percent', 'gst_percent']));
         foreach ($computed['items'] as $item) $saved[$item['product_id']]->update($item);
         $invoice->update($computed['totals']);
+    }
+
+    /** Preserve approved split awards; evaluate only newly selected invoice rules. */
+    private function updateConversionIncentives(SalesInvoice $invoice, SalesInvoiceItem $line, array $item, string $field): array
+    {
+        $selected = array_map('intval', $item['incentive_rule_ids'] ?? $line->incentives->pluck('incentive_rule_id')->filter()->all());
+        $kept = $line->incentives->filter(fn ($award) => ! $award->incentive_rule_id || in_array((int) $award->incentive_rule_id, $selected, true));
+        $removed = $line->incentives->diff($kept);
+        $newIds = array_values(array_diff($selected, $kept->pluck('incentive_rule_id')->all()));
+        $basePrice = (float) ($kept->firstWhere('rule_type', IncentiveRule::TYPE_PRICE_OVERRIDE)?->trade_price ?? $item['trade_price']);
+        $combined = $this->incentives->combine((int) $line->product_id, (int) $invoice->customer_id, (float) $line->quantity,
+            $basePrice, $newIds, Carbon::parse($invoice->invoice_date), $field);
+
+        $bonusTypes = [IncentiveRule::TYPE_QTY_BONUS, IncentiveRule::TYPE_SLAB_BONUS];
+        $newTypes = array_column($combined['breakdown'], 'rule_type');
+        if ($removed->whereIn('rule_type', $bonusTypes)->isNotEmpty() || array_intersect($newTypes, $bonusTypes)) {
+            throw ValidationException::withMessages([$field => 'Bonus rules are locked to the approved booking quantities. Apply bonus rules on the booking before converting it.']);
+        }
+        if (array_intersect($newTypes, $kept->pluck('rule_type')->all())) {
+            throw ValidationException::withMessages([$field => 'Select only one incentive per type on this line.']);
+        }
+
+        $allocated = $line->allocatedIncentiveDiscounts();
+        $retainedDiscount = $allocated === [] ? (float) $line->incentive_discount : 0.0;
+        foreach ($kept as $award) {
+            if (! isset($allocated[$award->id])) continue;
+            $discount = $allocated[$award->id];
+            $retainedDiscount += $discount;
+            if ($removed->isNotEmpty() || $newIds !== []) {
+                $award->update(['discount_amount' => $discount, 'value_given' => $discount]);
+            }
+        }
+
+        if ($removed->isNotEmpty()) $line->incentives()->whereKey($removed->modelKeys())->delete();
+        $next = $kept->isEmpty() ? 0 : $kept->max('sort_order') + 1;
+        $breakdown = array_map(function ($award) use (&$next) {
+            $award['sort_order'] = $next++;
+            return $award;
+        }, $combined['breakdown']);
+        $this->recordIncentives($invoice, $line, $breakdown);
+
+        return [
+            'trade_price' => $combined['trade_price'],
+            'incentive_discount' => round(min($retainedDiscount + $combined['incentive_discount'], (float) $line->quantity * $combined['trade_price']), 2),
+            'applied_rule_id' => $kept->pluck('incentive_rule_id')->filter()->first() ?? $breakdown[0]['rule_id'] ?? ($line->incentives->isEmpty() ? $line->applied_rule_id : null),
+        ];
     }
 
     /** Persist the per-line incentive record (the durable "what was given" ledger). */

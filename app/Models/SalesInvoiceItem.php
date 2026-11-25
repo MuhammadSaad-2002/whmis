@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Paisa;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -51,5 +52,25 @@ class SalesInvoiceItem extends Model
     public function incentives(): HasMany
     {
         return $this->hasMany(SalesInvoiceItemIncentive::class)->orderBy('sort_order');
+    }
+
+    /** Match the saved line total even when a split booking rounded individual awards differently. */
+    public function allocatedIncentiveDiscounts(): array
+    {
+        $discounts = $this->incentives->filter(fn ($award) => in_array($award->rule_type, ['percent_discount', 'fixed_discount'], true));
+        $total = Paisa::from($this->incentive_discount);
+        $weights = $discounts->map(fn ($award) => Paisa::from($award->discount_amount));
+        $sum = $weights->sum();
+        $running = $allocated = 0;
+        $amounts = [];
+
+        foreach ($discounts as $index => $award) {
+            $running += $weights[$index];
+            $next = $sum ? (int) round($total * ($running / $sum)) : $total;
+            $amounts[$award->id] = ($next - $allocated) / 100;
+            $allocated = $next;
+        }
+
+        return $amounts;
     }
 }

@@ -18,7 +18,7 @@ import AppLayout from '@/layouts/app-layout';
 import type { VisitOptions } from '@inertiajs/core';
 import { amount, dec2, money, pakistanDate, qty as fmtQty, shortDate, toNumber, totalAmount, totalMoney } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
-import { combineEffects } from '@/lib/incentive';
+import { combineEffects, savedBasePrice } from '@/lib/incentive';
 import { computeLine, computeTotals, effectiveDiscountPercent } from '@/lib/invoice-math';
 import { Head, Link, router } from '@inertiajs/react';
 import { Check, ChevronLeft, CreditCard, Package, Printer, Save, Trash2, TrendingUp, UserRound, X, XCircle } from 'lucide-react';
@@ -34,6 +34,7 @@ interface ItemRow {
     quantity: string;
     bonus_quantity: string;
     incentives: RuleHit[]; // stacked incentive rules (≤1 per rule_type)
+    unallocated_discount?: number;
     trade_price: string;
     discount_percent: string;
     gst_percent: string;
@@ -78,12 +79,16 @@ interface InvoiceDto {
         discount_percent: string;
         gst_percent: string;
         discount_amount: string;
+        incentive_discount: string;
         net_amount: string;
         remarks: string | null;
         incentives?: {
             incentive_rule_id: number | null;
             rule_type: string;
             rule_name: string;
+            value_given: string;
+            trade_price: string | null;
+            allocated_discount?: number | null;
             rule?: {
                 id: number;
                 name: string;
@@ -105,6 +110,7 @@ interface Props {
     bookers: { id: number; name: string }[];
     salesmen?: { id: number; name: string }[];
     invoice: InvoiceDto | null;
+    trackedConversion?: boolean;
 }
 
 const emptyRow = (): ItemRow => ({
@@ -124,7 +130,7 @@ const hydrateIncentives = (item: InvoiceDto['items'][number]): RuleHit[] =>
             base_qty: rule ? Number(rule.base_qty) : undefined,
             bonus_qty: rule ? Number(rule.bonus_qty) : undefined,
             slabs: rule?.slabs ?? undefined,
-            value: rule ? Number(rule.value) : undefined,
+            value: inc.rule_type === 'price_override' && inc.trade_price !== null ? Number(inc.trade_price) : rule ? Number(rule.value) : undefined,
             summary: '',
             scope: '',
             effect: {},
@@ -150,7 +156,7 @@ const clockPKT = new Intl.DateTimeFormat('en-PK', { timeZone: 'Asia/Karachi', ho
 const saleTypes = [['credit', 'Credit'], ['cash', 'Cash'], ['sale_base', 'Sale Base']];
 const gridColumns = ['product_id', 'batch_id', 'quantity', 'bonus_quantity', 'incentive_rule_ids', 'trade_price', 'discount_percent', 'gst_percent', 'remarks'];
 
-export default function SalesForm({ customers, warehouse, bookers, invoice, salesmen = [] }: Props) {
+export default function SalesForm({ customers, warehouse, bookers, invoice, salesmen = [], trackedConversion = false }: Props) {
     const { can } = usePermissions();
     const isDraft = !invoice || invoice.status === 'draft';
     const canSave = isDraft && can('sales.create');
@@ -182,7 +188,8 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
                   quantity: String(Number(item.quantity)),
                   bonus_quantity: String(Number(item.bonus_quantity)),
                   incentives: hydrateIncentives(item),
-                  trade_price: dec2(item.trade_price),
+                  trade_price: dec2(readonly ? item.trade_price : savedBasePrice(item)),
+                  unallocated_discount: trackedConversion && !item.incentives?.some((rule) => isDiscountType(rule.rule_type)) ? toNumber(item.incentive_discount) : 0,
                   discount_percent: dec2(item.discount_percent),
                   gst_percent: dec2(item.gst_percent),
                   remarks: item.remarks ?? '',
@@ -269,21 +276,28 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
     };
 
     const computed = useMemo(
-        () =>
-            rows.map((row) => {
-                const eff = combineEffects(row.incentives, toNumber(row.quantity), toNumber(row.trade_price));
+        () => {
+            const savedByProduct = new Map(trackedConversion ? invoice?.items.map(item => [item.product_id, item.incentives]) : []);
+            return rows.map((row) => {
+                const saved = row.product_id ? savedByProduct.get(row.product_id) : undefined;
+                const rules = saved?.length ? row.incentives.map(rule => ({
+                    ...rule,
+                    allocated_discount: saved.find(award => award.rule_type === rule.rule_type && (award.incentive_rule_id ?? 0) === rule.id)?.allocated_discount ?? undefined,
+                })) : row.incentives;
+                const eff = combineEffects(rules, toNumber(row.quantity), toNumber(row.trade_price));
                 return computeLine(
                     {
                         quantity: row.quantity,
                         rate: eff.trade_price,
                         discount_percent: row.discount_percent,
-                        incentive_discount: eff.incentive_discount,
+                        incentive_discount: eff.incentive_discount + (row.unallocated_discount ?? 0),
                         gst_percent: row.gst_percent,
                     },
                     false,
                 );
-            }),
-        [rows],
+            });
+        },
+        [invoice?.items, rows, trackedConversion],
     );
 
     const totals = useMemo(
@@ -362,6 +376,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
     // and recomputed authoritatively by the server on save — trade_price stays the
     // base price so a price_override can be removed without losing it.
     const addRule = (rowIndex: number, rule: RuleHit) => {
+        if (trackedConversion && isBonusType(rule.rule_type)) return;
         setRows((r) =>
             r.map((row, i) => {
                 if (i !== rowIndex) return row;
@@ -384,6 +399,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
     };
 
     const removeRule = (rowIndex: number, rule: RuleHit) => {
+        if (trackedConversion && (isBonusType(rule.rule_type) || !rule.id)) return;
         setRows((r) =>
             r.map((row, i) => {
                 if (i !== rowIndex) return row;
@@ -414,7 +430,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
                 batch_id: row.batch_id ? Number(row.batch_id) : null,
                 quantity: toNumber(row.quantity),
                 bonus_quantity: toNumber(row.bonus_quantity),
-                incentive_rule_ids: row.incentives.map((inc) => inc.id),
+                incentive_rule_ids: row.incentives.map((inc) => inc.id).filter(Boolean),
                 trade_price: toNumber(row.trade_price),
                 discount_percent: toNumber(row.discount_percent),
                 gst_percent: toNumber(row.gst_percent),
@@ -522,7 +538,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
         };
         const cellError = rowErrors[rowIndex]?.[key];
         // Row fields stay locked until a batch is selected.
-        const locked = !readonly && !rows[rowIndex].batch_id;
+        const locked = !readonly && (!rows[rowIndex].batch_id || (trackedConversion && (key === 'quantity' || key === 'bonus_quantity')));
         return (
             <Input
                 ref={grid.registerCell(rowIndex, colIndex) as never}
@@ -781,7 +797,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
                                                 {row.incentives.map((inc) => (
                                                     <Badge key={inc.id} variant="outline" className="max-w-full gap-1 pr-1">
                                                         <span className="truncate">{inc.name}</span>
-                                                        {!readonly && (
+                                                        {!readonly && !(trackedConversion && (isBonusType(inc.rule_type) || !inc.id)) && (
                                                             <button
                                                                 type="button"
                                                                 tabIndex={-1}
@@ -916,6 +932,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
                 price={toNumber(rows[activeRow]?.trade_price)}
                 date={header.invoice_date}
                 applied={rows[activeRow]?.incentives ?? []}
+                bonusLocked={trackedConversion}
                 onAdd={(rule) => addRule(activeRow, rule)}
                 onRemove={(rule) => removeRule(activeRow, rule)}
             />

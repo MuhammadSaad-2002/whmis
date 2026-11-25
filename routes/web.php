@@ -236,6 +236,7 @@ Route::middleware(['auth', 'licensed'])->group(function () {
         Route::post('bookings', [BookingController::class, 'store'])
             ->middleware('can:bookings.create')->name('bookings.store');
         Route::get('bookings/{booking}', [BookingController::class, 'edit'])->name('bookings.edit');
+        Route::get('bookings/{booking}/print', [BookingController::class, 'print'])->name('bookings.print');
         Route::put('bookings/{booking}', [BookingController::class, 'update'])
             ->middleware('can:bookings.create')->name('bookings.update');
         Route::post('bookings/{booking}/submit', [BookingController::class, 'submit'])

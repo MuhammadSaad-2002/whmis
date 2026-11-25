@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Batch;
+use App\Models\Booking;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\IncentiveRule;
@@ -15,6 +16,8 @@ use App\Services\ReportService;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class SalesInvoiceIncentiveTest extends TestCase
@@ -110,6 +113,68 @@ class SalesInvoiceIncentiveTest extends TestCase
         $row = SalesInvoiceItemIncentive::firstOrFail();
         $this->assertEqualsWithDelta(200.0, (float) $row->value_given, 0.001);
         $this->assertEqualsWithDelta(200.0, (float) $row->discount_amount, 0.001);
+    }
+
+    public function test_editing_a_converted_invoice_saves_its_incentives_without_changing_the_booking(): void
+    {
+        $fixed = $this->rule(['name' => 'Booked discount', 'rule_type' => 'fixed_discount', 'value' => 150]);
+        $percent = $this->rule(['name' => 'Invoice discount', 'rule_type' => 'percent_discount', 'value' => 10]);
+        $bonus = $this->rule(['name' => 'Extra bonus', 'rule_type' => 'qty_bonus', 'base_qty' => 5, 'bonus_qty' => 1]);
+        $header = ['customer_id' => $this->customer->id, 'warehouse_id' => $this->warehouse->id];
+        $this->post(route('bookings.store'), $header + [
+            'booking_date' => now()->toDateString(),
+            'notes' => 'Original booking note',
+            'items' => [['product_id' => $this->product->id, 'quantity' => 20, 'trade_price' => 100, 'incentive_rule_ids' => [$fixed->id]]],
+        ])->assertSessionHas('success');
+        $booking = Booking::firstOrFail();
+        $this->post(route('bookings.submit', $booking))->assertSessionHas('success');
+        $this->post(route('bookings.approve', $booking))->assertSessionHas('success');
+        $this->post(route('bookings.convert', $booking), ['lines' => [[
+            'id' => $booking->items()->firstOrFail()->id, 'quantity' => 5, 'bonus_quantity' => 0,
+        ]]])->assertSessionHas('success');
+        $sale = SalesInvoice::firstOrFail();
+        $bookingSnapshot = fn () => [
+            $booking->fresh(['items.incentives'])->toArray(),
+            DB::table('booking_invoice_lines')->where('sales_invoice_id', $sale->id)->orderBy('booking_item_id')->get()->all(),
+        ];
+        $originalBooking = $bookingSnapshot();
+        $this->travel(5)->minutes(); // Detect even an unintended update to the booking timestamp.
+        $line = [
+            'product_id' => $this->product->id, 'batch_id' => $this->batch->id, 'quantity' => 5,
+            'bonus_quantity' => 0, 'trade_price' => 100, 'gst_percent' => 10, 'remarks' => 'Invoice line note',
+        ];
+        $url = route('sales.update', $sale);
+        $header += ['invoice_date' => $sale->invoice_date->toDateString(), 'sale_type' => 'booking', 'notes' => 'Invoice-only note'];
+        $this->put($url, $header + ['items' => [$line + ['incentive_rule_ids' => [$fixed->id, $percent->id]]]])->assertSessionHas('success');
+        $this->assertSame('Invoice-only note', $sale->fresh()->notes);
+        $this->assertEquals($originalBooking, $bookingSnapshot());
+        $this->get(route('sales.edit', $sale))->assertInertia(fn (Assert $page) => $page
+            ->where('trackedConversion', true)
+            ->where('invoice.items.0.incentive_discount', '87.50')
+            ->where('invoice.items.0.incentives.0.allocated_discount', 37.5)
+            ->where('invoice.items.0.incentives.1.rule_name', 'Invoice discount'));
+        $this->assertSame('453.75', $sale->items()->firstOrFail()->net_amount);
+        $this->get(route('sales.print', $sale))->assertOk()->assertHeader('content-type', 'application/pdf');
+        $html = view('pdf.sales-invoice', ['invoice' => $sale->fresh()->load('items.incentives')])->render();
+        $this->assertStringContainsString('Invoice discount', $html);
+        $this->assertStringContainsString('87.50', $html);
+        $this->assertStringContainsString('41.25', $html);
+        $this->assertStringContainsString('Invoice line note', $html);
+
+        $this->put($url, $header + ['items' => [$line + ['incentive_rule_ids' => [$fixed->id, $percent->id, $bonus->id]]]])
+            ->assertSessionHasErrors('items.0.incentive_rule_ids');
+        $this->assertCount(2, $sale->items()->firstOrFail()->incentives);
+        $this->put($url, $header + ['items' => [array_replace($line, ['quantity' => 6, 'incentive_rule_ids' => [$fixed->id, $percent->id]])]])
+            ->assertSessionHas('error');
+        $this->assertSame('5.00', $sale->items()->firstOrFail()->quantity);
+        $this->assertEquals($originalBooking, $bookingSnapshot());
+
+        $this->put($url, $header + ['items' => [$line + ['incentive_rule_ids' => [$fixed->id]]]])->assertSessionHas('success');
+        $this->assertSame('37.50', $sale->items()->firstOrFail()->incentive_discount);
+        $this->assertEquals($originalBooking, $bookingSnapshot());
+        $this->post(route('sales.post', $sale))->assertSessionHas('success');
+        $this->assertSame('37.50', $sale->items()->firstOrFail()->discount_amount);
+        $this->assertEquals($originalBooking, $bookingSnapshot());
     }
 
     public function test_incentives_given_report_aggregates_per_customer(): void

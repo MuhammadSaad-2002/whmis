@@ -24,11 +24,11 @@ import AppLayout from '@/layouts/app-layout';
 import type { VisitOptions } from '@inertiajs/core';
 import { amount, dec2, money, pakistanDate, qty, toNumber, totalMoney } from '@/lib/format';
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
-import { combineEffects } from '@/lib/incentive';
+import { combineEffects, savedBasePrice } from '@/lib/incentive';
 import { computeLine, computeTotals, effectiveDiscountPercent } from '@/lib/invoice-math';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowRight, Check, ChevronDown, ChevronLeft, ChevronsUpDown, CreditCard, MoreHorizontal, Package, Plus, Save, Search, Send, Trash2, UserRound, UsersRound, X, XCircle } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, ChevronLeft, ChevronsUpDown, CreditCard, MoreHorizontal, Package, Plus, Printer, Save, Search, Send, Trash2, UserRound, UsersRound, X, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -81,6 +81,8 @@ interface BookingDto extends BookingTimestamps {
             incentive_rule_id: number | null;
             rule_type: string;
             rule_name: string;
+            value_given: string;
+            trade_price: string | null;
             rule?: {
                 id: number;
                 name: string;
@@ -123,7 +125,7 @@ const hydrateIncentives = (item: BookingDto['items'][number]): RuleHit[] =>
             base_qty: rule ? Number(rule.base_qty) : undefined,
             bonus_qty: rule ? Number(rule.bonus_qty) : undefined,
             slabs: rule?.slabs ?? undefined,
-            value: rule ? Number(rule.value) : undefined,
+            value: inc.rule_type === 'price_override' && inc.trade_price !== null ? Number(inc.trade_price) : rule ? Number(rule.value) : undefined,
             summary: '',
             scope: '',
             effect: {},
@@ -171,7 +173,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                   quantity: String(Number(item.quantity)),
                   requested_bonus: String(Number(item.requested_bonus)),
                   incentives: hydrateIncentives(item),
-                  trade_price: dec2(item.trade_price),
+                  trade_price: dec2(readonly ? item.trade_price : savedBasePrice(item)),
                   discount_percent: dec2(item.discount_percent),
                   gst_percent: dec2(item.gst_percent),
                   remarks: item.remarks ?? '',
@@ -257,7 +259,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
         }
         setHeaderErrors(h);
         setRowErrors(remapped);
-        if (!isMobile) toast.error(ALERT_FIX);
+        if (!isMobile) toast.error(Object.entries(remapped).find(([, fields]) => fields.incentive_rule_ids)?.[1].incentive_rule_ids ?? ALERT_FIX);
     };
 
     const computed = useMemo(
@@ -401,7 +403,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                 product_id: row.product_id,
                 quantity: toNumber(row.quantity),
                 requested_bonus: toNumber(row.requested_bonus),
-                incentive_rule_ids: row.incentives.map((inc) => inc.id),
+                incentive_rule_ids: row.incentives.map((inc) => inc.id).filter(Boolean),
                 trade_price: toNumber(row.trade_price),
                 discount_percent: toNumber(row.discount_percent),
                 gst_percent: toNumber(row.gst_percent),
@@ -498,6 +500,9 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
     const hasMobileErrors = isMobile && (Object.keys(headerErrors).length > 0 || Object.keys(rowErrors).length > 0);
     const actions = (mobile: boolean) => (
         <>
+            {booking && <Button variant="outline" size="sm" className={actionStyle(mobile)} asChild>
+                <a href={route('bookings.print', booking.id)} target="_blank" rel="noreferrer"><Printer aria-hidden="true" /> Print</a>
+            </Button>}
             {booking?.status === 'converted' && booking.sales_invoice_id && can('sales.view') && (
                 <Button variant="outline" size="sm" className={actionStyle(mobile)} asChild>
                     <Link href={route('sales.edit', booking.sales_invoice_id)}><ArrowRight aria-hidden="true" /> View Invoice</Link>
@@ -1140,7 +1145,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                             {rounding !== 0 && <div><dt className="text-muted-foreground">Rounding</dt><dd>{amount(rounding)}</dd></div>}
                         </dl>
                     </details>
-                    {hasMobileErrors && <p role="alert" className="mb-1.5 text-xs font-medium text-destructive">{ALERT_FIX}</p>}
+                    {hasMobileErrors && <p role="alert" className="mb-1.5 text-xs font-medium text-destructive">{Object.entries(rowErrors).find(([, fields]) => fields.incentive_rule_ids)?.[1].incentive_rule_ids ?? ALERT_FIX}</p>}
                     <div className="flex flex-wrap gap-2 empty:hidden">{actions(true)}</div>
                 </footer> : <div className="sticky bottom-0 z-10 mt-auto bg-background pt-2">
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border bg-muted px-3 py-2 text-sm font-bold tabular-nums sm:gap-x-8 sm:px-5 sm:py-3 sm:text-base">

@@ -26,6 +26,7 @@ export interface IncentiveHit {
     min_qty?: number | null;
     eligible?: boolean;
     eligibility_label?: string | null;
+    allocated_discount?: number;
     effect: {
         bonus_qty?: number;
         discount_percent?: number;
@@ -58,6 +59,8 @@ export function combineEffects(rules: IncentiveHit[], qty: number, basePrice: nu
     for (const rule of rules) {
         if (rule.rule_type === 'qty_bonus' || rule.rule_type === 'slab_bonus') {
             bonus += ruleBonus(rule, qty);
+        } else if (rule.allocated_discount !== undefined) {
+            discount += rule.allocated_discount;
         } else if (rule.rule_type === 'percent_discount') {
             discount += r2((gross * toNumber(rule.value)) / 100);
         } else if (rule.rule_type === 'fixed_discount') {
@@ -66,6 +69,13 @@ export function combineEffects(rules: IncentiveHit[], qty: number, basePrice: nu
     }
 
     return { bonus_qty: r2(bonus), incentive_discount: Math.min(r2(discount), gross), trade_price: rate };
+}
+
+/** Saved overrides store the effective rate and the concession granted off the base. */
+export function savedBasePrice(item: { trade_price: string; quantity: string; incentives?: { rule_type: string; value_given: string }[] }): number {
+    const override = item.incentives?.find((rule) => rule.rule_type === 'price_override');
+    const quantity = toNumber(item.quantity);
+    return r2(toNumber(item.trade_price) + (override && quantity > 0 ? toNumber(override.value_given) / quantity : 0));
 }
 
 /** Rs value of an incentive as granted — for the live "incentives given" display. */

@@ -6,6 +6,7 @@ use App\Models\IncentiveRule;
 use App\Models\Product;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Matches incentive rules to a (product, customer, qty, date) context and
@@ -82,24 +83,29 @@ class IncentiveEngine
     /**
      * Verify + combine a set of manually picked rules for one line, most
      * specific first. Rules not applicable to the (product, customer, qty, date)
-     * context are silently dropped; at most one rule per rule_type is kept
-     * (bonuses across types sum, discounts combine). Returns the aggregated line
-     * effect plus a per-rule breakdown for the incentive record.
+     * context are excluded, and only one rule per type is kept. On draft saves,
+     * an error field makes exclusions a validation failure instead of silently
+     * saving a different offer. Returns the line effect and per-rule records.
      *
      * @param  int[]  $ruleIds
      * @return array{trade_price: float, bonus_qty: float, incentive_discount: float, breakdown: array<int, array{
      *     rule_id: int, rule_type: string, rule_name: string, bonus_qty: float,
      *     discount_amount: float, trade_price: float|null, value_given: float}>}
      */
-    public function combine(int $productId, ?int $customerId, float $qty, float $basePrice, array $ruleIds, ?Carbon $date = null): array
+    public function combine(int $productId, ?int $customerId, float $qty, float $basePrice, array $ruleIds, ?Carbon $date = null, ?string $errorField = null): array
     {
         $wanted = array_map('intval', $ruleIds);
 
         // Keep only picked rules that still apply, in precedence order, one per type.
-        $rules = $this->applicable($productId, $customerId, $qty, $date)
+        $rules = ($wanted === [] ? collect() : $this->applicable($productId, $customerId, $qty, $date))
             ->filter(fn (IncentiveRule $rule) => in_array($rule->id, $wanted, true))
             ->unique('rule_type')
             ->values();
+
+        if ($errorField !== null && ($missing = array_diff($wanted, $rules->pluck('id')->all()))) {
+            $names = IncentiveRule::whereKey(array_values($missing))->pluck('name')->implode(', ');
+            throw ValidationException::withMessages([$errorField => 'These incentives cannot be applied: '.$names.'. Check the customer, product, date and minimum quantity, and select only one rule per type.']);
+        }
 
         // A price override sets the line rate before any discount is figured.
         $override = $rules->firstWhere('rule_type', IncentiveRule::TYPE_PRICE_OVERRIDE);

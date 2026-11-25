@@ -12,6 +12,7 @@ use App\Services\BookingService;
 use App\Services\IncentiveEngine;
 use App\Services\MarginCalculator;
 use App\Services\NumberSeriesService;
+use App\Services\ReportPdfRenderer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -179,6 +180,15 @@ class BookingController extends Controller
         });
 
         return back()->with('success', 'Booking updated.');
+    }
+
+    public function print(Request $request, Booking $booking, ReportPdfRenderer $pdf)
+    {
+        $this->authorizeView($request, $booking);
+        $booking->load(['items.product', 'items.incentives', 'customer', 'warehouse', 'booker']);
+
+        return $pdf->renderView('pdf.booking', ['booking' => $booking], 'portrait')
+            ->stream("{$booking->booking_number}.pdf")->header('Cache-Control', 'private, no-store');
     }
 
     public function submit(Request $request, Booking $booking)
@@ -395,6 +405,7 @@ class BookingController extends Controller
                 (float) $item['trade_price'],
                 $item['incentive_rule_ids'] ?? [],
                 $date,
+                "items.{$i}.incentive_rule_ids",
             );
             $breakdown = $combined['breakdown'];
             $hasBonusRule = collect($breakdown)

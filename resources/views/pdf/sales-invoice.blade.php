@@ -48,58 +48,8 @@
         </tr>
     </table>
 
-    <table class="items">
-        <thead>
-            <tr>
-                <th>#</th><th>Product</th><th>Batch</th>
-                <th class="num">Qty</th><th class="num">Bonus</th><th class="num">Price</th>
-                <th class="num">Disc</th><th class="num">GST</th><th class="num">Net</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach($invoice->items as $i => $item)
-                <tr>
-                    <td>{{ $i + 1 }}</td>
-                    <td>
-                        <strong>{{ $item->product->name }}</strong>
-                        @if($item->product->company)<br><span class="meta">{{ $item->product->company->name }}</span>@endif
-                        @if($item->relationLoaded('incentives') && $item->incentives->isNotEmpty())
-                            <br><span class="meta">Incentives:
-                            {{ $item->incentives->map(fn ($inc) => $inc->rule_name . ((float) $inc->value_given > 0 ? ' (Rs ' . number_format((float) $inc->value_given, 2) . ')' : ''))->implode(', ') }}
-                            </span>
-                        @endif
-                    </td>
-                    <td>{{ $item->batch?->batch_number ?? 'FIFO' }}</td>
-                    <td class="num">{{ number_format((float) $item->quantity, 0) }}</td>
-                    <td class="num">{{ number_format((float) $item->bonus_quantity, 0) }}</td>
-                    <td class="num">{{ number_format((float) $item->trade_price, 2) }}</td>
-                    @php
-                        $lineGross = (float) $item->quantity * (float) $item->trade_price;
-                        $discPct = $lineGross > 0 ? round((float) $item->discount_amount / $lineGross * 100, 2) : 0;
-                    @endphp
-                    <td class="num">{{ number_format((float) $item->discount_amount, 2) }}@if((float) $item->discount_amount > 0) ({{ rtrim(rtrim(number_format($discPct, 2, '.', ''), '0'), '.') }}%)@endif</td>
-                    <td class="num">{{ number_format((float) $item->gst_amount, 2) }}</td>
-                    <td class="num">{{ number_format((float) $item->net_amount, 2) }}</td>
-                </tr>
-            @endforeach
-        </tbody>
-    </table>
-
-    <table class="totals">
-        <tr><td>Subtotal</td><td class="num">{{ number_format((float) $invoice->subtotal, 2) }}</td></tr>
-        <tr><td>Item Discounts</td><td class="num">-{{ number_format((float) $invoice->item_discount_total, 2) }}</td></tr>
-        <tr><td>Item GST</td><td class="num">+{{ number_format((float) $invoice->item_gst_total, 2) }}</td></tr>
-        @if((float) $invoice->discount_amount > 0)
-            <tr><td>Invoice Discount</td><td class="num">-{{ number_format((float) $invoice->discount_amount, 2) }}</td></tr>
-        @endif
-        @if((float) $invoice->gst_amount > 0)
-            <tr><td>Invoice GST</td><td class="num">+{{ number_format((float) $invoice->gst_amount, 2) }}</td></tr>
-        @endif
-        @if((float) ($invoice->rounding_amount ?? 0) !== 0.0)
-            <tr><td>Rounding</td><td class="num">{{ number_format((float) $invoice->rounding_amount, 2) }}</td></tr>
-        @endif
-        <tr class="grand"><td>Total (Rs)</td><td class="num">{{ \App\Support\MoneyDisplay::total($invoice->total_amount) }}</td></tr>
-    </table>
+    @include('pdf.partials.sale-booking-lines', ['document' => $invoice, 'isSale' => true])
+    @include('pdf.partials.sale-booking-totals', ['document' => $invoice, 'isSale' => true])
 
     @if($invoice->sale_terms)
         <div class="document-callout">

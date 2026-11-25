@@ -450,6 +450,35 @@ class BookingFlowTest extends TestCase
         $this->assertEqualsWithDelta(1800.0, (float) $invoice->total_amount, 0.01);
     }
 
+    public function test_booking_rule_survives_draft_update_and_displays_on_print(): void
+    {
+        $booking = $this->createBooking();
+        $rule = IncentiveRule::create([
+            'name' => 'Booking discount offer', 'product_id' => $this->product->id, 'rule_type' => 'percent_discount',
+            'value' => 10, 'active' => true, 'min_qty' => 2,
+        ]);
+        $line = ['product_id' => $this->product->id, 'trade_price' => 100, 'gst_percent' => 5, 'incentive_rule_ids' => [$rule->id]];
+        $data = ['customer_id' => $this->customer->id, 'warehouse_id' => 1, 'booking_date' => now()->toDateString()];
+        $url = route('bookings.update', $booking);
+        $this->put($url, $data + ['items' => [$line + ['quantity' => 3]]])->assertSessionHas('success');
+        $this->get(route('bookings.edit', $booking))->assertInertia(fn (Assert $page) => $page
+            ->where('booking.items.0.incentives.0.rule_name', 'Booking discount offer')
+            ->where('booking.items.0.discount_amount', '30.00')->where('booking.items.0.gst_amount', '13.50'));
+
+        // A rule that no longer qualifies must not silently disappear, or update the draft at all.
+        $this->put($url, $data + ['items' => [$line + ['quantity' => 1]]])->assertSessionHasErrors('items.0.incentive_rule_ids');
+        $this->assertSame('3.00', $booking->items()->firstOrFail()->quantity);
+
+        $this->get(route('bookings.print', $booking))->assertOk()->assertHeader('content-type', 'application/pdf');
+        $html = view('pdf.booking', ['booking' => $booking->fresh()->load('items.incentives')])->render();
+        $this->assertStringContainsString('Booking discount offer', $html);
+        $this->assertStringContainsString('-30.00', $html);
+        $this->assertStringContainsString('+13.50', $html);
+        $this->assertStringNotContainsString('Getz Pharma', $html);
+        $other = User::factory()->create()->assignRole('Booker');
+        $this->actingAs($other)->get(route('bookings.print', $booking))->assertForbidden();
+    }
+
     public function test_duplicate_product_on_one_booking_is_rejected(): void
     {
         $this->actingAs($this->booker);
