@@ -69,6 +69,7 @@ interface Invoice {
     id: number;
     invoice_number: string;
     invoice_date: string;
+    mp_inv_ref: string | null;
     status: string;
     sale_type: string;
     customer?: { name: string; city: string | null };
@@ -185,6 +186,7 @@ export default function SalesSummary({ invoice, position, paymentHistory = [], r
                         <div><dt>Customer</dt><dd>{invoice.customer?.name ?? '—'}</dd></div>
                         <div><dt>City</dt><dd>{invoice.customer?.city ?? '—'}</dd></div>
                         <div><dt>Invoice Date</dt><dd>{shortDate(invoice.invoice_date)}</dd></div>
+                        <div><dt>MP Inv Ref</dt><dd>{invoice.mp_inv_ref ?? '—'}</dd></div>
                         <div><dt>Sale Type</dt><dd><SaleType type={invoice.sale_type} /></dd></div>
                     </dl>
                     <TableBlock title="Original invoice items" className="summary-line-table" columns={[

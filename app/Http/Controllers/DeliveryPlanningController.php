@@ -97,8 +97,8 @@ class DeliveryPlanningController extends Controller
         $dispatches = Dispatch::where('assigned_to', $staff->id)->where('planned_date', $data['date'])
             ->whereHas('invoice', fn ($q) => $q->where('status', 'posted'))
             ->with([
-                'invoice:id,customer_id,invoice_number,total_amount',
-                'invoice.customer:id,name,address,city',
+                'invoice:id,customer_id,invoice_number,total_amount,mp_inv_ref',
+                'invoice.customer:id,name,city',
                 'events' => fn ($events) => $events->where('action', 'delivered')->whereNotNull('receiver_name')
                     ->select('id', 'dispatch_id', 'receiver_name'),
             ])

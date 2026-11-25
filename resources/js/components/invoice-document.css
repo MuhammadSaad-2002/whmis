@@ -159,7 +159,7 @@ body:has(.invoice-doc) [data-sonner-toaster][data-y-position='top'] { top: calc(
 .invoice-doc--sales .invoice-fields { grid-template-columns: 1.65fr 1.15fr 1.15fr 1fr 1fr 1fr; }
 .invoice-doc--sales .invoice-fields .invoice-party { min-height: 0; grid-column: auto; }
 .invoice-doc--sales .invoice-sale-types { grid-column: span 2; }
-.invoice-doc--sales .invoice-remarks { grid-column: span 3; }
+.invoice-doc--sales .invoice-remarks { grid-column: span 2; }
 .invoice-terms { grid-column: 1 / -1; }
 .invoice-doc--sales .invoice-table { min-width: 1170px; }
 .invoice-doc--sales .invoice-table td:is(:nth-child(4), :nth-child(5), :nth-child(6), :nth-child(n+8):nth-child(-n+11)) { min-width: 67px; }

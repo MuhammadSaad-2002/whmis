@@ -52,6 +52,7 @@ interface InvoiceDto {
     warehouse_id: number;
     invoice_date: string;
     due_date: string | null;
+    mp_inv_ref: string | null;
     sale_type: string;
     sale_terms: string | null;
     status: string;
@@ -170,6 +171,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
         planned_salesman_id: invoice?.planned_salesman_id ? String(invoice.planned_salesman_id) : '',
         invoice_date: invoice?.invoice_date?.slice(0, 10) ?? pakistanDate(),
         due_date: invoice?.due_date?.slice(0, 10) ?? '',
+        mp_inv_ref: invoice?.mp_inv_ref ?? '',
         sale_type: invoice?.sale_type ?? 'credit',
         sale_terms: invoice?.sale_terms ?? '',
         discount_percent: invoice ? dec2(invoice.discount_percent) : '0.00',
@@ -420,6 +422,7 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
         booker_id: header.booker_id || null,
         planned_salesman_id: header.planned_salesman_id || null,
         due_date: header.due_date || null,
+        mp_inv_ref: header.mp_inv_ref.trim() || null,
         // Terms only apply to Sale Base; cleared otherwise.
         sale_terms: header.sale_type === 'sale_base' ? header.sale_terms.trim() || null : null,
         warehouse_id: warehouse.id,
@@ -672,6 +675,14 @@ export default function SalesForm({ customers, warehouse, bookers, invoice, sale
                     <div className="invoice-field">
                         <Label htmlFor="sale-warehouse">Warehouse</Label>
                         <Input id="sale-warehouse" value={warehouse.name} disabled />
+                    </div>
+                    <div className="invoice-field">
+                        <Label htmlFor="sale-mp-inv-ref">MP Inv Ref</Label>
+                        <Input id="sale-mp-inv-ref" value={header.mp_inv_ref} disabled={readonly} maxLength={64}
+                            title={readonly && header.mp_inv_ref ? header.mp_inv_ref : undefined}
+                            aria-invalid={!!headerErrors.mp_inv_ref} placeholder="Optional reference"
+                            onChange={(e) => setHeader((h) => ({ ...h, mp_inv_ref: e.target.value }))} />
+                        <InputError message={headerErrors.mp_inv_ref} className="text-xs" />
                     </div>
                     <div className="invoice-field invoice-remarks">
                         <Label htmlFor="sale-remarks">Remarks</Label>

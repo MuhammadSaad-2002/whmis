@@ -144,12 +144,13 @@ class SalesInvoiceIncentiveTest extends TestCase
             'bonus_quantity' => 0, 'trade_price' => 100, 'gst_percent' => 10, 'remarks' => 'Invoice line note',
         ];
         $url = route('sales.update', $sale);
-        $header += ['invoice_date' => $sale->invoice_date->toDateString(), 'sale_type' => 'booking', 'notes' => 'Invoice-only note'];
+        $header += ['invoice_date' => $sale->invoice_date->toDateString(), 'sale_type' => 'booking', 'notes' => 'Invoice-only note', 'mp_inv_ref' => 'MP-0007'];
         $this->put($url, $header + ['items' => [$line + ['incentive_rule_ids' => [$fixed->id, $percent->id]]]])->assertSessionHas('success');
         $this->assertSame('Invoice-only note', $sale->fresh()->notes);
         $this->assertEquals($originalBooking, $bookingSnapshot());
         $this->get(route('sales.edit', $sale))->assertInertia(fn (Assert $page) => $page
             ->where('trackedConversion', true)
+            ->where('invoice.mp_inv_ref', 'MP-0007')
             ->where('invoice.items.0.incentive_discount', '87.50')
             ->where('invoice.items.0.incentives.0.allocated_discount', 37.5)
             ->where('invoice.items.0.incentives.1.rule_name', 'Invoice discount'));
@@ -172,6 +173,9 @@ class SalesInvoiceIncentiveTest extends TestCase
         $this->assertSame('5.00', $sale->items()->firstOrFail()->quantity);
         $this->assertEquals($originalBooking, $bookingSnapshot());
 
+        $this->put($url, array_replace($header, ['mp_inv_ref' => str_repeat('A', 65)]) + ['items' => [$line]])
+            ->assertSessionHasErrors('mp_inv_ref');
+        $this->assertSame('MP-0007', $sale->fresh()->mp_inv_ref);
         $this->put($url, $header + ['items' => [$line + ['incentive_rule_ids' => [$fixed->id]]]])->assertSessionHas('success');
         $this->assertSame('37.50', $sale->items()->firstOrFail()->incentive_discount);
         $this->assertEquals($originalBooking, $bookingSnapshot());

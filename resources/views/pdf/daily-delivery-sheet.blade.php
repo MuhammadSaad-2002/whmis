@@ -31,10 +31,10 @@
         <thead><tr>
             <th style="width: 4%;">#</th>
             <th style="width: 13%;">Sales Inv #</th>
-            <th style="width: 17%;">Customer Name</th>
-            <th style="width: 25%;">Customer Address</th>
+            <th style="width: 15%;">MP Inv Ref</th>
+            <th style="width: 20%;">Customer Name</th>
             <th class="num" style="width: 11%;">Total Amount</th>
-            <th style="width: 17%;">Receiver / Remarks</th>
+            <th style="width: 24%;">Receiver / Remarks</th>
             <th class="num" style="width: 13%;">Payment Received</th>
         </tr></thead>
         <tbody>
@@ -42,10 +42,6 @@
                 @php
                     $customer = $stop->first()->invoice->customer;
                     $stopNumber = $loop->iteration;
-                    $address = trim((string) $customer?->address);
-                    $city = trim((string) $customer?->city);
-                    $cityInAddress = $city !== '' && preg_match('/\b'.preg_quote($city, '/').'\b/iu', $address);
-                    $place = implode(' · ', array_filter([$address, $cityInAddress ? '' : $city]));
                 @endphp
                 @foreach($stop as $delivery)
                 @php
@@ -55,8 +51,8 @@
                 <tr>
                     <td class="stop-number">{{ $loop->first ? $stopNumber : '' }}</td>
                     <td><strong>{{ $delivery->invoice->invoice_number }}</strong></td>
+                    <td>{{ $delivery->invoice->mp_inv_ref }}</td>
                     <td><strong>{{ $customer?->name ?? 'Customer #'.$delivery->invoice->customer_id }}</strong></td>
-                    <td>{{ $place ?: '—' }}</td>
                     <td class="num">{{ \App\Support\MoneyDisplay::total($delivery->invoice->total_amount) }}</td>
                     <td class="write-in">{{ $receiver }}</td>
                     <td class="num write-in">

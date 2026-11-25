@@ -81,6 +81,7 @@ class HttpSmokeTest extends TestCase
         // --- Sale draft -> post (manual invoice number)
         $this->post(route('sales.store'), [
             'invoice_number' => 'MANUAL-001',
+            'mp_inv_ref' => '00011428/MP',
             'customer_id' => $customer->id,
             'warehouse_id' => 1,
             'invoice_date' => now()->toDateString(),
@@ -95,6 +96,7 @@ class HttpSmokeTest extends TestCase
 
         $sale = SalesInvoice::firstOrFail();
         $this->assertSame('MANUAL-001', $sale->invoice_number);
+        $this->assertSame('00011428/MP', $sale->mp_inv_ref);
         $this->assertTrue($sale->manual_number);
 
         $this->post(route('sales.post', $sale))->assertRedirect()->assertSessionHas('success');
@@ -145,6 +147,8 @@ class HttpSmokeTest extends TestCase
                 ->assertOk()
                 ->assertInertia(fn (Assert $page) => $page->component($component));
         }
+        $this->get(route('sales.summary', $sale))->assertInertia(fn (Assert $page) => $page
+            ->where('invoice.mp_inv_ref', '00011428/MP'));
 
         // --- Lookups
         $this->getJson(route('lookup.products', ['q' => 'Pana', 'warehouse_id' => 1]))

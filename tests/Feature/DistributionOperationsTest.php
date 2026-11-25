@@ -187,8 +187,8 @@ class DistributionOperationsTest extends TestCase
             'name' => 'Route Pharmacy', 'address' => '111 Delivery Avenue, RAWALPINDI', 'city' => 'Rawalpindi',
             'contact_person' => 'Office Contact', 'phone' => '03009990000',
         ]);
-        $first = $this->sale(['invoice_number' => 'SI-2026-0111', 'total_amount' => 5123.45]);
-        $second = $this->sale(['invoice_number' => 'SI-2026-0222', 'total_amount' => 8787.55]);
+        $first = $this->sale(['invoice_number' => 'SI-2026-0111', 'total_amount' => 5123.45, 'mp_inv_ref' => '00011428/MP']);
+        $second = $this->sale(['invoice_number' => 'SI-2026-0222', 'total_amount' => 8787.55, 'mp_inv_ref' => 'MP-11429']);
         foreach ([$first, $second] as $sale) {
             $this->action($sale, 'assign', ['assigned_to' => $this->booker->id, 'planned_date' => $day])->assertSessionHasNoErrors();
         }
@@ -231,11 +231,11 @@ class DistributionOperationsTest extends TestCase
         preg_match_all('~\bBT [\d.]+ [\d.]+ Td /F\d+ ([\d.]+) Tf[^\r\n]*?\[\((.*?)\)\] TJ ET~', $pdf, $lines);
         $textRuns = array_map(fn (string $line) => mb_convert_encoding($line, 'UTF-8', 'UTF-16BE'), $lines[2]);
         $printed = implode(' ', $textRuns);
-        foreach (['Amounts in PKR', 'SALES INV #', 'CUSTOMER NAME', 'CUSTOMER ADDRESS', 'TOTAL AMOUNT', 'RECEIVER / REMARKS', 'PAYMENT RECEIVED',
-            'SI-2026-0111', 'SI-2026-0222', 'Route Pharmacy', '111 Delivery Avenue', '5,123.45', '8,787.55', 'Counter Receiver', '432.21'] as $text) {
+        foreach (['Amounts in PKR', 'SALES INV #', 'MP INV REF', 'CUSTOMER NAME', 'TOTAL AMOUNT', 'RECEIVER / REMARKS', 'PAYMENT RECEIVED',
+            'SI-2026-0111 00011428/MP Route Pharmacy', 'SI-2026-0222 MP-11429 Route Pharmacy', '5,123.45', '8,787.55', 'Counter Receiver', '432.21'] as $text) {
             $this->assertStringContainsString($text, $printed);
         }
-        foreach (['764.20', '170.99', '987.65', 'Internal note', 'Pending', 'Office Contact', '03009990000', 'RAWALPINDI · Rawalpindi'] as $text) {
+        foreach (['764.20', '170.99', '987.65', 'Internal note', 'Pending', 'Office Contact', '03009990000', 'CUSTOMER ADDRESS', '111 Delivery Avenue', 'RAWALPINDI'] as $text) {
             $this->assertStringNotContainsString($text, $printed);
         }
         $this->assertContains('10.0', $lines[1]);
@@ -259,6 +259,7 @@ class DistributionOperationsTest extends TestCase
         $pages = preg_match_all('/\/Type\s*\/Page\b/', $pdf);
         $this->assertGreaterThan(1, $pages);
         $this->assertSame($pages, substr_count($pdf, $encode('SALES INV #')));
+        $this->assertSame($pages, substr_count($pdf, $encode('MP INV REF')));
         for ($page = 1; $page <= $pages; $page++) {
             $this->assertSame(1, substr_count($pdf, $encode("Page {$page} / {$pages}")));
         }

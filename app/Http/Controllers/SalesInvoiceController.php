@@ -455,6 +455,7 @@ class SalesInvoiceController extends Controller
             'warehouse_id' => ['required', 'exists:warehouses,id'],
             'invoice_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date'],
+            'mp_inv_ref' => ['nullable', 'string', 'max:64'],
             'sale_type' => ['required', 'in:cash,credit,sale_base,booking,direct'],
             'planned_salesman_id' => ['nullable', 'integer', function ($attribute, $value, $fail) {
                 if (! app(\App\Services\DeliveryPlanningService::class)->activeSalesmen()->whereKey($value)->exists()) $fail('Choose an active Salesman.');
@@ -481,7 +482,7 @@ class SalesInvoiceController extends Controller
     {
         return collect($data)->only([
             'customer_id', 'booker_id', 'warehouse_id', 'invoice_date', 'due_date',
-            'sale_type', 'sale_terms', 'discount_percent', 'gst_percent', 'notes', 'planned_salesman_id',
+            'mp_inv_ref', 'sale_type', 'sale_terms', 'discount_percent', 'gst_percent', 'notes', 'planned_salesman_id',
         ])->map(fn ($v) => $v ?? null)->all();
     }
 
