@@ -23,7 +23,7 @@ export type Delivery = {
     customer: { name: string; city: string | null; address: string | null; phone: string | null } | null;
 };
 export type BookStats = {
-    all: number; planned: number; due: number; dueAmount: number; ordered: number; none: number; completedVisits: number; orders: number;
+    all: number; planned: number; due: number; dueAmount: number; ordered: number; none: number; visits: number; completedVisits: number; orders: number;
 };
 export type Collections = {
     cash: number; online: number; pending: number; entryCount: number; openDay: number | null;

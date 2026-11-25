@@ -608,7 +608,36 @@ class DistributionOperationsTest extends TestCase
             ->where('visits.total', 1)->where('visits.data.0.customer.id', $this->customer->id)->where('collections', null));
         $this->get(route('booker.workday', ['date' => $date, 'search' => 'Rawalpindi', 'filter' => 'due', 'sort' => 'balance']))
             ->assertInertia(fn (Assert $page) => $page->where('customers.total', 1)->where('customers.data.0.id', $later->id)
-                ->where('customers.data.0.last_booking.id', $booking->id)->where('visits.total', 1)->where('bookerStats.all', 14));
+                ->where('customers.data.0.last_booking.id', $booking->id)->where('visits.total', 0)
+                ->where('bookerStats.visits', 1)->where('bookerStats.all', 14));
+        $this->get(route('booker.workday', ['date' => $date, 'search' => 'Assigned']))
+            ->assertInertia(fn (Assert $page) => $page->where('customers.total', 1)->where('visits.total', 1)
+                ->where('visits.data.0.customer.id', $this->customer->id));
+    }
+
+    public function test_salesman_workday_search_filters_only_assigned_deliveries_before_pagination(): void
+    {
+        $salesman = User::factory()->create(['is_active' => true])->assignRole('Salesman');
+        $today = now('Asia/Karachi')->toDateString();
+        $assigned = ['assigned_to' => $salesman->id, 'planned_date' => $today];
+        foreach (range(1, 20) as $ignored) {
+            Dispatch::create(['sales_invoice_id' => $this->sale()->id] + $assigned);
+        }
+        $customer = Customer::create(['name' => 'Zebra Pharmacy', 'city' => 'Rawalpindi']);
+        $match = $this->sale(['customer_id' => $customer->id]);
+        Dispatch::create(['sales_invoice_id' => $match->id] + $assigned);
+        Dispatch::create(['sales_invoice_id' => $this->sale(['customer_id' => $customer->id])->id, 'assigned_to' => $this->admin->id, 'planned_date' => $today]);
+        Dispatch::create(['sales_invoice_id' => $this->sale(['customer_id' => $customer->id])->id, 'assigned_to' => $salesman->id,
+            'planned_date' => Carbon::parse($today, 'Asia/Karachi')->addDay()->toDateString()]);
+
+        $this->actingAs($salesman)->get(route('booker.workday', ['date' => $today]))
+            ->assertInertia(fn (Assert $page) => $page->where('deliveries.total', 21)->has('deliveries.data', 20)->where('matchingActiveDeliveries', null));
+        foreach (['zebra', 'Rawalpindi'] as $search) {
+            $this->get(route('booker.workday', ['date' => $today, 'search' => $search]))
+                ->assertInertia(fn (Assert $page) => $page->where('filters.search', $search)->where('customers', null)->where('visits', null)
+                    ->where('deliveries.total', 1)->has('deliveries.data', 1)->where('deliveries.data.0.id', $match->id)
+                    ->where('matchingActiveDeliveries', 1)->where('activeDeliveries', 21));
+        }
     }
 
     public function test_repeat_booking_uses_current_prices_resets_promotions_and_checks_ownership(): void

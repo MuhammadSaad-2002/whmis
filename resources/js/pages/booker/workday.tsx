@@ -1,11 +1,12 @@
 import { fieldAction as action, fieldCard as card, FieldCompletedDeliveries, FieldDatePicker, fieldGrid as routeGrid, FieldHeading as SectionHeading, fieldHero, fieldHeroAction as heroButton, fieldPage, FieldPager as PageControls, fieldPrimary, FieldTile as Tile } from '@/components/field-work-ui';
 import { Button } from '@/components/ui/button';
+import { SearchField } from '@/components/ui/search-field';
 import AppLayout from '@/layouts/app-layout';
 import { shortDate, totalAmount, totalMoney, totalPaisaMoney as collectionsMoney, weekdayDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { Banknote, Check, ClipboardList, MapPin, Navigation, Phone, Plus, RotateCcw, Store, Truck } from 'lucide-react';
-import { useEffect } from 'react';
+import { Banknote, Check, ClipboardList, MapPin, Navigation, Phone, Plus, RotateCcw, Store, Truck, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { label as deliveryLabel } from '../operations/dispatch-detail';
 import { Errors } from '../operations/shared';
 import { CollectionEditor, CollectionSummary, VisitEditor } from './workday-sheets';
@@ -13,7 +14,8 @@ import { OUTCOMES, WORKDAY, type BookStats, type Collections, type Delivery, typ
 
 type Props = {
     today: string; filters: Filters; deliveries: Page<Delivery> | null; visits: Page<RouteVisit> | null;
-    customers: Page<DirectoryCustomer> | null; bookerStats: BookStats | null; pendingDeliveries: number; activeDeliveries: number; collections: Collections | null;
+    customers: Page<DirectoryCustomer> | null; bookerStats: BookStats | null; pendingDeliveries: number; activeDeliveries: number;
+    matchingActiveDeliveries: number | null; collections: Collections | null;
 };
 const customerGrid = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,320px),1fr))] gap-3';
 const tones = ['bg-chart-1 text-brand-paper', 'bg-chart-2 text-brand-paper', 'bg-chart-5 text-brand-paper', 'bg-primary text-primary-foreground', 'bg-chart-4 text-brand-paper'];
@@ -22,31 +24,72 @@ const initials = (name: string) => name.replace(/phaa?rmacy|chemist/ig, '').trim
 export default function Workday(p: Props) {
     const { auth } = usePage<{ auth: { user: { name: string } | null } }>().props;
     const { date, filter, search, sort, size } = p.filters;
+    const [term, setTerm] = useState(search);
+    const [searching, setSearching] = useState(false);
+    const searchInput = useRef<HTMLInputElement>(null);
+    const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    const cancelSearch = useRef<(() => void) | undefined>(undefined);
     const active = p.deliveries?.data.filter(task => !task.is_complete) ?? [];
     const complete = p.deliveries?.data.filter(task => task.is_complete) ?? [];
+    const routeActiveCount = p.matchingActiveDeliveries ?? p.activeDeliveries;
+    useEffect(() => { setTerm(value => value.trim() === search ? value : search); }, [search]);
+    useEffect(() => () => {
+        clearTimeout(searchTimer.current);
+        cancelSearch.current?.();
+    }, []);
+
     // Old bookmarked links may still include now-hidden directory filters.
     useEffect(() => {
-        if (filter === 'all' && !search && sort === 'name') return;
+        if (filter === 'all' && sort === 'name') return;
         // Wait for the parent Inertia app to initialize its router on a direct load.
         const cleanup = window.setTimeout(() => {
-            router.get(WORKDAY, { date, size }, { preserveScroll: true, preserveState: true, replace: true });
+            router.get(WORKDAY, { date, size, search: search || undefined }, { preserveScroll: true, preserveState: true, replace: true });
         }, 0);
         return () => window.clearTimeout(cleanup);
     }, [date, filter, search, sort, size]);
 
+    const stopSearch = () => {
+        clearTimeout(searchTimer.current);
+        cancelSearch.current?.();
+    };
+
+    const changeSearch = (value: string, immediate = false) => {
+        setTerm(value);
+        stopSearch();
+        const next = value.trim();
+        if (next === search) return;
+        const visit = () => router.get(WORKDAY, { date, search: next || undefined }, {
+            only: ['filters', 'deliveries', 'matchingActiveDeliveries', 'visits', 'customers'],
+            preserveScroll: true, preserveState: true, replace: true,
+            onCancelToken: token => { cancelSearch.current = () => token.cancel(); },
+            onStart: () => setSearching(true),
+            onFinish: () => { cancelSearch.current = undefined; setSearching(false); },
+        });
+        if (immediate) visit();
+        else searchTimer.current = setTimeout(visit, 250);
+    };
+
     const changeDate = (value: string) => {
         if (!value || value === date) return;
-        router.get(WORKDAY, { date: value, size: 12 }, { preserveScroll: true, preserveState: true, replace: true });
+        stopSearch();
+        router.get(WORKDAY, { date: value, search: term.trim() || undefined }, { preserveScroll: true, preserveState: true, replace: true });
     };
 
     return <AppLayout><Head title="My Workday" />
         <main className={fieldPage}>
             <Hero {...p} name={auth.user?.name} changeDate={changeDate} />
-            <section aria-labelledby="workday-route" className="min-w-0 space-y-2.5">
+            <form role="search" className="flex w-full items-center gap-2 sm:max-w-md"
+                onSubmit={event => { event.preventDefault(); changeSearch(term, true); }}>
+                <SearchField ref={searchInput} aria-label="Search customers" placeholder="Search customer name or city" value={term} maxLength={100} enterKeyHint="search"
+                    className="[&>input::-webkit-search-cancel-button]:hidden" onChange={event => changeSearch(event.target.value)} />
+                {term !== '' && <Button type="button" variant="outline" size="icon" aria-label="Clear customer search" className="size-11 shrink-0 rounded-xl"
+                    onClick={() => { changeSearch('', true); searchInput.current?.focus(); }}><X aria-hidden="true" /></Button>}
+            </form>
+            <section aria-labelledby="workday-route" aria-busy={searching} className="min-w-0 space-y-2.5">
                 <SectionHeading id="workday-route" title={date === p.today ? 'Today’s route' : 'Route for ' + weekdayDate(date)}
-                    count={p.activeDeliveries + Number(p.visits?.total ?? 0)} note="Open deliveries and visits" />
-                {!(active.length || p.visits?.data.length) && <p className="rounded-2xl border border-dashed bg-card p-5 text-center text-sm text-muted-foreground">
-                    {p.activeDeliveries ? 'No open deliveries on this page.' : complete.length ? 'No deliveries need attention.' : <>Nothing planned for {date === p.today ? 'today' : shortDate(date)}.{p.customers ? ' Use Plan visit below to build your route.' : ''}</>}
+                    count={routeActiveCount + Number(p.visits?.total ?? 0)} note="Open deliveries and visits" />
+                {!(active.length || p.visits?.data.length) && <p role="status" className="rounded-2xl border border-dashed bg-card p-5 text-center text-sm text-muted-foreground">
+                    {routeActiveCount ? 'No open deliveries on this page.' : complete.length ? 'No deliveries need attention.' : search ? 'No route stops match your customer search.' : <>Nothing planned for {date === p.today ? 'today' : shortDate(date)}.{p.customers ? ' Use Plan visit below to build your route.' : ''}</>}
                 </p>}
                 <div className={routeGrid}>
                     {active.map(task => <DeliveryCard key={task.id} task={task} date={date} today={p.today} />)}
@@ -58,7 +101,7 @@ export default function Workday(p: Props) {
                 {p.deliveries && <PageControls page={p.deliveries} label="Delivery pages" />}
                 {p.visits && <PageControls page={p.visits} label="Visit pages" />}
             </section>
-            {p.customers && p.bookerStats && <Directory page={p.customers} date={date} size={size} today={p.today} total={p.bookerStats.all} />}
+            {p.customers && p.bookerStats && <Directory page={p.customers} date={date} size={size} today={p.today} total={p.bookerStats.all} search={search} searching={searching} />}
         </main>
     </AppLayout>;
 }
@@ -69,7 +112,7 @@ function Hero(p: Props & { name?: string; changeDate: (date: string) => void }) 
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
     const stats = [
         ...(p.deliveries ? [{ label: 'Open deliveries', value: p.activeDeliveries, description: p.pendingDeliveries + ' to deliver' }] : []),
-        ...(p.visits ? [{ label: 'Visits planned', value: p.visits.total, description: (p.bookerStats?.completedVisits ?? 0) + ' done' }] : []),
+        ...(p.bookerStats ? [{ label: 'Visits planned', value: p.bookerStats.visits, description: p.bookerStats.completedVisits + ' done' }] : []),
         ...(p.collections ? [{ label: 'Collected', value: collectionsMoney(p.collections.cash + p.collections.online), description: p.collections.pending ? p.collections.pending + ' awaiting Finance' : p.collections.entryCount ? 'Reported collections' : 'Nothing reported' }] : []),
         ...(p.bookerStats ? [
             { label: 'Due from customers', value: totalMoney(p.bookerStats.dueAmount), description: p.bookerStats.due + (p.bookerStats.due === 1 ? ' customer' : ' customers') },
@@ -171,19 +214,19 @@ function VisitCard({ visit, date, today }: { visit: RouteVisit; date: string; to
     </article>;
 }
 
-function Directory({ page, date, size, today, total }: { page: Page<DirectoryCustomer>; date: string; size: number; today: string; total: number }) {
-    const showMore = () => router.get(WORKDAY, { date, size: size + 12 }, {
+function Directory({ page, date, size, today, total, search, searching }: { page: Page<DirectoryCustomer>; date: string; size: number; today: string; total: number; search: string; searching: boolean }) {
+    const showMore = () => router.get(WORKDAY, { date, size: size + 12, search: search || undefined }, {
         preserveScroll: true, preserveState: true, replace: true, only: ['customers', 'filters'],
     });
     const left = Math.max(0, page.total - (page.to ?? 0));
 
-    return <section aria-labelledby="workday-customers" className="min-w-0 space-y-2.5">
-        <SectionHeading id="workday-customers" title="My customers" count={total} />
+    return <section aria-labelledby="workday-customers" aria-busy={searching} className="min-w-0 space-y-2.5">
+        <SectionHeading id="workday-customers" title="My customers" count={search ? page.total : total} />
         <p className="sr-only" role="status">{page.data.length} customers shown</p>
         {page.data.length ? <div className={customerGrid}>{page.data.map(customer => <CustomerCard key={customer.id} customer={customer} date={date} today={today} />)}</div>
             : <div className="rounded-2xl border bg-card p-6 text-center"><Store className="mx-auto mb-2 size-5 text-muted-foreground" />
-                <p className="font-bold">{total ? 'No customers on this page' : 'No assigned customers yet'}</p>
-                {!total && <p className="text-sm text-muted-foreground">Ask your administrator to assign customers to you.</p>}
+                <p className="font-bold">{search ? 'No assigned customers match your search' : total ? 'No customers on this page' : 'No assigned customers yet'}</p>
+                {!search && !total && <p className="text-sm text-muted-foreground">Ask your administrator to assign customers to you.</p>}
             </div>}
         {left > 0 && size < 60 && page.current_page === 1 ? <div className="flex justify-center pt-1">
             <Button type="button" variant="outline" className="min-h-11 min-w-44 rounded-xl" onClick={showMore}>Show {Math.min(12, left)} more</Button>

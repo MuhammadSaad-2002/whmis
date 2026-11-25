@@ -4,6 +4,12 @@
     <meta charset="utf-8">
     <title>{{ $invoice->invoice_number }}</title>
     @include('pdf.partials.document-style')
+    <style>
+        table.items--compact th { padding: 3pt 4pt; }
+        table.items--compact td { padding: 2.5pt 4pt; line-height: 1.2; }
+        table.items--compact td .meta { line-height: inherit; }
+        table.items--compact td.item-rate { white-space: nowrap; }
+    </style>
 </head>
 <body>
     <table class="header">

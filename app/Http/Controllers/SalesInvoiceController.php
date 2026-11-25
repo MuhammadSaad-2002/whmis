@@ -400,7 +400,7 @@ class SalesInvoiceController extends Controller
 
     public function print(SalesInvoice $sale, ReportPdfRenderer $pdf)
     {
-        $sale->load(['items.product.company', 'items.batch', 'items.incentives', 'customer', 'warehouse', 'booking.booker']);
+        $sale->load(['items.product', 'items.batch', 'customer', 'warehouse', 'booking.booker']);
 
         return $pdf->renderView('pdf.sales-invoice', ['invoice' => $sale], 'portrait')
             ->stream("{$sale->invoice_number}.pdf")->header('Cache-Control', 'private, no-store');

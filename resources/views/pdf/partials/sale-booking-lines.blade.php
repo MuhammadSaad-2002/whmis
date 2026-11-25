@@ -1,4 +1,4 @@
-<table class="items">
+<table class="items{{ $isSale ? ' items--compact' : '' }}">
     <thead>
         <tr>
             <th>#</th><th>Product</th>@if($isSale)<th>Batch</th>@endif
@@ -18,24 +18,30 @@
                 <td>{{ $i + 1 }}</td>
                 <td>
                     <strong>{{ $item->product?->name ?? 'Product #'.$item->product_id }}</strong>
-                    @if($isSale && $item->product?->company)<br><span class="meta">{{ $item->product->company->name }}</span>@endif
-                    @foreach($item->incentives as $award)
-                        <br><span class="meta">{{ $award->rule_name }}
-                            @if(in_array($award->rule_type, ['qty_bonus', 'slab_bonus'], true) && (float) $award->bonus_qty > 0)
-                                · +{{ $decimal($award->bonus_qty) }} bonus
-                            @elseif($award->rule_type === 'price_override' && $award->trade_price !== null)
-                                · Rs {{ number_format((float) $award->trade_price, 2) }} each
-                            @endif
-                        </span>
-                    @endforeach
+                    @unless($isSale)
+                        @foreach($item->incentives as $award)
+                            <br><span class="meta">{{ $award->rule_name }}
+                                @if(in_array($award->rule_type, ['qty_bonus', 'slab_bonus'], true) && (float) $award->bonus_qty > 0)
+                                    · +{{ $decimal($award->bonus_qty) }} bonus
+                                @elseif($award->rule_type === 'price_override' && $award->trade_price !== null)
+                                    · Rs {{ number_format((float) $award->trade_price, 2) }} each
+                                @endif
+                            </span>
+                        @endforeach
+                    @endunless
                     @if($item->remarks)<br><span class="meta">{{ $item->remarks }}</span>@endif
                 </td>
                 @if($isSale)<td>{{ $item->batch?->batch_number ?? 'FIFO' }}</td>@endif
                 <td class="num">{{ $decimal($item->quantity) }}</td>
                 <td class="num">{{ $decimal($isSale ? $item->bonus_quantity : $item->requested_bonus) }}</td>
                 <td class="num">{{ number_format((float) $item->trade_price, 2) }}</td>
-                <td class="num">{{ number_format($discount, 2) }}@if($discount > 0)<br><span class="meta">{{ $decimal($discPct) }}%</span>@endif</td>
-                <td class="num">{{ number_format((float) $item->gst_amount, 2) }}@if((float) $item->gst_amount > 0)<br><span class="meta">{{ $decimal($item->gst_percent) }}%</span>@endif</td>
+                @if($isSale)
+                    <td class="num item-rate">{{ number_format($discount, 2) }}@if($discount > 0) <span class="meta">({{ $decimal($discPct) }}%)</span>@endif</td>
+                    <td class="num item-rate">{{ number_format((float) $item->gst_amount, 2) }}@if((float) $item->gst_amount > 0) <span class="meta">({{ $decimal($item->gst_percent) }}%)</span>@endif</td>
+                @else
+                    <td class="num">{{ number_format($discount, 2) }}@if($discount > 0)<br><span class="meta">{{ $decimal($discPct) }}%</span>@endif</td>
+                    <td class="num">{{ number_format((float) $item->gst_amount, 2) }}@if((float) $item->gst_amount > 0)<br><span class="meta">{{ $decimal($item->gst_percent) }}%</span>@endif</td>
+                @endif
                 <td class="num">{{ number_format((float) $item->net_amount, 2) }}</td>
             </tr>
         @endforeach

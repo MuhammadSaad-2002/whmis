@@ -155,10 +155,13 @@ class SalesInvoiceIncentiveTest extends TestCase
             ->where('invoice.items.0.incentives.1.rule_name', 'Invoice discount'));
         $this->assertSame('453.75', $sale->items()->firstOrFail()->net_amount);
         $this->get(route('sales.print', $sale))->assertOk()->assertHeader('content-type', 'application/pdf');
-        $html = view('pdf.sales-invoice', ['invoice' => $sale->fresh()->load('items.incentives')])->render();
-        $this->assertStringContainsString('Invoice discount', $html);
-        $this->assertStringContainsString('87.50', $html);
-        $this->assertStringContainsString('41.25', $html);
+        $html = view('pdf.sales-invoice', ['invoice' => $sale->fresh()->load('items.product.company', 'items.incentives')])->render();
+        $this->assertStringNotContainsString('Getz Pharma', $html);
+        $this->assertStringNotContainsString('Invoice discount', $html);
+        $this->assertStringNotContainsString('Booked discount', $html);
+        $this->assertStringContainsString('class="items items--compact"', $html);
+        $this->assertMatchesRegularExpression('/<td class="num item-rate">87\.50\s+<span class="meta">\(17\.5%\)<\/span>/', $html);
+        $this->assertMatchesRegularExpression('/<td class="num item-rate">41\.25\s+<span class="meta">\(10%\)<\/span>/', $html);
         $this->assertStringContainsString('Invoice line note', $html);
 
         $this->put($url, $header + ['items' => [$line + ['incentive_rule_ids' => [$fixed->id, $percent->id, $bonus->id]]]])

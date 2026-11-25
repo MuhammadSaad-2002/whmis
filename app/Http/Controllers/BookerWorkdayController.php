@@ -38,6 +38,14 @@ class BookerWorkdayController extends Controller
         $assignedDeliveries = $salesman ? $fieldDeliveries->forDay($actorId, $date, $today) : null;
         $visits = $booker ? BookerVisit::where('booker_id', $actorId)->whereDate('visit_date', $date)
             ->whereHas('customer', fn ($query) => $query->active()->forBooker($actorId)) : null;
+        $routeDeliveries = $assignedDeliveries;
+        $routeVisits = $visits;
+        if ($search !== '') {
+            $matchesCustomer = fn ($customer) => $customer->where(fn ($match) => $match
+                ->where('name', 'like', '%'.$search.'%')->orWhere('city', 'like', '%'.$search.'%'));
+            $routeDeliveries = $assignedDeliveries ? (clone $assignedDeliveries)->whereHas('customer', $matchesCustomer) : null;
+            $routeVisits = $visits ? (clone $visits)->whereHas('customer', $matchesCustomer) : null;
+        }
 
         $directory = null;
         if ($booker) {
@@ -62,9 +70,10 @@ class BookerWorkdayController extends Controller
         return Inertia::render('booker/workday', [
             'today' => $today,
             'filters' => ['date' => $date, 'search' => $search, 'filter' => $filter, 'sort' => $sort, 'size' => $size],
-            'deliveries' => fn () => $assignedDeliveries ? $this->deliveries($fieldDeliveries->ordered(clone $assignedDeliveries), $collections, $actorId) : null,
+            'deliveries' => fn () => $routeDeliveries ? $this->deliveries($fieldDeliveries->ordered(clone $routeDeliveries), $collections, $actorId) : null,
             'activeDeliveries' => fn () => $assignedDeliveries ? $fieldDeliveries->uncompleted(clone $assignedDeliveries)->count() : 0,
-            'visits' => fn () => $visits ? (clone $visits)->with(['customer' => fn ($query) => $query
+            'matchingActiveDeliveries' => fn () => $search !== '' && $routeDeliveries ? $fieldDeliveries->uncompleted(clone $routeDeliveries)->count() : null,
+            'visits' => fn () => $routeVisits ? (clone $routeVisits)->with(['customer' => fn ($query) => $query
                 ->select('id', 'name', 'city', 'address')->withSum('ledgerEntries as account_balance', DB::raw('debit - credit'))])
                 ->orderBy('id')->paginate(12, ['*'], 'visit_page')->withQueryString() : null,
             'customers' => fn () => $directory ? $this->customers($directory, $visits, $filter, $sort, $search, $size) : null,
@@ -116,11 +125,12 @@ class BookerWorkdayController extends Controller
             ->where('created_at', '>=', $start->copy()->setTimezone($storageTime)->toDateTimeString())
             ->where('created_at', '<', $start->copy()->addDay()->setTimezone($storageTime)->toDateTimeString())
             ->whereHas('customer', fn ($customer) => $customer->active()->forBooker($actorId))->count();
+        $visitCounts = (clone $visits)->toBase()->selectRaw("COUNT(*) AS total, SUM(CASE WHEN outcome != 'planned' THEN 1 ELSE 0 END) AS completed")->first();
 
         return [
             'all' => (int) $counts->total, 'planned' => (int) $counts->planned, 'due' => (int) $counts->due,
             'dueAmount' => (float) $counts->due_amount, 'ordered' => (int) $counts->ordered, 'none' => (int) $counts->total - (int) $counts->ordered,
-            'completedVisits' => (clone $visits)->where('outcome', '!=', 'planned')->count(), 'orders' => $orders,
+            'visits' => (int) $visitCounts->total, 'completedVisits' => (int) $visitCounts->completed, 'orders' => $orders,
         ];
     }
 
