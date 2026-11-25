@@ -21,6 +21,7 @@ interface Props {
     searchPlaceholder?: string;
     emptyText?: string;
     disabled?: boolean;
+    invalid?: boolean;
     className?: string;
     id?: string;
     autoFocus?: boolean;
@@ -41,6 +42,7 @@ export function SearchableSelect({
     searchPlaceholder = 'Search…',
     emptyText = 'No results found.',
     disabled,
+    invalid,
     className,
     id,
     autoFocus,
@@ -65,6 +67,7 @@ export function SearchableSelect({
                     variant="outline"
                     role="combobox"
                     aria-expanded={open}
+                    aria-invalid={invalid || undefined}
                     disabled={disabled}
                     className={cn('w-full justify-between font-normal', !selected && 'text-muted-foreground', className)}
                 >

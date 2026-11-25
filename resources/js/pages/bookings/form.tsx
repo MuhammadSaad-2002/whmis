@@ -1,5 +1,7 @@
 import InputError from '@/components/input-error';
 import { BookingActivity, type BookingTimestamps } from '@/components/booking-timestamps';
+import { InvoiceLineNumberHeading, InvoiceSummaryTile } from '@/components/invoice-document';
+import { RegisterHeader } from '@/components/master-register';
 import { BookingConversion, type Conversion } from './conversion';
 import { ProductSearchCell, type ProductHit } from '@/components/product-search-cell';
 import { ProductSearchDialog } from '@/components/product-search-dialog';
@@ -7,6 +9,7 @@ import { RulePickerDialog, type RuleHit } from '@/components/rule-picker-dialog'
 import { SearchableSelect } from '@/components/searchable-select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,7 +28,7 @@ import { combineEffects } from '@/lib/incentive';
 import { computeLine, computeTotals, effectiveDiscountPercent } from '@/lib/invoice-math';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowRight, Check, ChevronDown, ChevronsUpDown, MoreHorizontal, Plus, Save, Search, Send, Trash2, X, XCircle } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, ChevronLeft, ChevronsUpDown, CreditCard, MoreHorizontal, Package, Plus, Save, Search, Send, Trash2, UserRound, UsersRound, X, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -54,6 +57,9 @@ interface BookingDto extends BookingTimestamps {
     booking_date: string;
     status: string;
     notes: string | null;
+    subtotal: string;
+    item_discount_total: string;
+    item_gst_total: string;
     total_amount: string;
     rounding_amount?: string | null;
     sales_invoice_id: number | null;
@@ -67,7 +73,9 @@ interface BookingDto extends BookingTimestamps {
         requested_bonus: string;
         trade_price: string;
         discount_percent: string;
+        discount_amount: string;
         gst_percent: string;
+        net_amount: string;
         remarks: string | null;
         incentives?: {
             incentive_rule_id: number | null;
@@ -131,16 +139,20 @@ const COL_COUNT = 8;
 // Enter walks product → qty → bonus → price → disc% → next row.
 // Rule (F4), GST %, and remarks stay Tab-reachable.
 const ENTER_ORDER = [0, 1, 2, 4, 5];
+const gridFields = ['product_id', 'quantity', 'requested_bonus', 'incentive_rule_ids', 'trade_price', 'discount_percent', 'gst_percent', 'remarks'];
+const bookingClockPKT = new Intl.DateTimeFormat('en-PK', { timeZone: 'Asia/Karachi', hour: 'numeric', minute: '2-digit' });
 
 const statusVariant = (status: string) =>
     status === 'approved' || status === 'converted' ? 'default'
         : status === 'rejected' || status === 'cancelled' ? 'destructive' : 'secondary';
 
 export default function BookingForm({ customers, warehouse, bookers, booking, bookingPrefill, conversion }: Props) {
-    const { can, canViewSupplierDetails } = usePermissions();
+    const { can, canViewSupplierDetails, roles } = usePermissions();
     const showAdminDetails = can('bookings.approve');
     const showSupplier = showAdminDetails && canViewSupplierDetails;
     const isMobile = useIsMobile(1024);
+    const adminDesktop = !isMobile && roles.some(role => role === 'Super Admin' || role === 'Admin');
+    const DocumentRoot = adminDesktop ? 'main' : 'div';
     const isDraft = !booking || booking.status === 'draft';
     const readonly = !isDraft || !can('bookings.create');
 
@@ -175,6 +187,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
     const [activeRow, setActiveRow] = useState(0); // rule picker context
     const [searchSignal, setSearchSignal] = useState({ row: -1, n: 0 });
     const [saving, setSaving] = useState(false);
+    const [confirmAction, setConfirmAction] = useState<'cancel' | 'reject' | null>(null);
     const [headerErrors, setHeaderErrors] = useState<Record<string, string>>({});
     const [rowErrors, setRowErrors] = useState<Record<number, Record<string, string>>>({});
 
@@ -270,6 +283,9 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
         [computed, rows],
     );
     const rounding = toNumber(readonly ? booking?.rounding_amount : totals.rounding_amount);
+    const displayTotals = readonly && booking ? booking : totals;
+    const itemCount = rows.filter(row => row.product_id).length;
+    const units = rows.reduce((sum, row) => row.product_id ? sum + toNumber(row.quantity) + toNumber(row.requested_bonus) : sum, 0);
 
     const grid = useKeyboardGrid({
         rowCount: rows.length,
@@ -448,10 +464,13 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
 
     const hotkeys = useInvoiceHotkeys({ onSave: save, onPost: submit });
     useEffect(() => {
-        const listener = (e: KeyboardEvent) => hotkeys.handleKeyDown(e);
+        const listener = (e: KeyboardEvent) => {
+            if (adminDesktop && (e.defaultPrevented || e.repeat || e.isComposing || document.querySelector('[role="dialog"], [role="alertdialog"]'))) return;
+            hotkeys.handleKeyDown(e);
+        };
         window.addEventListener('keydown', listener);
         return () => window.removeEventListener('keydown', listener);
-    }, [hotkeys]);
+    }, [hotkeys, adminDesktop]);
 
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Bookings', href: '/bookings' },
@@ -463,59 +482,67 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
     const tabTitle = booking?.booking_number ?? (bookingPrefill?.source
         ? `Repeat ${bookingPrefill.source}`
         : prefilledCustomerName ? `New Booking · ${prefilledCustomerName}` : 'New Booking');
-    const selectedCustomer = customers.find((customer) => String(customer.id) === header.customer_id) ?? booking?.customer;
-    const cancelBooking = () => {
-        if (booking && confirm('Cancel this booking?')) router.post(route('bookings.cancel', booking.id));
+    const customerOptions = adminDesktop && booking?.customer && !customers.some(customer => customer.id === booking.customer_id) ? [...customers, booking.customer] : customers;
+    const selectedCustomer = customerOptions.find((customer) => String(customer.id) === header.customer_id) ?? booking?.customer;
+    const bookerOptions = adminDesktop && booking?.booker && bookers && !bookers.some(booker => booker.id === booking.booker?.id) ? [...bookers, booking.booker] : bookers;
+    const changeBookingStatus = (action: 'cancel' | 'reject') => {
+        if (!booking || saving) return;
+        if (adminDesktop) setConfirmAction(action);
+        else if (confirm(action === 'cancel' ? 'Cancel this booking?' : 'Reject this booking?')) router.post(route(`bookings.${action}`, booking.id));
     };
+    const cancelBooking = () => changeBookingStatus('cancel');
     const canCancel = booking && !['converted', 'partially_invoiced', 'cancelled'].includes(booking.status);
     const mobileActionClass = 'h-11 flex-1 min-w-0 px-2';
+    const actionStyle = (mobile: boolean, kind: 'normal' | 'primary' | 'cancel' = 'normal') => mobile ? mobileActionClass
+        : adminDesktop ? `hbtn${kind === 'primary' ? ' pri' : kind === 'cancel' ? ' invoice-cancel' : ''}` : undefined;
     const hasMobileErrors = isMobile && (Object.keys(headerErrors).length > 0 || Object.keys(rowErrors).length > 0);
     const actions = (mobile: boolean) => (
         <>
             {booking?.status === 'converted' && booking.sales_invoice_id && can('sales.view') && (
-                <Button variant="outline" size="sm" className={mobile ? mobileActionClass : undefined} asChild>
+                <Button variant="outline" size="sm" className={actionStyle(mobile)} asChild>
                     <Link href={route('sales.edit', booking.sales_invoice_id)}><ArrowRight aria-hidden="true" /> View Invoice</Link>
                 </Button>
             )}
             {booking?.status === 'pending' && can('bookings.approve') && (
                 <>
-                    <Button size="sm" className={mobile ? mobileActionClass : undefined} onClick={() => router.post(route('bookings.approve', booking.id))}><Check aria-hidden="true" /> Approve</Button>
-                    <Button variant="outline" size="sm" className={mobile ? mobileActionClass : undefined}
-                        onClick={() => { if (confirm('Reject this booking?')) router.post(route('bookings.reject', booking.id)); }}>
-                        <X aria-hidden="true" className="text-destructive" /> Reject
+                    <Button size="sm" className={actionStyle(mobile, 'primary')} onClick={() => router.post(route('bookings.approve', booking.id))}><Check aria-hidden="true" /> Approve</Button>
+                    <Button variant="outline" size="sm" className={actionStyle(mobile, 'cancel')}
+                        onClick={() => changeBookingStatus('reject')}>
+                        <X aria-hidden="true" className={adminDesktop ? undefined : 'text-destructive'} /> Reject
                     </Button>
                 </>
             )}
             {conversion && !conversion.legacy && conversion.lines.some(line => line.remaining || line.remaining_bonus) && (
-                <Button size="sm" className={mobile ? mobileActionClass : undefined} onClick={() => document.getElementById('booking-invoicing')?.scrollIntoView({ block: 'start' })}>
+                <Button size="sm" className={actionStyle(mobile, 'primary')} onClick={() => document.getElementById('booking-invoicing')?.scrollIntoView({ block: 'start' })}>
                     <ArrowRight aria-hidden="true" /> Invoice quantities
                 </Button>
             )}
-            {!mobile && canCancel && <Button variant="outline" size="sm" onClick={cancelBooking}><XCircle aria-hidden="true" className="text-destructive" /> Cancel</Button>}
+            {!mobile && canCancel && <Button variant="outline" size="sm" className={actionStyle(false, 'cancel')} onClick={cancelBooking}><XCircle aria-hidden="true" className={adminDesktop ? undefined : 'text-destructive'} /> Cancel</Button>}
             {!readonly && (
                 <>
-                    <Button variant={mobile && !booking ? 'default' : 'outline'} size="sm" className={mobile ? mobileActionClass : undefined} onClick={() => save()} disabled={saving}>
+                    <Button variant={mobile && !booking ? 'default' : 'outline'} size="sm" className={actionStyle(mobile)} onClick={() => save()} disabled={saving}>
                         <Save aria-hidden="true" /> Save Draft {!mobile && <kbd className="ml-1 text-xs opacity-60">F8</kbd>}
                     </Button>
-                    {booking && <Button size="sm" className={mobile ? mobileActionClass : undefined} onClick={submit} disabled={saving}>
+                    {booking && <Button size="sm" className={actionStyle(mobile, 'primary')} onClick={submit} disabled={saving}>
                         <Send aria-hidden="true" /> Submit {!mobile && <kbd className="ml-1 text-xs opacity-60">F9</kbd>}
                     </Button>}
                 </>
             )}
         </>
     );
+    const fieldClass = adminDesktop ? 'invoice-field' : undefined;
     const additionalFields = (
         <>
-            {bookers && <div>
+            {bookerOptions && <div className={fieldClass}>
                 <Label htmlFor="booking-booker">Booker</Label>
                 <SearchableSelect id="booking-booker" value={header.booker_id}
                     onValueChange={(v) => setHeader((h) => ({ ...h, booker_id: v }))}
                     disabled={readonly} touch={isMobile} placeholder="Select booker" searchPlaceholder="Search booker…" emptyText="No bookers found."
-                    options={[{ value: '', label: '— None —' }, ...bookers.map((b) => ({ value: String(b.id), label: b.name }))]} />
+                    options={[{ value: '', label: '— None —' }, ...bookerOptions.map((b) => ({ value: String(b.id), label: b.name }))]} />
             </div>}
             {showAdminDetails && <>
-                <div>
-                    <Label htmlFor="booking-date">Booking Date *</Label>
+                <div className={fieldClass}>
+                    <Label htmlFor="booking-date">Booking Date {adminDesktop ? <em>*</em> : '*'}</Label>
                     <Input id="booking-date" type="date" value={header.booking_date} disabled={readonly}
                         onChange={(e) => setHeader((h) => ({ ...h, booking_date: e.target.value }))}
                         onKeyDown={(e) => {
@@ -525,33 +552,48 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                             }
                         }} />
                 </div>
-                <div>
+                <div className={fieldClass}>
                     <Label htmlFor="booking-warehouse">Warehouse</Label>
                     <Input id="booking-warehouse" value={warehouse.name} disabled />
                 </div>
             </>}
-            {!readonly && <div className="sm:col-span-2 xl:col-span-1">
+            {(!readonly || adminDesktop) && <div className={adminDesktop ? 'invoice-field invoice-remarks' : 'sm:col-span-2 xl:col-span-1'}>
                 <Label htmlFor="booking-remarks">Remarks</Label>
-                <Input id="booking-remarks" value={header.notes} placeholder="Optional note for this booking" onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))} />
+                <Input id="booking-remarks" value={header.notes} disabled={readonly} title={readonly ? header.notes : undefined}
+                    placeholder="Optional note for this booking" onChange={(e) => setHeader((h) => ({ ...h, notes: e.target.value }))} />
             </div>}
-            {readonly && header.notes && <div className="sm:col-span-2 xl:col-span-1">
+            {readonly && !adminDesktop && header.notes && <div className="sm:col-span-2 xl:col-span-1">
                 <p className="text-xs text-muted-foreground">Remarks</p>
                 <p className="break-words text-sm">{header.notes}</p>
             </div>}
-            {booking?.approver && <div>
+            {booking?.approver && <div className={fieldClass}>
                 <Label htmlFor="booking-approver">{booking.status === 'rejected' ? 'Rejected by' : 'Approved by'}</Label>
                 <Input id="booking-approver" value={booking.approver.name} disabled />
             </div>}
         </>
     );
     const hasAdditionalFields = !readonly || !!header.notes || !!bookers || showAdminDetails || !!booking?.approver;
+    const conversionPanel = booking && conversion && <BookingConversion key={JSON.stringify(conversion.lines)} id={booking.id} value={conversion} canLink={can('sales.view')} />;
+    const status = booking?.status ?? 'draft';
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             {draft.dialog}
             <Head title={tabTitle} />
-            <div className="flex min-h-dvh min-w-0 flex-col gap-3 p-3 md:gap-4 md:p-4 lg:min-h-full">
-                <header className="flex min-w-0 items-start justify-between gap-2 lg:flex-wrap lg:items-center lg:border-b lg:pb-4">
+            <DocumentRoot className={adminDesktop ? 'invoice-doc invoice-doc--booking' : 'flex min-h-dvh min-w-0 flex-col gap-3 p-3 md:gap-4 md:p-4 lg:min-h-full'} aria-busy={adminDesktop ? saving : undefined}>
+                {adminDesktop ? <div className="master-register invoice-header">
+                    <RegisterHeader title={booking?.booking_number ?? 'New Booking'}
+                        description={<>
+                            <Link className="invoice-back" href={route('bookings.index')}><ChevronLeft className="i" aria-hidden="true" />Bookings</Link>
+                            <span className={`st ${status}`}>{status === 'pending' ? 'Pending approval' : status.replaceAll('_', ' ')}</span>
+                            {booking?.booker && <span>by {booking.booker.name}</span>}
+                            {!readonly && booking?.updated_at && draft.canLeaveAfterSave() && <span className="invoice-saved">
+                                <Check className="i" aria-hidden="true" />Draft saved {bookingClockPKT.format(new Date(booking.last_edited_at ?? booking.updated_at))}
+                            </span>}
+                        </>}
+                        actions={<div className="register-hero-actions" role="group" aria-label="Booking actions">{actions(false)}</div>}
+                    />
+                </div> : <header className="flex min-w-0 items-start justify-between gap-2 lg:flex-wrap lg:items-center lg:border-b lg:pb-4">
                     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 md:gap-x-3">
                         <h1 className="min-w-0 break-words text-xl font-bold tracking-tight sm:text-3xl md:text-4xl">
                             {booking ? <><span className="sr-only lg:not-sr-only">Booking </span>{booking.booking_number}</> : 'New Booking'}
@@ -564,14 +606,14 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                         <DropdownMenuTrigger asChild><Button type="button" variant="outline" size="icon" aria-label="Booking options" className="size-11 shrink-0 lg:hidden"><MoreHorizontal aria-hidden="true" /></Button></DropdownMenuTrigger>
                         <DropdownMenuContent align="end"><DropdownMenuItem className="min-h-11 text-destructive" onSelect={cancelBooking}><XCircle aria-hidden="true" /> Cancel booking</DropdownMenuItem></DropdownMenuContent>
                     </DropdownMenu>}
-                </header>
+                </header>}
 
-                {customers.length === 0 && !readonly && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+                {customers.length === 0 && !readonly && <div className={`${adminDesktop ? 'mt-3 ' : ''}rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100`}>
                     {can('bookings.approve') ? 'No active customers are available. Add or activate a customer in Customers first.' : 'No active customers are assigned to your login. Ask your administrator to open Employees → your profile → Assign Customers. Then reopen New Booking.'}
                 </div>}
-                {booking && !isMobile && <BookingActivity booking={booking} />}
-                {booking && conversion && <BookingConversion key={JSON.stringify(conversion.lines)} id={booking.id} value={conversion} canLink={can('sales.view')} />}
-                {bookingPrefill?.source && <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+                {booking && !isMobile && !adminDesktop && <BookingActivity booking={booking} />}
+                {!adminDesktop && conversionPanel}
+                {bookingPrefill?.source && <div className={`${adminDesktop ? 'mt-3 ' : ''}rounded-lg border bg-muted/40 p-3 text-sm`}>
                     Repeating quantities from {bookingPrefill.source}. Current catalogue prices apply; review bonus quantities, discounts and incentive rules before saving.
                     {bookingPrefill.skipped.length > 0 && <p className="mt-1 text-destructive">Unavailable products omitted: {bookingPrefill.skipped.join(', ')}.</p>}
                     {!!bookingPrefill.hidden_count && <p className="mt-1 text-destructive">
@@ -582,17 +624,20 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                 </div>}
                 <div
                     data-enter-nav={isMobile ? undefined : ''}
-                    className="grid grid-cols-1 gap-2.5 rounded-xl border bg-card p-3 [&>div]:min-w-0 [&>div>label]:mb-1 [&>div>label]:block lg:grid-cols-4 lg:gap-3 lg:p-2.5 xl:grid-cols-5 xl:gap-x-2 xl:gap-y-1.5 xl:[&>div>button]:h-8 xl:[&>div>input]:h-8 xl:[&>div>label]:whitespace-nowrap xl:[&>div>label]:text-[11px]"
+                    aria-label={adminDesktop ? 'Booking details' : undefined}
+                    role={adminDesktop ? 'region' : undefined}
+                    className={adminDesktop ? 'invoice-fields' : 'grid grid-cols-1 gap-2.5 rounded-xl border bg-card p-3 [&>div]:min-w-0 [&>div>label]:mb-1 [&>div>label]:block lg:grid-cols-4 lg:gap-3 lg:p-2.5 xl:grid-cols-5 xl:gap-x-2 xl:gap-y-1.5 xl:[&>div>button]:h-8 xl:[&>div>input]:h-8 xl:[&>div>label]:whitespace-nowrap xl:[&>div>label]:text-[11px]'}
                 >
-                    <div>
+                    <div className={adminDesktop ? 'invoice-field invoice-party' : undefined}>
                         {readonly && isMobile ? <>
                             <p className="text-xs font-medium text-muted-foreground">Customer</p>
                             <p className="mt-0.5 break-words text-sm font-semibold">{selectedCustomer?.name ?? 'Customer not recorded'}</p>
                             {selectedCustomer?.city && <p className="break-words text-xs text-muted-foreground">{selectedCustomer.city}</p>}
                         </> : <>
-                        <Label htmlFor="booking-customer">Customer *</Label>
+                        <Label htmlFor="booking-customer">Customer {adminDesktop ? <em>*</em> : '*'}</Label>
                         <SearchableSelect
                             id="booking-customer"
+                            invalid={adminDesktop && !!headerErrors.customer_id}
                             value={header.customer_id}
                             onValueChange={(v) => {
                                 setHeader((h) => ({ ...h, customer_id: v }));
@@ -601,11 +646,11 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                             disabled={readonly}
                             touch={isMobile}
                             autoFocus={!readonly && !isMobile}
-                            className="h-11 lg:h-10"
+                            className={adminDesktop ? 'min-w-0' : 'h-11 lg:h-10'}
                             placeholder="Select customer"
                             searchPlaceholder="Search customer…"
                             emptyText="No customers found."
-                            options={customers.map((customer) => ({
+                            options={customerOptions.map((customer) => ({
                                 value: String(customer.id),
                                 label: customer.name + (customer.city ? ` — ${customer.city}` : ''),
                             }))}
@@ -625,7 +670,15 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                     </details> : additionalFields}
                 </div>
 
-                <div className={isMobile ? '' : 'rounded-xl border'}>
+                {adminDesktop && booking && !isDraft && <section className="invoice-strip" aria-label="Booking summary">
+                    <InvoiceSummaryTile icon={Package} tone="teal" label="Booked quantity" value={`${qty(units)} units · ${itemCount} ${itemCount === 1 ? 'line' : 'lines'}`} />
+                    <InvoiceSummaryTile icon={CreditCard} tone="blue" label="Booking total" value={totalMoney(displayTotals.total_amount)} />
+                    <InvoiceSummaryTile icon={UserRound} tone="blue" label="Customer" value={selectedCustomer?.name ?? '—'} />
+                    <InvoiceSummaryTile icon={UsersRound} tone="green" label="Booker" value={booking.booker?.name ?? '—'} />
+                </section>}
+                {adminDesktop && booking && <div className="invoice-booking-activity"><BookingActivity booking={booking} /></div>}
+
+                <div className={adminDesktop ? 'invoice-lines' : isMobile ? '' : 'rounded-xl border'}>
                     {isMobile && (
                         <div className="space-y-3">
                             <h2 className="px-0.5 text-base font-semibold">Products</h2>
@@ -831,35 +884,41 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                         </div>
                     )}
                     {!isMobile && (
-                    <div className="max-h-[55dvh] overflow-auto">
-                    <table className="w-full min-w-[1280px] text-sm">
-                        <thead className="sticky top-0 z-10 bg-muted text-xs uppercase">
-                            <tr className="[&>th]:border-b [&>th]:px-2 [&>th]:py-2 [&>th]:text-left">
-                                <th className="w-8">#</th>
-                                <th className="min-w-56">Product <kbd className="opacity-50">F2</kbd></th>
+                    <div className={adminDesktop ? 'invoice-lines-scroll' : 'max-h-[55dvh] overflow-auto'}
+                        tabIndex={adminDesktop ? 0 : undefined} role={adminDesktop ? 'region' : undefined} aria-label={adminDesktop ? 'Scrollable booking line items' : undefined}>
+                    <table className={adminDesktop ? 'invoice-table' : 'w-full min-w-[1280px] text-sm'}>
+                        <thead className={adminDesktop ? undefined : 'sticky top-0 z-10 bg-muted text-xs uppercase'}>
+                            <tr className={adminDesktop ? undefined : '[&>th]:border-b [&>th]:px-2 [&>th]:py-2 [&>th]:text-left'}>
+                                {adminDesktop ? <InvoiceLineNumberHeading onAdd={readonly ? undefined : () => {
+                                    setRows(r => [...r, emptyRow()]);
+                                    grid.focusCell(rows.length, 0);
+                                }} /> : <th className="w-8">#</th>}
+                                <th className="min-w-56">Product {(!readonly || !adminDesktop) && <kbd className={adminDesktop ? undefined : 'opacity-50'}>F2</kbd>}</th>
                                 {showSupplier && <th className="w-32">Supplier</th>}
                                 <th className="w-16 text-right">Stock</th>
                                 <th className="w-20 text-right">Qty</th>
                                 <th className="w-20 text-right">Bonus</th>
-                                <th className="w-36">Rule <kbd className="opacity-50">F4</kbd></th>
+                                <th className="w-36">Rule {(!readonly || !adminDesktop) && <kbd className={adminDesktop ? undefined : 'opacity-50'}>F4</kbd>}</th>
                                 <th className="w-24 text-right">Price</th>
                                 <th className="w-24 text-right">Retail</th>
                                 <th className="w-20 text-right">Disc %</th>
                                 <th className="w-20 text-right">GST %</th>
                                 <th className="w-28 text-right">Net</th>
                                 <th className="w-28">Remarks</th>
-                                <th className="w-10" />
+                                <th className="w-10">{adminDesktop && <span className="sr-only">Actions</span>}</th>
                             </tr>
                         </thead>
                         <tbody>
                             {rows.map((row, rowIndex) => (
-                                <tr key={rowIndex} className="border-b last:border-0 [&>td]:border-r [&>td]:p-0 [&>td:last-child]:border-r-0">
-                                    <td className="px-2 text-center text-muted-foreground">{rowIndex + 1}</td>
+                                <tr key={rowIndex} data-issue={adminDesktop ? !!rowErrors[rowIndex] : undefined}
+                                    className={adminDesktop ? undefined : 'border-b last:border-0 [&>td]:border-r [&>td]:p-0 [&>td:last-child]:border-r-0'}>
+                                    <td className={adminDesktop ? 'invoice-line-no' : 'px-2 text-center text-muted-foreground'}>{rowIndex + 1}</td>
                                     <td
-                                        className={rowErrors[rowIndex]?.product_id ? 'ring-1 ring-inset ring-destructive' : ''}
+                                        className={adminDesktop ? 'invoice-product' : rowErrors[rowIndex]?.product_id ? 'ring-1 ring-inset ring-destructive' : ''}
+                                        data-invalid={adminDesktop ? !!rowErrors[rowIndex]?.product_id : undefined}
                                         title={rowErrors[rowIndex]?.product_id}
                                     >
-                                        <ProductSearchCell
+                                        {adminDesktop && readonly ? <span title={row.product_name}>{row.product_name}</span> : <ProductSearchCell
                                             showSupplier={showSupplier}
                                             value={row.product_name}
                                             warehouseId={warehouse.id}
@@ -868,12 +927,12 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                             onSelect={(product) => applyProduct(rowIndex, product)}
                                             onGridKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 0)}
                                             inputRef={grid.registerCell(rowIndex, 0)}
-                                        />
+                                        />}
                                     </td>
-                                    {showSupplier && <td className="truncate px-2 text-muted-foreground" title={row.company ?? undefined}>
-                                        {row.product_id ? (row.company ?? '—') : ''}
+                                    {showSupplier && <td className={adminDesktop ? 'invoice-booking-supplier invoice-muted' : 'truncate px-2 text-muted-foreground'} title={row.company ?? undefined}>
+                                        <span>{row.product_id ? (row.company ?? '—') : ''}</span>
                                     </td>}
-                                    <td className={`px-2 text-right tabular-nums ${row.stock <= 0 && row.product_id ? 'text-destructive' : 'text-muted-foreground'}`}>
+                                    <td className={`${adminDesktop ? 'invoice-calc' : 'px-2 text-right tabular-nums'} ${row.stock <= 0 && row.product_id ? 'text-destructive' : 'text-muted-foreground'}`}>
                                         {row.product_id ? qty(row.stock) : ''}
                                     </td>
                                     <td>
@@ -902,7 +961,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                         />
                                     </td>
                                     <td>
-                                        <div className="flex flex-wrap items-center gap-1 p-1">
+                                        <div className={adminDesktop ? 'invoice-rule' : 'flex flex-wrap items-center gap-1 p-1'}>
                                             {row.incentives.map((inc) => (
                                                 <Badge key={inc.id} variant="outline" className="max-w-full gap-1 pr-1">
                                                     <span className="truncate">{inc.name}</span>
@@ -910,6 +969,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                         <button
                                                             type="button"
                                                             tabIndex={-1}
+                                                                aria-label={`Remove ${inc.name}`}
                                                             onClick={() => removeRule(rowIndex, inc)}
                                                             className="rounded-sm hover:text-destructive"
                                                         >
@@ -918,7 +978,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                     )}
                                                 </Badge>
                                             ))}
-                                            <button
+                                            {(!readonly || !adminDesktop) && <button
                                                 type="button"
                                                 ref={grid.registerCell(rowIndex, 3) as never}
                                                 disabled={readonly || !row.product_id}
@@ -935,10 +995,10 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                     }
                                                     grid.handleKeyDown(e, rowIndex, 3);
                                                 }}
-                                                className="rounded px-1 text-sm text-muted-foreground outline-none focus:ring-1 focus:ring-ring disabled:opacity-70"
+                                                className={adminDesktop ? 'invoice-rule-add' : 'rounded px-1 text-sm text-muted-foreground outline-none focus:ring-1 focus:ring-ring disabled:opacity-70'}
                                             >
-                                                {row.incentives.length ? '+ add' : <>Add rule <kbd className="opacity-60">F4</kbd></>}
-                                            </button>
+                                                {row.incentives.length ? '+ add' : <>Add rule {!adminDesktop && <kbd className="opacity-60">F4</kbd>}</>}
+                                            </button>}
                                         </div>
                                     </td>
                                     <td>
@@ -957,7 +1017,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                             className={`h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1 ${ringClass(rowIndex, 'trade_price')}`}
                                         />
                                     </td>
-                                    <td className="px-2 text-right tabular-nums text-muted-foreground">
+                                    <td className={adminDesktop ? 'invoice-calc invoice-muted' : 'px-2 text-right tabular-nums text-muted-foreground'}>
                                         {row.product_id && row.retail_price ? amount(row.retail_price) : ''}
                                     </td>
                                     <td>
@@ -968,11 +1028,13 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                                 ref={grid.registerCell(rowIndex, 5) as never}
                                                 type="text"
                                                 readOnly
-                                                tabIndex={0}
-                                                value={dec2(effectiveDiscountPercent(computed[rowIndex].gross, computed[rowIndex].discount_amount))}
+                                                    disabled={adminDesktop && readonly}
+                                                    tabIndex={adminDesktop && readonly ? -1 : 0}
+                                                    value={dec2(effectiveDiscountPercent(computed[rowIndex].gross, adminDesktop && readonly
+                                                        ? toNumber(booking?.items[rowIndex]?.discount_amount ?? computed[rowIndex].discount_amount) : computed[rowIndex].discount_amount))}
                                                 title="Effective discount from applied incentive(s). Remove the incentive to edit manually."
                                                 onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, 5)}
-                                                className="h-8 rounded-none border-0 bg-emerald-50 px-2 text-right text-sm text-emerald-700 focus-visible:ring-1 dark:bg-emerald-950/40 dark:text-emerald-400"
+                                                    className={adminDesktop ? 'invoice-rule-discount text-right' : 'h-8 rounded-none border-0 bg-emerald-50 px-2 text-right text-sm text-emerald-700 focus-visible:ring-1 dark:bg-emerald-950/40 dark:text-emerald-400'}
                                             />
                                         ) : (
                                             <Input
@@ -1007,7 +1069,9 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                             className={`h-8 rounded-none border-0 px-2 text-right text-sm focus-visible:ring-1 ${ringClass(rowIndex, 'gst_percent')}`}
                                         />
                                     </td>
-                                    <td className="px-2 text-right tabular-nums">{amount(computed[rowIndex].net_amount)}</td>
+                                    <td className={adminDesktop ? 'invoice-calc' : 'px-2 text-right tabular-nums'}>
+                                        {adminDesktop ? <b data-empty={!row.product_id}>{amount((readonly ? booking?.items[rowIndex]?.net_amount : undefined) ?? computed[rowIndex].net_amount)}</b> : amount(computed[rowIndex].net_amount)}
+                                    </td>
                                     <td>
                                         <Input
                                             ref={grid.registerCell(rowIndex, 7) as never}
@@ -1017,10 +1081,10 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                                             className="h-8 rounded-none border-0 px-2 text-sm focus-visible:ring-1"
                                         />
                                     </td>
-                                    <td className="px-1 text-center">
+                                    <td className={adminDesktop ? 'invoice-line-action' : 'px-1 text-center'}>
                                         {!readonly && (
-                                            <button type="button" tabIndex={-1} onClick={() => removeRow(rowIndex)}>
-                                                <Trash2 className="size-4 text-muted-foreground hover:text-destructive" />
+                                            <button type="button" tabIndex={-1} aria-label={`Remove line ${rowIndex + 1}`} onClick={() => removeRow(rowIndex)}>
+                                                <Trash2 aria-hidden="true" className={adminDesktop ? undefined : 'size-4 text-muted-foreground hover:text-destructive'} />
                                             </button>
                                         )}
                                     </td>
@@ -1030,7 +1094,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                     </table>
                     </div>
                     )}
-                    {!readonly && (!isMobile || rows.every((row) => row.product_id)) && (
+                    {!adminDesktop && !readonly && (!isMobile || rows.every((row) => row.product_id)) && (
                         <div className="pt-2.5 lg:border-t lg:p-2">
                             <Button variant={isMobile ? 'outline' : 'ghost'} size="sm" className="h-11 w-full lg:h-9 lg:w-auto" onClick={() => {
                                 if (isMobile) setProductRow(rows.length);
@@ -1042,8 +1106,26 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                     )}
                 </div>
 
+                {adminDesktop && !readonly && (Object.keys(headerErrors).length > 0 || Object.keys(rowErrors).length > 0) && <div className="invoice-issues" role="alert">
+                    <b>Check these fields</b><ul>
+                        {Object.entries(headerErrors).map(([field, message]) => <li key={field}>{message}</li>)}
+                        {Object.entries(rowErrors).flatMap(([index, errors]) => Object.entries(errors).map(([field, message]) => {
+                            const col = gridFields.indexOf(field);
+                            const label = `Line ${Number(index) + 1}: ${message}`;
+                            return <li key={`${index}-${field}`}>{col < 0 ? label : <button type="button" onClick={() => grid.focusCell(Number(index), col)}>{label}</button>}</li>;
+                        }))}
+                    </ul>
+                </div>}
+
                 {booking && isMobile && <BookingActivity booking={booking} />}
-                {isMobile ? <footer aria-label="Booking totals and actions" className="sticky bottom-0 z-20 -mx-3 -mb-3 mt-auto border-t bg-card/95 px-3 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgb(16_36_58/0.08)] backdrop-blur md:-mx-4 md:-mb-4 md:px-4">
+                {adminDesktop ? <section className="invoice-totals" aria-label="Booking totals">
+                    <div className="invoice-total-part"><span>Subtotal</span><b>{amount(displayTotals.subtotal)}</b></div>
+                    <div className="invoice-total-part"><span>Discount</span><b data-empty={!toNumber(displayTotals.item_discount_total)}>−{amount(displayTotals.item_discount_total)}</b></div>
+                    <div className="invoice-total-part"><span>GST</span><b data-empty={!toNumber(displayTotals.item_gst_total)}>+{amount(displayTotals.item_gst_total)}</b></div>
+                    <div className="invoice-total-part"><span>Items</span><b className="invoice-muted">{itemCount} · {qty(units)} units</b></div>
+                    {rounding !== 0 && <div className="invoice-total-part"><span>Rounding</span><b>{amount(rounding)}</b></div>}
+                    <div className="invoice-grand"><span>Total</span><b>{totalMoney(displayTotals.total_amount)}</b></div>
+                </section> : isMobile ? <footer aria-label="Booking totals and actions" className="sticky bottom-0 z-20 -mx-3 -mb-3 mt-auto border-t bg-card/95 px-3 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgb(16_36_58/0.08)] backdrop-blur md:-mx-4 md:-mb-4 md:px-4">
                     <details className="group">
                         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-sm [&::-webkit-details-marker]:hidden">
                             <span className="inline-flex items-center gap-1.5 font-medium text-muted-foreground">
@@ -1069,7 +1151,26 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                         <span className="ml-auto text-lg text-primary sm:text-2xl">Total <span className="ml-1">{totalMoney(readonly && booking ? booking.total_amount : totals.total_amount)}</span></span>
                     </div>
                 </div>}
-            </div>
+                {adminDesktop && conversionPanel}
+            </DocumentRoot>
+
+            {adminDesktop && <Dialog open={confirmAction !== null} onOpenChange={open => { if (!open) setConfirmAction(null); }}>
+                <DialogContent appearance="form" className="invoice-dialog max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>{confirmAction === 'reject' ? 'Reject' : 'Cancel'} {booking?.booking_number}?</DialogTitle>
+                        <DialogDescription>{confirmAction === 'reject' ? 'This booking will be marked as rejected.' : 'This booking will be marked as cancelled.'}</DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setConfirmAction(null)}>Keep booking</Button>
+                        <Button variant="destructive" disabled={saving} onClick={() => {
+                            if (!booking || !confirmAction || saving) return;
+                            setConfirmAction(null);
+                            setSaving(true);
+                            router.post(route(`bookings.${confirmAction}`, booking.id), {}, { preserveScroll: true, onFinish: () => setSaving(false) });
+                        }}>{confirmAction === 'reject' ? 'Reject booking' : 'Cancel booking'}</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>}
 
             {productRow !== null && !readonly && isMobile && (
                 <ProductSearchDialog

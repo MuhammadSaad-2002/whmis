@@ -1,4 +1,5 @@
 import InputError from '@/components/input-error';
+import { InvoiceLineNumberHeading, InvoiceSummaryTile } from '@/components/invoice-document';
 import { RegisterHeader } from '@/components/master-register';
 import { ProductSearchCell, type ProductHit } from '@/components/product-search-cell';
 import { PurchaseBatchCell } from '@/components/purchase-batch-cell';
@@ -19,10 +20,9 @@ import { amount, dec2, money, pakistanDate, qty, shortDate, toNumber, totalMoney
 import { ALERT_FIX, splitItemErrors } from '@/lib/form-validation';
 import { computeLine, computeTotals } from '@/lib/invoice-math';
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowUp, Check, ChevronLeft, Copy, Landmark, Package, Plus, Printer, Save, Trash2, TrendingUp, XCircle } from 'lucide-react';
+import { ArrowUp, Check, ChevronLeft, Copy, Landmark, Package, Printer, Save, Trash2, TrendingUp, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import './purchase-form.css';
 
 interface ItemRow {
     product_id: number | null;
@@ -110,7 +110,7 @@ const DECIMAL_KEYS: ReadonlySet<keyof ItemRow> = new Set([
 ] as (keyof ItemRow)[]);
 
 const CELL_LABELS = ['Product', 'Batch', 'Expiry', 'Qty', 'Bonus', 'Rate', 'Trade', 'Retail', 'Disc %', 'GST %', 'Remarks'];
-const tableColumns = ['#', 'Product', 'Batch', 'Expiry', 'Qty', 'Bonus', 'Rate', 'Trade', 'Retail', 'Disc %', 'GST %', 'Net', 'Margin', 'Remarks', ''];
+const tableColumns = ['Product', 'Batch', 'Expiry', 'Qty', 'Bonus', 'Rate', 'Trade', 'Retail', 'Disc %', 'GST %', 'Net', 'Margin', 'Remarks', ''];
 const clockPKT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit' });
 
 export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
@@ -469,7 +469,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                 }}
                 onBlur={onBlur}
                 onKeyDown={(e) => grid.handleKeyDown(e, rowIndex, colIndex)}
-                className={`purchase-cell ${className}`}
+                className={`invoice-cell ${className}`}
             />
         );
     };
@@ -478,19 +478,19 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
         <AppLayout>
             {draft.dialog}
             <Head title={invoice ? invoice.invoice_number : 'New Purchase Invoice'} />
-            <main className={`purchase-doc${readonly ? ' purchase-doc--view' : ''}`} aria-busy={saving}>
-                <div className="master-register purchase-header">
+            <main className="invoice-doc invoice-doc--purchase" aria-busy={saving}>
+                <div className="master-register invoice-header">
                     <RegisterHeader title={invoice?.invoice_number ?? 'New Purchase Invoice'}
                         description={<>
-                            <Link className="purchase-back" href={route('purchases.index')}><ChevronLeft className="i" aria-hidden="true" />Purchase Invoices</Link>
+                            <Link className="invoice-back" href={route('purchases.index')}><ChevronLeft className="i" aria-hidden="true" />Purchase Invoices</Link>
                             <span className={`st ${invoice?.status ?? 'draft'}`}>{invoice?.status ?? 'draft'}</span>
-                            {isDraft && invoice?.updated_at && draft.canLeaveAfterSave() && <span className="purchase-saved"><Check className="i" aria-hidden="true" />Draft saved {clockPKT.format(new Date(invoice.updated_at))}</span>}
+                            {isDraft && invoice?.updated_at && draft.canLeaveAfterSave() && <span className="invoice-saved"><Check className="i" aria-hidden="true" />Draft saved {clockPKT.format(new Date(invoice.updated_at))}</span>}
                         </>}
                         actions={(invoice || canSave || canPost) && <div className="register-hero-actions" role="group" aria-label="Invoice actions">
                             {invoice && <>
                                 <a className="hbtn" href={route('purchases.print', invoice.id)} target="_blank" rel="noreferrer"><Printer className="i" aria-hidden="true" />Print</a>
                                 {can('purchases.create') && <button type="button" className="hbtn" disabled={saving} onClick={() => router.post(route('purchases.duplicate', invoice.id), {}, { preserveState: false })}><Copy className="i" aria-hidden="true" />Duplicate</button>}
-                                {invoice.status === 'posted' && can('purchases.cancel') && <button type="button" className="hbtn purchase-cancel" disabled={saving} onClick={() => setConfirmAction('cancel')}><XCircle className="i" aria-hidden="true" />Cancel Invoice</button>}
+                                {invoice.status === 'posted' && can('purchases.cancel') && <button type="button" className="hbtn invoice-cancel" disabled={saving} onClick={() => setConfirmAction('cancel')}><XCircle className="i" aria-hidden="true" />Cancel Invoice</button>}
                             </>}
                             {canSave && <button type="button" className="hbtn" onClick={() => save()} disabled={saving}><Save className="i" aria-hidden="true" />Save Draft <kbd>F8</kbd></button>}
                             {canPost && <button type="button" className="hbtn pri" onClick={askPost} disabled={saving}><Check className="i" aria-hidden="true" />Post invoice <kbd>Ctrl ↵</kbd></button>}
@@ -498,8 +498,8 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                     />
                 </div>
 
-                <section data-enter-nav className="purchase-fields" aria-label="Invoice details">
-                    <div className="purchase-field purchase-supplier">
+                <section data-enter-nav className="invoice-fields" aria-label="Invoice details">
+                    <div className="invoice-field invoice-party">
                         <Label htmlFor="purchase-supplier">Supplier <em>*</em></Label>
                         <Select
                             value={header.company_id}
@@ -511,6 +511,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                         >
                             <SelectTrigger
                                 id="purchase-supplier"
+                                className="text-left"
                                 aria-invalid={!!headerErrors.company_id}
                             >
                                 <SelectValue placeholder="Select supplier" />
@@ -521,12 +522,12 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                                 ))}
                             </SelectContent>
                         </Select>
-                        {supplier && (supplier.payable_balance !== undefined || supplier.payment_terms) && <p className="purchase-field-note" title={supplier.payment_terms ?? undefined}>
+                        {supplier && (supplier.payable_balance !== undefined || supplier.payment_terms) && <p className="invoice-field-note" title={supplier.payment_terms ?? undefined}>
                             {supplier.payable_balance !== undefined && <>Payable {money(supplier.payable_balance)}{supplier.payment_terms ? ' · ' : ''}</>}{supplier.payment_terms}
                         </p>}
                         <InputError message={headerErrors.company_id} className="text-xs" />
                     </div>
-                    <div className="purchase-field">
+                    <div className="invoice-field">
                         <Label htmlFor="purchase-supplier-reference">Supplier Invoice #</Label>
                         <Input
                             id="purchase-supplier-reference" placeholder="e.g. 11622"
@@ -536,7 +537,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                             onChange={(e) => setHeader((h) => ({ ...h, supplier_invoice_number: e.target.value }))}
                         />
                     </div>
-                    <div className="purchase-field">
+                    <div className="invoice-field">
                         <Label htmlFor="purchase-invoice-date">Invoice Date <em>*</em></Label>
                         <Input
                             id="purchase-invoice-date" aria-invalid={!!headerErrors.invoice_date}
@@ -544,7 +545,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                             onChange={(e) => setHeader((h) => ({ ...h, invoice_date: e.target.value }))}
                         />
                     </div>
-                    <div className="purchase-field">
+                    <div className="invoice-field">
                         <Label htmlFor="purchase-due-date">Due Date</Label>
                         <Input
                             id="purchase-due-date" aria-invalid={!!headerErrors.due_date}
@@ -552,18 +553,18 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                             onChange={(e) => setHeader((h) => ({ ...h, due_date: e.target.value }))}
                         />
                     </div>
-                    <div className="purchase-field">
+                    <div className="invoice-field">
                         <Label id="purchase-type-label">Type</Label>
-                        <div className="purchase-types" role="group" aria-labelledby="purchase-type-label">
+                        <div className="invoice-types" role="group" aria-labelledby="purchase-type-label">
                             {['credit', 'cash'].map(type => <button key={type} type="button" aria-pressed={header.purchase_type === type} disabled={readonly}
                                 onClick={() => setHeader(h => ({ ...h, purchase_type: type, financial_account_id: type === 'cash' ? h.financial_account_id : '' }))}>{type === 'cash' ? 'Cash' : 'Credit'}</button>)}
                         </div>
                     </div>
-                    <div className="purchase-field">
+                    <div className="invoice-field">
                         <Label htmlFor="purchase-warehouse">Warehouse</Label>
                         <Input id="purchase-warehouse" value={warehouse.name} disabled />
                     </div>
-                    <div className="purchase-field purchase-remarks">
+                    <div className="invoice-field invoice-remarks">
                         <Label htmlFor="purchase-remarks">Remarks</Label>
                         <Input
                             id="purchase-remarks" aria-invalid={!!headerErrors.notes}
@@ -573,21 +574,24 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                             onKeyDown={(e) => { if (e.key === 'Enter' && !readonly) { e.preventDefault(); grid.focusCell(0, 0); } }}
                         />
                     </div>
-                    {treasury.required && isCash && !readonly && <div className="purchase-field"><Label htmlFor="purchase-cash-account">Pay from cash account</Label><select id="purchase-cash-account" aria-invalid={!!headerErrors.financial_account_id} value={header.financial_account_id} onChange={e => setHeader(h => ({ ...h, financial_account_id: e.target.value }))}><option value="">Select an account</option>{treasury.accounts.filter(a => ['cash', 'petty_cash'].includes(a.kind)).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>}
+                    {treasury.required && isCash && !readonly && <div className="invoice-field"><Label htmlFor="purchase-cash-account">Pay from cash account</Label><select id="purchase-cash-account" aria-invalid={!!headerErrors.financial_account_id} value={header.financial_account_id} onChange={e => setHeader(h => ({ ...h, financial_account_id: e.target.value }))}><option value="">Select an account</option>{treasury.accounts.filter(a => ['cash', 'petty_cash'].includes(a.kind)).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>}
                 </section>
 
-                {readonly && invoice && (invoice.status === 'posted' || invoice.posted_at) && <section className="purchase-strip" aria-label="Posted invoice summary">
-                    <SummaryTile icon={Package} tone="teal" label={invoice.status === 'cancelled' ? 'Stock reversed' : 'Stock added'} value={stockSummary} />
-                    <SummaryTile icon={ArrowUp} tone="red" label={invoice.status === 'cancelled' ? (isCash ? 'Cash payment reversed' : 'Payable reversed') : isCash ? 'Paid in cash' : 'Added to payable'} value={totalMoney(invoiceTotal)} />
-                    <SummaryTile icon={Landmark} tone="blue" label={supplier?.payable_balance !== undefined ? 'Supplier balance now' : 'Supplier'} value={supplier?.payable_balance !== undefined ? money(supplier.payable_balance) : supplier?.name ?? '—'} />
-                    <SummaryTile icon={TrendingUp} tone={marginValue < 0 ? 'red' : 'green'} label="Expected margin" value={`${totalMoney(marginValue)}${marginPercent ? ` · ${marginPercent}` : ''}`} />
+                {readonly && invoice && (invoice.status === 'posted' || invoice.posted_at) && <section className="invoice-strip" aria-label="Posted invoice summary">
+                    <InvoiceSummaryTile icon={Package} tone="teal" label={invoice.status === 'cancelled' ? 'Stock reversed' : 'Stock added'} value={stockSummary} />
+                    <InvoiceSummaryTile icon={ArrowUp} tone="red" label={invoice.status === 'cancelled' ? (isCash ? 'Cash payment reversed' : 'Payable reversed') : isCash ? 'Paid in cash' : 'Added to payable'} value={totalMoney(invoiceTotal)} />
+                    <InvoiceSummaryTile icon={Landmark} tone="blue" label={supplier?.payable_balance !== undefined ? 'Supplier balance now' : 'Supplier'} value={supplier?.payable_balance !== undefined ? money(supplier.payable_balance) : supplier?.name ?? '—'} />
+                    <InvoiceSummaryTile icon={TrendingUp} tone={marginValue < 0 ? 'red' : 'green'} label="Expected margin" value={`${totalMoney(marginValue)}${marginPercent ? ` · ${marginPercent}` : ''}`} />
                 </section>}
 
-                <section className="purchase-lines" aria-label="Invoice items">
-                    <div className="purchase-lines-scroll" tabIndex={0} role="region" aria-label="Scrollable invoice line items">
-                    <table className="purchase-table">
-                        <thead><tr>{tableColumns.map((label, index) => <th key={index} scope="col" className={index >= 4 && index <= 12 ? 'text-right' : ''}>
-                            {label || <span className="sr-only">Actions</span>}{index === 1 && !readonly && <kbd>F2</kbd>}
+                <section className="invoice-lines" aria-label="Invoice items">
+                    <div className="invoice-lines-scroll" tabIndex={0} role="region" aria-label="Scrollable invoice line items">
+                    <table className="invoice-table">
+                        <thead><tr><InvoiceLineNumberHeading onAdd={readonly ? undefined : () => {
+                            setRows(r => [...r, emptyRow()]);
+                            grid.focusCell(rows.length, 0);
+                        }} />{tableColumns.map((label, index) => <th key={index} scope="col" className={index >= 3 && index <= 11 ? 'text-right' : ''}>
+                            {label || <span className="sr-only">Actions</span>}{index === 0 && !readonly && <kbd>F2</kbd>}
                         </th>)}</tr></thead>
                         <tbody>
                             {rows.map((row, rowIndex) => {
@@ -596,9 +600,9 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                                 const margin = toNumber(stored?.margin ?? computed[rowIndex].margin);
                                 const percent = toNumber(stored?.margin_percent ?? computed[rowIndex].margin_percent);
                                 return <tr key={rowIndex} data-issue={!!rowErrors[rowIndex]}>
-                                    <td className="purchase-line-no">{rowIndex + 1}</td>
+                                    <td className="invoice-line-no">{rowIndex + 1}</td>
                                     <td
-                                        className="purchase-product" data-invalid={!!rowErrors[rowIndex]?.product_id}
+                                        className="invoice-product" data-invalid={!!rowErrors[rowIndex]?.product_id}
                                         title={rowErrors[rowIndex]?.product_id}
                                     >
                                         {readonly ? <span title={row.product_name}>{row.product_name}</span> : <ProductSearchCell
@@ -615,7 +619,7 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                                         data-invalid={!!rowErrors[rowIndex]?.batch_number}
                                         title={rowErrors[rowIndex]?.batch_number}
                                     >
-                                        {readonly ? <span className="purchase-cell-value">{row.batch_number}</span> : <PurchaseBatchCell
+                                        {readonly ? <span className="invoice-cell-value">{row.batch_number}</span> : <PurchaseBatchCell
                                             productId={row.product_id}
                                             warehouseId={warehouse.id}
                                             value={row.batch_id}
@@ -662,13 +666,13 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                                     <td>{cellInput(rowIndex, 7, 'retail_price', 'number', 'text-right')}</td>
                                     <td>{cellInput(rowIndex, 8, 'discount_percent', 'number', 'text-right')}</td>
                                     <td>{cellInput(rowIndex, 9, 'gst_percent', 'number', 'text-right')}</td>
-                                    <td className="purchase-calc"><b data-empty={!row.product_id}>{amount(net)}</b></td>
-                                    <td className="purchase-calc">
+                                    <td className="invoice-calc"><b data-empty={!row.product_id}>{amount(net)}</b></td>
+                                    <td className="invoice-calc">
                                         {row.product_id && (stored || toNumber(row.purchase_rate)) ?
-                                            <div className="purchase-margin">{amount(margin)}<span data-tone={percent < 0 ? 'red' : percent < 20 ? 'amber' : 'green'}>{percent.toFixed(0)}%</span></div> : <span className="purchase-muted">—</span>}
+                                            <div className="invoice-margin">{amount(margin)}<span data-tone={percent < 0 ? 'red' : percent < 20 ? 'amber' : 'green'}>{percent.toFixed(0)}%</span></div> : <span className="invoice-muted">—</span>}
                                     </td>
                                     <td>{cellInput(rowIndex, 10, 'remarks')}</td>
-                                    <td className="purchase-line-action">
+                                    <td className="invoice-line-action">
                                         {!readonly && (
                                             <button type="button" title="Remove line" aria-label={`Remove line ${rowIndex + 1}`} onClick={() => removeRow(rowIndex)}>
                                                 <Trash2 />
@@ -680,15 +684,9 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                         </tbody>
                     </table>
                     </div>
-                    {!readonly && (
-                        <div className="purchase-add-row">
-                            <button type="button" onClick={() => { setRows((r) => [...r, emptyRow()]); grid.focusCell(rows.length, 0); }}><Plus /> Add line</button>
-                            <div className="purchase-keys"><span><kbd>Enter</kbd> next cell</span><span><kbd>↑ ↓</kbd> move between lines</span><span><kbd>Ctrl + I</kbd> insert</span><span><kbd>Ctrl + D</kbd> delete</span><span><kbd>F2</kbd> product search</span></div>
-                        </div>
-                    )}
                 </section>
 
-                {!readonly && (Object.keys(headerErrors).length > 0 || Object.keys(rowErrors).length > 0) && <div className="purchase-issues" role="alert">
+                {!readonly && (Object.keys(headerErrors).length > 0 || Object.keys(rowErrors).length > 0) && <div className="invoice-issues" role="alert">
                     <b>Check these fields</b><ul>
                         {Object.entries(headerErrors).map(([key, message]) => <li key={key}>{message}</li>)}
                         {Object.entries(rowErrors).flatMap(([index, errors]) => Object.entries(errors).map(([key, message]) => {
@@ -698,31 +696,31 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
                     </ul>
                 </div>}
 
-                <section className="purchase-totals" aria-label="Invoice totals">
-                    <div className="purchase-total-part"><span>Subtotal</span><b>{amount(displayTotals.subtotal)}</b></div>
+                <section className="invoice-totals" aria-label="Invoice totals">
+                    <div className="invoice-total-part"><span>Subtotal</span><b>{amount(displayTotals.subtotal)}</b></div>
                     {(['discount_percent', 'gst_percent'] as const).map(key => {
                         const discount = key === 'discount_percent';
                         const adjustment = discount ? toNumber(displayTotals.discount_amount) + toNumber(displayTotals.item_discount_total) : toNumber(displayTotals.gst_amount) + toNumber(displayTotals.item_gst_total);
                         const name = discount ? 'Discount' : 'GST';
-                        return <label className="purchase-total-part" key={key}><span>{name}</span><span className="purchase-percent">
+                        return <label className="invoice-total-part" key={key}><span>{name}</span><span className="invoice-percent">
                             <input aria-label={`Invoice ${name.toLowerCase()} %`} aria-invalid={!!headerErrors[key]} type="number" min="0" max="100" step="0.01" value={header[key]} disabled={readonly}
                                 onChange={e => setHeader(h => ({ ...h, [key]: e.target.value }))} onBlur={e => setHeader(h => ({ ...h, [key]: dec2(e.target.value) || '0.00' }))} />
                             <i aria-hidden="true">%</i></span><b data-empty={adjustment === 0}>{discount ? '−' : '+'}{amount(adjustment)}</b></label>;
                     })}
-                    <div className="purchase-total-part"><span>Items</span><b className="purchase-muted">{filledRows.length} · {qty(units)} units</b></div>
-                    <div className="purchase-margin-total" data-loss={marginValue < 0}><span>Exp. margin</span><b>{totalAmount(marginValue)}</b>{marginPercent && <small>{marginPercent}</small>}</div>
-                    {!!toNumber(displayTotals.rounding_amount) && <div className="purchase-total-part"><span>Rounding</span><b>{amount(displayTotals.rounding_amount)}</b></div>}
-                    <div className="purchase-grand"><span>Total</span><b>{totalMoney(invoiceTotal)}</b></div>
+                    <div className="invoice-total-part"><span>Items</span><b className="invoice-muted">{filledRows.length} · {qty(units)} units</b></div>
+                    <div className="invoice-margin-total" data-loss={marginValue < 0}><span>Exp. margin</span><b>{totalAmount(marginValue)}</b>{marginPercent && <small>{marginPercent}</small>}</div>
+                    {!!toNumber(displayTotals.rounding_amount) && <div className="invoice-total-part"><span>Rounding</span><b>{amount(displayTotals.rounding_amount)}</b></div>}
+                    <div className="invoice-grand"><span>Total</span><b>{totalMoney(invoiceTotal)}</b></div>
                 </section>
             </main>
 
             <Dialog open={confirmAction !== null} onOpenChange={open => { if (!open) setConfirmAction(null); }}>
-                <DialogContent appearance="form" className="purchase-dialog max-w-md">
+                <DialogContent appearance="form" className="invoice-dialog max-w-md">
                     <DialogHeader>
                         <DialogTitle>{confirmAction === 'cancel' ? `Cancel ${invoice?.invoice_number}?` : 'Post this purchase invoice?'}</DialogTitle>
                         <DialogDescription>{confirmAction === 'cancel' ? 'Cancelling reverses the invoice’s stock and ledger entries. This can’t be undone.' : 'Stock and the supplier ledger update when you post. A posted invoice can’t be edited.'}</DialogDescription>
                     </DialogHeader>
-                    {confirmAction === 'post' && <DialogBody><dl className="purchase-dialog-details">
+                    {confirmAction === 'post' && <DialogBody><dl className="invoice-dialog-details">
                         <div><dt>Supplier</dt><dd>{supplier?.name}</dd></div>
                         <div><dt>Stock into {warehouse.name.toLowerCase()}</dt><dd>{stockSummary}</dd></div>
                         <div><dt>{isCash ? 'Paid in cash' : 'Added to payable'}</dt><dd>{totalMoney(invoiceTotal)}</dd></div>
@@ -737,8 +735,4 @@ export default function PurchaseForm({ companies, warehouse, invoice }: Props) {
 
         </AppLayout>
     );
-}
-
-function SummaryTile({ icon: Icon, tone, label, value }: { icon: typeof Package; tone: string; label: string; value: string }) {
-    return <div className="purchase-summary-tile"><span className="purchase-summary-icon" data-tone={tone}><Icon aria-hidden="true" /></span><div><small>{label}</small><b>{value}</b></div></div>;
 }
