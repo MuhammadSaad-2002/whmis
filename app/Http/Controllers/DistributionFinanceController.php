@@ -360,7 +360,11 @@ class DistributionFinanceController
                     + ['target_id'=>$item->payload['target_id'] ?? null])->values(),
             ];
         });
-        return Inertia::render('operations/reversal-preview', ['label'=>$label,'kind'=>$kind,'invoices'=>$invoices,'accounts'=>$financialAccounts]);
+        $preview = ['label' => $label, 'kind' => $kind, 'invoices' => $invoices, 'accounts' => $financialAccounts];
+
+        return $request->expectsJson()
+            ? response()->json($preview)
+            : Inertia::render('operations/reversal-preview', $preview);
     }
 
     public function daily(Request $request, InvoiceBalanceService $balances)

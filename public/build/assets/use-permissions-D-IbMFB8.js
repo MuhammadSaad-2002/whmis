@@ -1,0 +1,1 @@
+import{K as o}from"./app-BnXMCflo.js";function p(){const{auth:s}=o().props,i=(s==null?void 0:s.permissions)??[];return{can:e=>i.includes(e),canAny:(...e)=>e.some(n=>i.includes(n)),canViewSupplierDetails:(s==null?void 0:s.canViewSupplierDetails)??!1,roles:(s==null?void 0:s.roles)??[]}}export{p as u};

@@ -4,10 +4,11 @@ import { SearchField } from '@/components/ui/search-field';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { money, pakistanDate, shiftDate, shortDate, totalMoney } from '@/lib/format';
-import { Head, Link, router } from '@inertiajs/react';
-import { Ban, Eye, List, ListFilter, Plus } from 'lucide-react';
+import { Head, router } from '@inertiajs/react';
+import { Ban, List, ListFilter, Plus } from 'lucide-react';
 import { type ChangeEvent, useEffect, useRef, useState } from 'react';
 import '../sales/invoice-list.css';
+import { ReceiptReversalImpactDialog } from './reversal-impact-dialog';
 
 type Direction = 'in' | 'out';
 type Filters = { direction?: Direction; method?: string; search?: string; from?: string; to?: string };
@@ -64,10 +65,7 @@ function PaymentActions({ payment, canManage, canReview }: { payment: PaymentRow
     if (payment.status !== 'completed') return null;
 
     return <div className="acts">
-        {payment.direction === 'in' && canReview && <Link className="ib" title="Reversal impact"
-            aria-label={`Reversal impact for ${payment.payment_number}`} href={`/finance-reversals/receipt/${payment.id}`}>
-            <Eye className="i" aria-hidden="true" />
-        </Link>}
+        {payment.direction === 'in' && canReview && <ReceiptReversalImpactDialog id={payment.id} number={payment.payment_number} />}
         {canManage && <button className="ib" type="button" title="Cancel & reverse" aria-label={`Cancel & reverse ${payment.payment_number}`}
             onClick={() => {
                 if (confirm(`Cancel ${payment.payment_number}? The ledger entry will be reversed.`)) {

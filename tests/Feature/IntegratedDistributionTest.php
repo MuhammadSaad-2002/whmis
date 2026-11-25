@@ -761,6 +761,25 @@ class IntegratedDistributionTest extends TestCase
         return $item->refresh();
     }
 
+    public function test_receipt_reversal_preview_returns_json_without_reversing_the_payment(): void
+    {
+        $account = $this->opening();
+        $sale = app(InvoicePostingService::class)->postSale(app(BookingService::class)->convertToSale($this->booking(1)));
+        $receipt = $this->pay($sale, $account, 1000);
+        $url = '/finance-reversals/receipt/'.$receipt->id;
+
+        $this->actingAs($this->reviewer)->getJson($url)->assertOk()->assertJsonPath('label', $receipt->payment_number)
+            ->assertJsonPath('invoices.0.number', $sale->invoice_number)
+            ->assertJsonPath('invoices.0.outstanding', 0)
+            ->assertJsonPath('invoices.0.projected', 100000)
+            ->assertJsonPath('accounts.0.delta', -100000);
+        $this->get($url)->assertInertia(fn (Assert $page) => $page->component('operations/reversal-preview')->where('label', $receipt->payment_number));
+        $this->actingAs($this->salesman)->getJson($url)->assertForbidden();
+
+        $this->assertSame('completed', $receipt->refresh()->status);
+        $this->assertEquals(0, app(InvoiceBalanceService::class)->sales()->whereKey($sale->id)->first()->outstanding);
+    }
+
     public function test_final_rupee_rounding_keeps_exact_invoice_lines_cash_and_reversal(): void
     {
         $account = $this->opening();
