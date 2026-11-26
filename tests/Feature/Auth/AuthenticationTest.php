@@ -57,6 +57,20 @@ class AuthenticationTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_signed_in_salesman_reopening_login_is_sent_to_workspace(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        $salesman = User::factory()->create();
+        $salesman->assignRole('Salesman');
+
+        $this->actingAs($salesman)->get('/dashboard')->assertForbidden();
+        $this->get('/login')->assertRedirectToRoute('workspace');
+        $this->post('/login', ['email' => $salesman->email, 'password' => 'password'])
+            ->assertRedirectToRoute('workspace');
+        $this->get('/workspace')->assertOk();
+        $this->assertAuthenticatedAs($salesman);
+    }
+
     public function test_users_can_logout()
     {
         $user = User::factory()->create();

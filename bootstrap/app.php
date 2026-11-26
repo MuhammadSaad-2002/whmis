@@ -19,6 +19,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // session cookie when TLS terminates at the proxy → login loops / 419.
         $middleware->trustProxies(at: '*');
 
+        // A restored login tab may still have an active session. Let the
+        // workspace choose the landing page instead of assuming dashboard access.
+        $middleware->redirectUsersTo(fn () => route('workspace', absolute: false));
+
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,

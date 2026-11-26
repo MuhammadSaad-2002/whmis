@@ -27,6 +27,8 @@ likely to matter when changing each module.
   tab** action for comparing records. The strip appears only when multiple tabs
   are open and is hidden on phones and narrow tablets. Tab URLs restore only in
   the same authenticated session and browser tab; a new login starts at home.
+- Reopening the login screen while still signed in returns the user to the
+  workspace, which picks a landing page their account can access.
 - Booking, sale, and purchase drafts prompt **Stay**, **Discard**, or **Save
   Draft** before leaving, closing a workspace tab, or logging out. A failed
   save keeps the editor open. The browser shows its own warning for browser
