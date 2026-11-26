@@ -174,8 +174,13 @@ Route::middleware(['auth', 'licensed'])->group(function () {
     Route::get('products-import/template', [ProductController::class, 'template'])
         ->middleware(['can:products.manage', 'can:view-supplier-details'])->name('products.template');
     Route::resource('customers', CustomerController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
+        ->only(['index'])
         ->middleware('can:customers.view');
+    Route::resource('customers', CustomerController::class)
+        ->only(['store', 'update', 'destroy'])
+        ->middleware(['can:customers.view', 'can:customers.manage']);
+    Route::get('customers/{customer}/license', [CustomerController::class, 'downloadLicense'])
+        ->middleware('can:view-customer-license')->name('customers.license.download');
     Route::post('customers-import', [CustomerController::class, 'import'])
         ->middleware('can:customers.manage')->name('customers.import');
     Route::get('customers-import/template', [CustomerController::class, 'template'])

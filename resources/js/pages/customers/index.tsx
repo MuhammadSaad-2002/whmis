@@ -15,19 +15,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
-import { money } from '@/lib/format';
+import { money, pakistanDate, shortDate } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { ALERT_FIX, positive, required, useClientValidation } from '@/lib/form-validation';
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { BookUser, MapPin, Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import { BookUser, Download, MapPin, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { toast } from 'sonner';
 
 interface Customer {
     id: number;
     name: string;
-    drug_license_no: string | null;
+    drug_license?: { number: string | null; expires_on: string | null; has_file: boolean };
     registration_no: string | null;
     ntn: string | null;
     strn: string | null;
@@ -57,6 +57,7 @@ interface Props {
     cities: string[];
     bookers: { id: number; name: string }[];
     filters: { search?: string; city?: string; status?: string };
+    canViewLicense: boolean;
 }
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Customers', href: '/customers' }];
@@ -67,6 +68,8 @@ const emptyForm = {
     city: '', region: '', credit_limit: 0, payment_terms: '', credit_days: 0, booker_id: '',
     booker_ids: [] as number[],
     status: 'active', notes: '', opening_balance: 0,
+    drug_license_expires_on: '',
+    drug_license_file: null as File | null,
 };
 
 const textFields: [keyof typeof emptyForm, string][] = [
@@ -76,7 +79,6 @@ const textFields: [keyof typeof emptyForm, string][] = [
     ['whatsapp', 'WhatsApp'],
     ['email', 'Email'],
     ['cnic', 'CNIC'],
-    ['drug_license_no', 'Drug License No'],
     ['registration_no', 'Registration No'],
     ['ntn', 'NTN'],
     ['strn', 'STRN'],
@@ -86,7 +88,7 @@ const textFields: [keyof typeof emptyForm, string][] = [
     ['website', 'Website'],
 ];
 
-export default function CustomersIndex({ customers, cities, bookers, filters }: Props) {
+export default function CustomersIndex({ customers, cities, bookers, filters, canViewLicense }: Props) {
     const { can, canViewSupplierDetails } = usePermissions();
     const canViewLedger = can('ledger.view') && canViewSupplierDetails;
     const canManageCustomers = can('customers.manage');
@@ -94,6 +96,7 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
     const [dialogOpen, setDialogOpen] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
     const [editing, setEditing] = useState<Customer | null>(null);
+    const today = pakistanDate();
     const filterState = useMasterFilters('/customers', filters);
     const { searchRef, onSearchKeyDown, rowProps } = useListKeyboardNav({
         rowCount: customers.data.length,
@@ -119,7 +122,8 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
         form.setData({
             ...emptyForm,
             name: customer.name,
-            drug_license_no: customer.drug_license_no ?? '',
+            drug_license_no: customer.drug_license?.number ?? '',
+            drug_license_expires_on: customer.drug_license?.expires_on ?? '',
             registration_no: customer.registration_no ?? '',
             ntn: customer.ntn ?? '',
             strn: customer.strn ?? '',
@@ -151,13 +155,21 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
             toast.error(ALERT_FIX);
             return;
         }
-        form.transform((data) => ({ ...data, booker_id: data.booker_id || null }));
+        const replacingFile = Boolean(editing && canViewLicense && form.data.drug_license_file);
+        form.transform(({ drug_license_no, drug_license_expires_on, drug_license_file, ...data }) => ({
+            ...data,
+            booker_id: data.booker_id || null,
+            ...(canViewLicense ? { drug_license_no, drug_license_expires_on, drug_license_file } : {}),
+            ...(replacingFile ? { _method: 'PUT' } : {}),
+        }));
         const options = {
             preserveScroll: true,
             onSuccess: () => setDialogOpen(false),
             onError: () => toast.error(ALERT_FIX),
         };
-        if (editing) form.put(route('customers.update', editing.id), options);
+        // Laravel reads file uploads on POST, including method-spoofed updates.
+        if (editing && replacingFile) form.post(route('customers.update', editing.id), options);
+        else if (editing) form.put(route('customers.update', editing.id), options);
         else form.post(route('customers.store'), options);
     };
 
@@ -182,7 +194,7 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                                 <TableHead>Customer</TableHead>
                                 <TableHead>Owner / Contact</TableHead>
                                 <TableHead>City</TableHead>
-                                <TableHead>License</TableHead>
+                                {canViewLicense && <TableHead>License</TableHead>}
                                 <TableHead className="r">Balance</TableHead>
                                 <TableHead className="r">Credit Limit</TableHead>
                                 <TableHead>Status</TableHead>
@@ -192,7 +204,7 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                         <TableBody>
                             {customers.data.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={showActions ? 8 : 7} className="empty">
+                                    <TableCell colSpan={6 + Number(canViewLicense) + Number(showActions)} className="empty">
                                         {filterState.applied ? 'No customers match these filters.' : 'No customers found.'}
                                     </TableCell>
                                 </TableRow>
@@ -200,6 +212,8 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                             {customers.data.map((customer, index) => {
                                 const balance = Number(customer.debit_sum ?? 0) - Number(customer.credit_sum ?? 0);
                                 const overLimit = Number(customer.credit_limit) > 0 && balance > Number(customer.credit_limit);
+                                const license = customer.drug_license;
+                                const expiry = license?.expires_on;
                                 return (
                                     <TableRow key={customer.id} {...rowProps(index)}>
                                         <TableCell className="entity-name"><strong>{customer.name}</strong></TableCell>
@@ -208,7 +222,17 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                                             {customer.phone && <small className="row-secondary">{customer.phone}</small>}
                                         </TableCell>
                                         <TableCell>{customer.city || '—'}</TableCell>
-                                        <TableCell>{customer.drug_license_no || '—'}</TableCell>
+                                        {canViewLicense && <TableCell>
+                                            {license?.number && <span>{license.number}</span>}
+                                            {expiry && <small className={expiry < today ? 'block text-xs font-semibold text-destructive' : 'row-secondary'}>
+                                                {expiry < today ? 'Expired' : expiry === today ? 'Expires today ·' : 'Expires'} {shortDate(expiry)}
+                                            </small>}
+                                            {license?.has_file && <a className="inline-flex items-center gap-1 text-sm font-semibold text-primary underline-offset-2 hover:underline"
+                                                href={route('customers.license.download', customer.id)} download aria-label={`Download license for ${customer.name}`}>
+                                                <Download className="i" aria-hidden="true" />Download
+                                            </a>}
+                                            {!license?.number && !expiry && !license?.has_file && '—'}
+                                        </TableCell>}
                                         <TableCell className="r num">
                                             <span className={overLimit ? 'font-semibold neg' : ''}>{money(balance)}</span>
                                         </TableCell>
@@ -281,6 +305,41 @@ export default function CustomersIndex({ customers, cities, bookers, filters }: 
                                 {err(key) && <p className="text-xs text-destructive">{err(key)}</p>}
                             </div>
                         ))}
+                        {canViewLicense && (
+                            <fieldset className="col-span-full grid min-w-0 gap-3 rounded-lg border p-3 sm:grid-cols-2">
+                                <legend className="px-1 text-sm font-semibold">Drug License</legend>
+                                <div>
+                                    <Label htmlFor="drug_license_no">Drug License Number</Label>
+                                    <Input id="drug_license_no" value={form.data.drug_license_no}
+                                        onChange={(event) => form.setData('drug_license_no', event.target.value)} />
+                                    {err('drug_license_no') && <p className="text-xs text-destructive">{err('drug_license_no')}</p>}
+                                </div>
+                                <div>
+                                    <Label htmlFor="drug_license_expires_on">License Expiry Date</Label>
+                                    <Input id="drug_license_expires_on" type="date" value={form.data.drug_license_expires_on}
+                                        onChange={(event) => form.setData('drug_license_expires_on', event.target.value)}
+                                        aria-invalid={!!err('drug_license_expires_on')} />
+                                    {err('drug_license_expires_on') && <p className="text-xs text-destructive">{err('drug_license_expires_on')}</p>}
+                                </div>
+                                <div className="col-span-full">
+                                    <Label htmlFor="drug_license_file">{editing?.drug_license?.has_file ? 'Replace License File' : 'Upload License File'}</Label>
+                                    <Input id="drug_license_file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp"
+                                        aria-describedby="drug-license-file-hint" aria-invalid={!!err('drug_license_file')}
+                                        onChange={(event) => {
+                                            form.setData('drug_license_file', event.target.files?.[0] ?? null);
+                                            form.clearErrors('drug_license_file');
+                                        }} />
+                                    <p id="drug-license-file-hint" className="text-xs text-muted-foreground">
+                                        PDF, JPEG, PNG or WebP. Maximum 10 MB.
+                                    </p>
+                                    {err('drug_license_file') && <p className="text-xs text-destructive" role="alert">{err('drug_license_file')}</p>}
+                                    {editing?.drug_license?.has_file && <a href={route('customers.license.download', editing.id)} download
+                                        className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-primary underline underline-offset-4">
+                                        <Download className="size-4" aria-hidden="true" /> Download current license
+                                    </a>}
+                                </div>
+                            </fieldset>
+                        )}
                         <div className="col-span-full">
                             <Label htmlFor="address">Address</Label>
                             <Input id="address" value={form.data.address} onChange={(e) => form.setData('address', e.target.value)} />

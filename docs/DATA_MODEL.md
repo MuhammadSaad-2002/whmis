@@ -53,6 +53,12 @@ booking date and the timestamp used for dispatch scheduling.
 - Users, roles, and permissions drive access.
 - Companies are suppliers in the UI.
 - Customers are pharmacies and may have one primary Booker plus many assigned Bookers.
+  `drug_license_expires_on` is an optional calendar date, and
+  `drug_license_path` points to the current attachment on the private local disk.
+  Existing customers start with both fields blank. Apply the migration or
+  [matching manual SQL](../database/manual/2026_11_26_add_drug_license_details_to_customers.sql).
+  Back up `storage/app/private/customer-licenses` with the database; the database
+  contains the file references, not the files.
 - Products belong to suppliers and categories. `products.visible_to_bookers`
   defaults to true and controls field Booker visibility, not stock or product status.
   Production SQL: [add Booker visibility](../database/manual/2026_11_23_add_booker_visibility_to_products.sql).

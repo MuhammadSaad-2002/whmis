@@ -5,24 +5,54 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { type ProductHit } from '@/components/product-search-cell';
 import { usePermissions } from '@/hooks/use-permissions';
 import { amount, qty } from '@/lib/format';
+import { ChevronRight, PackageSearch, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import './product-search-dialog.css';
 
 interface Props {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     warehouseId: number;
     companyId?: number;
+    includeSupplierDetails: boolean;
     onSelect: (product: ProductHit) => void;
 }
 
-export function ProductSearchDialog({ open, onOpenChange, warehouseId, companyId, onSelect }: Props) {
-    const { can, canViewSupplierDetails: showSupplier } = usePermissions();
+export function ProductSearchDialog({ open, onOpenChange, warehouseId, companyId, includeSupplierDetails, onSelect }: Props) {
+    const { can, canViewSupplierDetails } = usePermissions();
+    const showSupplier = includeSupplierDetails && canViewSupplierDetails;
     const showCost = showSupplier && can('products.view_cost');
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<ProductHit[]>([]);
     const [loading, setLoading] = useState(true);
     const [failed, setFailed] = useState(false);
     const opener = useRef<HTMLElement | null>(null);
+    const [content, setContent] = useState<HTMLDivElement | null>(null);
+    const title = useRef<HTMLHeadingElement>(null);
+    const input = useRef<HTMLInputElement>(null);
+    const list = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const frame = window.frameElement;
+        const viewport = frame ? window.parent.visualViewport : window.visualViewport;
+        if (!open || !viewport || !content) return;
+        // The picker runs inside the workspace frame. Mobile keyboards resize
+        // the outer visual viewport; clip it to the frame's visible bounds.
+        const fitViewport = () => {
+            const bounds = frame?.getBoundingClientRect();
+            const top = Math.max(0, viewport.offsetTop - (bounds?.top ?? 0));
+            const bottom = Math.min(window.innerHeight, viewport.offsetTop + viewport.height - (bounds?.top ?? 0));
+            content.style.setProperty('--picker-height', `${Math.max(0, bottom - top)}px`);
+            content.style.setProperty('--picker-top', `${top}px`);
+        };
+        fitViewport();
+        viewport.addEventListener('resize', fitViewport);
+        viewport.addEventListener('scroll', fitViewport);
+        return () => {
+            viewport.removeEventListener('resize', fitViewport);
+            viewport.removeEventListener('scroll', fitViewport);
+        };
+    }, [open, content]);
 
     useEffect(() => {
         if (!open) return;
@@ -53,11 +83,26 @@ export function ProductSearchDialog({ open, onOpenChange, warehouseId, companyId
         };
     }, [query, open, warehouseId, companyId]);
 
+    const search = (value: string) => {
+        if (value === query) return;
+        setLoading(true);
+        setQuery(value);
+        if (list.current) list.current.scrollTop = 0;
+    };
+
+    const status = loading ? 'Searching…' : failed ? 'Couldn’t load products' : results.length === 0
+        ? 'No products found' : results.length === 20 ? 'Showing up to 20 matches' : `${results.length} ${results.length === 1 ? 'product' : 'products'}`;
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
-                className="top-3 flex max-h-[calc(100dvh-1.5rem)] w-[calc(100%-1rem)] translate-y-0 flex-col gap-0 overflow-hidden rounded-xl p-0 sm:top-1/2 sm:max-w-lg sm:-translate-y-1/2 [&>button]:top-1 [&>button]:right-2 [&>button]:grid [&>button]:size-11 [&>button]:place-items-center"
-                onOpenAutoFocus={() => { opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; }}
+                ref={setContent}
+                className="booking-product-picker flex max-w-none translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-card p-0 sm:max-w-xl sm:rounded-2xl sm:border [&>button]:top-2 [&>button]:right-3 [&>button]:grid [&>button]:size-11 [&>button]:place-items-center [&>button]:rounded-lg"
+                onOpenAutoFocus={(event) => {
+                    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                    event.preventDefault();
+                    title.current?.focus({ preventScroll: true });
+                }}
                 onCloseAutoFocus={(event) => {
                     if (opener.current?.isConnected) {
                         event.preventDefault();
@@ -65,27 +110,40 @@ export function ProductSearchDialog({ open, onOpenChange, warehouseId, companyId
                     }
                 }}
             >
-                <div className="shrink-0 border-b px-4 py-3.5 pr-14">
-                    <DialogTitle>Select product</DialogTitle>
+                <div className="shrink-0 px-4 pt-5 pb-3.5 pr-16">
+                    <DialogTitle ref={title} tabIndex={-1} className="text-xl focus:outline-none">Select product</DialogTitle>
                     <DialogDescription className="sr-only">Search by product name, generic name, or barcode.</DialogDescription>
                 </div>
-                <Command shouldFilter={false} className="min-h-0 rounded-none">
-                    <CommandInput
-                        aria-label="Search products"
-                        placeholder="Name, generic or barcode"
-                        className="h-12 text-base"
-                        value={query}
-                        onValueChange={(value) => {
-                            setQuery(value);
-                            setLoading(true);
-                        }}
-                    />
-                    {(loading || failed || results.length === 0) && (
-                        <p role="status" className="p-4 text-sm text-muted-foreground">
-                            {loading ? 'Searching…' : failed ? 'Could not load products. Try another search.' : 'No products found.'}
-                        </p>
-                    )}
-                    <CommandList className="max-h-[55dvh] min-h-0 overscroll-contain px-2">
+                <Command shouldFilter={false} className="min-h-0 flex-1 rounded-none bg-card text-foreground">
+                    <div className="shrink-0 border-b px-4">
+                        <div className="relative [&_[cmdk-input-wrapper]]:rounded-xl [&_[cmdk-input-wrapper]]:border [&_[cmdk-input-wrapper]]:bg-background">
+                            <CommandInput
+                                ref={input}
+                                aria-label="Search products"
+                                placeholder="Name, generic or barcode"
+                                className={query ? 'h-12 pr-9 text-base' : 'h-12 text-base'}
+                                value={query}
+                                onValueChange={search}
+                                autoComplete="off"
+                                autoCapitalize="none"
+                                spellCheck={false}
+                            />
+                            {query && <button type="button" aria-label="Clear search"
+                                className="absolute inset-y-0 right-1 my-auto grid size-11 place-items-center rounded-lg text-muted-foreground hover:bg-muted"
+                                onClick={() => { search(''); input.current?.focus(); }}>
+                                <X className="size-4" aria-hidden="true" />
+                            </button>}
+                        </div>
+                        <p role="status" className="py-2.5 text-xs font-medium text-muted-foreground">{status}</p>
+                    </div>
+                    <CommandList ref={list} label="Products" aria-busy={loading}
+                        className="max-h-none min-h-0 flex-1 overscroll-contain bg-muted/35 px-3 [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]">
+                        {!loading && (failed || results.length === 0) && (
+                            <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-sm text-muted-foreground">
+                                <PackageSearch className="size-7" aria-hidden="true" />
+                                {failed ? 'Check your connection and try searching again.' : 'Try a different product name, generic name, or barcode.'}
+                            </div>
+                        )}
                         {!loading && !failed && results.map((product) => (
                             <CommandItem
                                 key={product.id}
@@ -94,21 +152,29 @@ export function ProductSearchDialog({ open, onOpenChange, warehouseId, companyId
                                     onSelect(product);
                                     onOpenChange(false);
                                 }}
-                                className="my-1 block min-h-12 cursor-pointer rounded-lg px-2.5 py-2.5"
+                                className="mt-2 block cursor-pointer rounded-xl border bg-card p-3"
                             >
-                                <span className="block font-semibold [overflow-wrap:anywhere]">{product.name}</span>
-                                {(product.generic_name || product.pack_size) && (
-                                    <span className="block text-xs text-muted-foreground">
-                                        {[product.generic_name, product.pack_size].filter(Boolean).join(' · ')}
-                                    </span>
-                                )}
-                                <span className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                                    <span className={product.stock <= 0 ? 'text-destructive' : ''}>Stock {qty(product.stock)}</span>
-                                    <span>Trade {amount(product.trade_price)}</span>
-                                    <span>Retail {amount(product.retail_price)}</span>
-                                    {showSupplier && product.company && <span>{product.company}</span>}
-                                    {showCost && <span>Cost {amount(product.purchase_price ?? 0)}</span>}
+                                <span className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold [overflow-wrap:anywhere]">{product.name}</span>
+                                    <ChevronRight className="shrink-0 text-muted-foreground" aria-hidden="true" />
                                 </span>
+                                {product.generic_name && <span className="mt-0.5 block text-xs text-muted-foreground [overflow-wrap:anywhere]">{product.generic_name}</span>}
+                                <span className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+                                    <span className={`rounded-md px-2 py-1 font-semibold tabular-nums ${product.stock > 0
+                                        ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/70 dark:text-emerald-100'
+                                        : 'bg-destructive/10 text-destructive'}`}>
+                                        {product.stock > 0 ? `${qty(product.stock)} in stock` : 'Out of stock'}
+                                    </span>
+                                    {product.pack_size && <span>Pack: {product.pack_size}</span>}
+                                </span>
+                                <span className="mt-2 grid grid-cols-2 gap-2 border-t pt-2 text-xs tabular-nums">
+                                    <span className="min-w-0 text-muted-foreground">Trade <strong className="text-sm font-semibold text-foreground">Rs {amount(product.trade_price)}</strong></span>
+                                    <span className="min-w-0 text-muted-foreground">Retail <strong className="text-sm font-medium text-foreground">Rs {amount(product.retail_price)}</strong></span>
+                                </span>
+                                {showSupplier && (product.company || showCost) && <span className="mt-1.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                                    {product.company && <span>{product.company}</span>}
+                                    {showCost && <span>Cost {amount(product.purchase_price ?? 0)}</span>}
+                                </span>}
                             </CommandItem>
                         ))}
                     </CommandList>

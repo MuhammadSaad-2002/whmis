@@ -93,6 +93,10 @@ the same header and filter tabs while retaining its inline schedule editor.
   on. This hides products from field Booker searches and new orders without
   deactivating the product for staff or changing saved orders.
 - Customers: `/customers`, customer import, template download, primary Booker, assigned Bookers, and assignment audit.
+  Customer managers can record the drug license expiry date and attach or replace a
+  PDF, JPEG, PNG, or WebP (up to 10 MB) in the Add/Edit Customer form. Authorized
+  users can download it from the register, which also flags expired licenses.
+  These details are hidden from field Bookers and do not block bookings.
 - Incentive rules: `/incentives`; supports global, supplier, product, and customer scopes.
 
 ## Transactions
@@ -155,8 +159,10 @@ verification, Cash & Bank, refunds, and employee commissions.
   List rows, counts, and values all use the same Booker scope.
 - In booking, sales, purchase, and both return item grids, Up/Down move between existing rows without changing values. They stay in the same field when available; Enter and Add Row still create new rows.
 - On phones and tablets the booking form puts customer selection above compact
-  product cards. Product selection opens a searchable dialog; each card keeps
-  quantity, bonus, unit price, incentives, and line total within reach. Optional
+  product cards. Product selection opens a touch-friendly picker with pack size,
+  stock status, and separate trade and retail prices. Search stays above the
+  scrolling results. Each booking line keeps quantity, bonus, unit price,
+  incentives, and line total within reach. Optional
   details and adjustments expand on demand, and Discount/GST validation errors
   expand their fields automatically. Read-only bookings show item values as text.
   The footer keeps the total and enabled workflow actions visible, with a

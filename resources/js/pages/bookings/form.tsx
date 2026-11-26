@@ -13,9 +13,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-    Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
 import { useInvoiceHotkeys, useKeyboardGrid } from '@/hooks/use-keyboard-grid';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -1182,6 +1179,7 @@ export default function BookingForm({ customers, warehouse, bookers, booking, bo
                     open
                     onOpenChange={(open) => { if (!open) setProductRow(null); }}
                     warehouseId={warehouse.id}
+                    includeSupplierDetails={showSupplier}
                     onSelect={(product) => applyProduct(productRow, product)}
                 />
             )}

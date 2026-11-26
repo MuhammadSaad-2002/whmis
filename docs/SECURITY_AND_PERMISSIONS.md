@@ -29,6 +29,12 @@ WHMIS uses Laravel session authentication with Spatie Laravel Permission. Routes
 are permission-gated with `can:` middleware, and React receives roles and
 permissions from `HandleInertiaRequests`.
 
+Customer drug license details and downloads require `customers.view` and are
+explicitly denied to field Bookers, even with additional customer grants.
+Customer write actions also require `customers.manage`. The attachment is
+stored on the private disk and its path never appears in serialized records or
+the audit log. Only the authenticated customer license route serves the file.
+
 ## Seeded permissions
 
 Permission names follow `<module>.<action>`.

@@ -18,10 +18,17 @@ class Customer extends Model implements AuditableContract
 
     protected $guarded = [];
 
+    // Expose details explicitly on the authorized customer register, never
+    // through relationships in bookings, dispatch, or other payloads.
+    protected $hidden = ['drug_license_no', 'drug_license_expires_on', 'drug_license_path'];
+
+    protected $auditExclude = ['drug_license_path'];
+
     protected function casts(): array
     {
         return [
             'credit_limit' => 'decimal:2',
+            'drug_license_expires_on' => 'date',
         ];
     }
 

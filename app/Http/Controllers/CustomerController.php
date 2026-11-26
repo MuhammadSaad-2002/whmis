@@ -4,17 +4,25 @@ namespace App\Http\Controllers;
 
 use App\Models\BookerAssignmentLog;
 use App\Models\Customer;
+use App\Models\User;
+use App\Services\CustomerLicenseFiles;
 use App\Services\LedgerService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CustomerController extends Controller
 {
-    public function __construct(private readonly LedgerService $ledger) {}
+    public function __construct(
+        private readonly LedgerService $ledger,
+        private readonly CustomerLicenseFiles $licenseFiles,
+    ) {}
 
     public function index(Request $request)
     {
-        $customers = Customer::query()
+        $customers = $this->visibleCustomers($request->user())
             ->when($request->search, function ($q, $search) {
                 $q->where(fn ($w) => $w
                     ->where('name', 'like', "%{$search}%")
@@ -24,11 +32,6 @@ class CustomerController extends Controller
             })
             ->when($request->city, fn ($q, $city) => $q->where('city', $city))
             ->when($request->status, fn ($q, $status) => $q->where('status', $status))
-            // Bookers (no company-wide visibility) see only their assigned pharmacies.
-            ->when(
-                ! $request->user()->can('dashboard.view_all'),
-                fn ($q) => $q->forBooker($request->user()->id),
-            )
             ->withSum('ledgerEntries as debit_sum', 'debit')
             ->withSum('ledgerEntries as credit_sum', 'credit')
             ->with('bookers:id')
@@ -36,19 +39,26 @@ class CustomerController extends Controller
             ->paginate(15)
             ->withQueryString();
 
-        // Expose the assigned booker ids as a flat array for the edit form.
-        $customers->getCollection()->transform(function (Customer $customer) {
+        $canViewLicense = $request->user()->can('view-customer-license');
+        $customers->through(function (Customer $customer) use ($canViewLicense) {
             $customer->setAttribute('booker_ids', $customer->bookers->pluck('id')->values());
             $customer->unsetRelation('bookers');
 
-            return $customer;
+            return $customer->toArray() + ($canViewLicense ? [
+                'drug_license' => [
+                    'number' => $customer->drug_license_no,
+                    'expires_on' => $customer->drug_license_expires_on?->toDateString(),
+                    'has_file' => filled($customer->drug_license_path),
+                ],
+            ] : []);
         });
 
         return Inertia::render('customers/index', [
             'customers' => $customers,
             'cities' => Customer::whereNotNull('city')->distinct()->orderBy('city')->pluck('city'),
-            'bookers' => \App\Models\User::role('Booker')->orderBy('name')->get(['id', 'name']),
+            'bookers' => User::role('Booker')->orderBy('name')->get(['id', 'name']),
             'filters' => $request->only('search', 'city', 'status'),
+            'canViewLicense' => $canViewLicense,
         ]);
     }
 
@@ -57,9 +67,10 @@ class CustomerController extends Controller
         $data = $this->validated($request);
         $openingBalance = (float) ($data['opening_balance'] ?? 0);
         $bookerIds = $data['booker_ids'] ?? [];
-        unset($data['opening_balance'], $data['booker_ids']);
+        $file = $data['drug_license_file'] ?? null;
+        unset($data['opening_balance'], $data['booker_ids'], $data['drug_license_file']);
 
-        $customer = Customer::create($data);
+        $customer = $this->licenseFiles->saveCustomer($data, null, $file);
         $this->syncBookers($request, $customer, $bookerIds);
 
         if ($openingBalance != 0.0) {
@@ -79,13 +90,22 @@ class CustomerController extends Controller
 
     public function update(Request $request, Customer $customer)
     {
+        abort_unless($this->visibleCustomers($request->user())->whereKey($customer->id)->exists(), 404);
         $data = $this->validated($request);
         $bookerIds = $data['booker_ids'] ?? [];
-        unset($data['opening_balance'], $data['booker_ids']);
-        $customer->update($data);
+        $file = $data['drug_license_file'] ?? null;
+        unset($data['opening_balance'], $data['booker_ids'], $data['drug_license_file']);
+        $customer = $this->licenseFiles->saveCustomer($data, $customer, $file);
         $this->syncBookers($request, $customer, $bookerIds);
 
         return back()->with('success', 'Customer updated.');
+    }
+
+    public function downloadLicense(Request $request, Customer $customer): StreamedResponse
+    {
+        abort_unless($this->visibleCustomers($request->user())->whereKey($customer->id)->exists(), 404);
+
+        return $this->licenseFiles->download($customer);
     }
 
     /**
@@ -143,8 +163,10 @@ class CustomerController extends Controller
         );
     }
 
-    public function destroy(Customer $customer)
+    public function destroy(Request $request, Customer $customer)
     {
+        abort_unless($this->visibleCustomers($request->user())->whereKey($customer->id)->exists(), 404);
+
         if ($customer->salesInvoices()->exists() || $customer->ledgerEntries()->exists()) {
             return back()->with('error', 'Cannot delete: customer has transactions. Mark them inactive instead.');
         }
@@ -154,11 +176,22 @@ class CustomerController extends Controller
         return back()->with('success', 'Customer deleted.');
     }
 
+    private function visibleCustomers(User $user): Builder
+    {
+        return Customer::query()->when(! $user->can('dashboard.view_all'), fn ($query) => $query->forBooker($user->id));
+    }
+
     private function validated(Request $request): array
     {
+        if ($request->hasAny(['drug_license_no', 'drug_license_expires_on', 'drug_license_file'])) {
+            Gate::authorize('view-customer-license');
+        }
+
         return $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'drug_license_no' => ['nullable', 'string', 'max:100'],
+            'drug_license_expires_on' => ['nullable', 'date_format:Y-m-d'],
+            'drug_license_file' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:10240'],
             'registration_no' => ['nullable', 'string', 'max:100'],
             'ntn' => ['nullable', 'string', 'max:100'],
             'strn' => ['nullable', 'string', 'max:100'],

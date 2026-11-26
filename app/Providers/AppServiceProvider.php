@@ -40,6 +40,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::define('view-supplier-details', fn (User $user) => $user->canViewSupplierDetails());
+        Gate::define('view-customer-license', fn (User $user) => ! $user->isFieldBooker() && $user->can('customers.view'));
         Gate::define('manage-own-account', fn (User $user) => ! $user->isFieldBooker());
         Gate::define('manage-employee-commissions', fn (User $user) => (! $user->hasAnyRole(['Booker', 'Salesman']) || $user->hasAnyRole(['Admin', 'Super Admin']))
             && app(PermissionCheck::class)->allowsAny($user, ['commission.manage']));
