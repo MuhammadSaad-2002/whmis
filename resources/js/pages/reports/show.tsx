@@ -1,4 +1,4 @@
-import { HBarChart, type BarDatum } from '@/components/bar-chart';
+import { RegisterLayout, RegisterList, RegisterMetric } from '@/components/master-register';
 import { SearchableSelect } from '@/components/searchable-select';
 import { TrendChart, type TrendPoint } from '@/components/trend-chart';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import AppLayout from '@/layouts/app-layout';
-import { amount, qty, shortDate, totalAmount } from '@/lib/format';
+import { amount, qty, shiftDate, shortDate, totalAmount } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
@@ -18,6 +18,9 @@ import {
     ArrowUpFromLine,
     BarChart3,
     CalendarRange,
+    ChartBar,
+    ChartLine,
+    ChartPie,
     ChevronDown,
     FileDown,
     FileSpreadsheet,
@@ -26,6 +29,8 @@ import {
     SlidersHorizontal,
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import ChartView, { type ReportChartView } from './chart-view';
+import './reports.css';
 
 interface Column {
     key: string;
@@ -51,6 +56,8 @@ interface ReportTableData {
 interface Props extends ReportTableData {
     report: { key: string; title: string; description: string; filters: string[] };
     chart: TrendPoint[] | null;
+    chartViews: ReportChartView[];
+    chartColors: string[];
     visualization: RankedChartConfig | null;
     sections?: (ReportTableData & { title: string })[];
     sectionTitle?: string | null;
@@ -65,6 +72,8 @@ interface MetricConfig {
     key: string;
     label: string;
     format: 'money' | 'qty' | 'pct';
+    labelKey?: string;
+    valueKey?: string;
 }
 
 interface RankedChartConfig {
@@ -72,173 +81,12 @@ interface RankedChartConfig {
     metrics: MetricConfig[];
 }
 
-const RANKED_CHARTS: Record<string, RankedChartConfig> = {
-    'sales-register': {
-        labelKey: 'customer',
-        metrics: [
-            { key: 'net_amount', label: 'Net Sales', format: 'money' },
-            { key: 'net_profit', label: 'Net Profit', format: 'money' },
-            { key: 'returns', label: 'Returns', format: 'money' },
-        ],
-    },
-    'product-sales': {
-        labelKey: 'product',
-        metrics: [
-            { key: 'net_revenue', label: 'Net Revenue', format: 'money' },
-            { key: 'net_profit', label: 'Net Profit', format: 'money' },
-            { key: 'net_cost', label: 'Net COGS', format: 'money' },
-            { key: 'net_qty', label: 'Net Quantity', format: 'qty' },
-        ],
-    },
-    'all-time-product-cogs': {
-        labelKey: 'product',
-        metrics: [
-            { key: 'net_qty_sold', label: 'Net Quantity Sold', format: 'qty' },
-            { key: 'net_cogs', label: 'Net COGS', format: 'money' },
-            { key: 'gross_cogs', label: 'Gross COGS', format: 'money' },
-        ],
-    },
-    'product-sales-daily': {
-        labelKey: 'product',
-        metrics: [
-            { key: 'revenue', label: 'Net Revenue', format: 'money' },
-            { key: 'profit', label: 'Net Profit', format: 'money' },
-            { key: 'cost', label: 'Net COGS', format: 'money' },
-            { key: 'qty', label: 'Net Quantity', format: 'qty' },
-        ],
-    },
-    'customer-sales': {
-        labelKey: 'customer',
-        metrics: [
-            { key: 'net_revenue', label: 'Net Revenue', format: 'money' },
-            { key: 'net_profit', label: 'Net Profit', format: 'money' },
-            { key: 'outstanding', label: 'Outstanding', format: 'money' },
-        ],
-    },
-    'booker-sales': {
-        labelKey: 'booker',
-        metrics: [
-            { key: 'net_revenue', label: 'Net Revenue', format: 'money' },
-            { key: 'net_profit', label: 'Net Profit', format: 'money' },
-            { key: 'invoices', label: 'Invoices', format: 'qty' },
-        ],
-    },
-    'incentives-given': {
-        labelKey: 'customer',
-        metrics: [
-            { key: 'value_given', label: 'Incentive Value', format: 'money' },
-            { key: 'bonus_qty', label: 'Bonus Units', format: 'qty' },
-            { key: 'discount', label: 'Discount', format: 'money' },
-        ],
-    },
-    'purchase-register': {
-        labelKey: 'company',
-        metrics: [
-            { key: 'total_amount', label: 'Purchases', format: 'money' },
-            { key: 'total_margin', label: 'Expected Margin', format: 'money' },
-        ],
-    },
-    'supplier-purchases': {
-        labelKey: 'supplier',
-        metrics: [
-            { key: 'total', label: 'Purchases', format: 'money' },
-            { key: 'margin', label: 'Expected Margin', format: 'money' },
-            { key: 'invoices', label: 'Invoices', format: 'qty' },
-        ],
-    },
-    'bonus-analysis': {
-        labelKey: 'product',
-        metrics: [
-            { key: 'received', label: 'Bonus Received', format: 'qty' },
-            { key: 'given', label: 'Bonus Given', format: 'qty' },
-            { key: 'net', label: 'Net Kept', format: 'qty' },
-        ],
-    },
-    'stock-position': {
-        labelKey: 'product',
-        metrics: [
-            { key: 'value', label: 'Value at Cost', format: 'money' },
-            { key: 'stock', label: 'Available Quantity', format: 'qty' },
-        ],
-    },
-    expiry: {
-        labelKey: 'product',
-        metrics: [
-            { key: 'value', label: 'Value at Cost', format: 'money' },
-            { key: 'qty', label: 'Expiring Quantity', format: 'qty' },
-        ],
-    },
-    'sample-stock': {
-        labelKey: 'product',
-        metrics: [{ key: 'qty', label: 'Sample Quantity', format: 'qty' }],
-    },
-    'sample-movement': {
-        labelKey: 'product',
-        metrics: [
-            { key: 'closing', label: 'Closing Quantity', format: 'qty' },
-            { key: 'received', label: 'Received', format: 'qty' },
-            { key: 'issued', label: 'Issued', format: 'qty' },
-        ],
-    },
-    'stock-movement': {
-        labelKey: 'product',
-        metrics: [
-            { key: 'closing', label: 'Closing Quantity', format: 'qty' },
-            { key: 'purchased', label: 'Purchased', format: 'qty' },
-            { key: 'billed', label: 'Billed', format: 'qty' },
-            { key: 'value', label: 'Value at Cost', format: 'money' },
-        ],
-    },
-    'slow-fast-moving': {
-        labelKey: 'product',
-        metrics: [
-            { key: 'sold', label: 'Quantity Sold', format: 'qty' },
-            { key: 'stock', label: 'Current Stock', format: 'qty' },
-        ],
-    },
-    outstanding: {
-        labelKey: 'customer',
-        metrics: [
-            { key: 'balance', label: 'Outstanding Balance', format: 'money' },
-            { key: 'over_90', label: 'Over 90 Days', format: 'money' },
-            { key: 'current', label: '0–30 Days', format: 'money' },
-        ],
-    },
-    'supplier-payables': {
-        labelKey: 'supplier',
-        metrics: [{ key: 'balance', label: 'Supplier Payable', format: 'money' }],
-    },
-    'sample-issue-product': {
-        labelKey: 'product',
-        metrics: [
-            { key: 'qty', label: 'Quantity Issued', format: 'qty' },
-            { key: 'cost', label: 'Cost Value', format: 'money' },
-        ],
-    },
-    'sample-issue-recipient': {
-        labelKey: 'customer',
-        metrics: [
-            { key: 'qty', label: 'Quantity Issued', format: 'qty' },
-            { key: 'cost', label: 'Cost Value', format: 'money' },
-            { key: 'issues', label: 'Issues', format: 'qty' },
-        ],
-    },
-    'stock-on-loan': {
-        labelKey: 'product',
-        metrics: [
-            { key: 'outstanding', label: 'Outstanding Units', format: 'qty' },
-            { key: 'loaned', label: 'Loaned Units', format: 'qty' },
-            { key: 'returned', label: 'Returned Units', format: 'qty' },
-        ],
-    },
-};
-
 const SUMMARY_KEYS: Record<string, string[]> = {
-    'sales-register': ['net_amount', 'net_profit', 'returns', 'total_amount'],
+    'sales-register': ['net_amount', 'received', 'outstanding', 'net_profit'],
     'product-sales': ['net_revenue', 'net_cost', 'net_profit', 'net_qty'],
     'all-time-product-cogs': ['net_qty_sold', 'net_cogs', 'qty_returned', 'return_cogs'],
-    'customer-sales': ['net_revenue', 'net_profit', 'outstanding', 'invoices'],
-    'booker-sales': ['net_revenue', 'net_profit', 'invoices', 'returns'],
+    'customer-sales': ['net_revenue', 'received', 'net_profit', 'outstanding'],
+    'booker-sales': ['net_revenue', 'received', 'net_profit', 'invoices'],
     'product-sales-daily': ['revenue', 'cost', 'profit', 'qty'],
     'purchase-register': ['total_amount', 'total_margin'],
     'supplier-purchases': ['total', 'margin', 'invoices'],
@@ -247,7 +95,8 @@ const SUMMARY_KEYS: Record<string, string[]> = {
     expiry: ['value', 'qty'],
     outstanding: ['balance', 'over_90', 'current', 'd31_60'],
     'supplier-payables': ['balance'],
-    'profit-by-month': ['net_sales', 'profit', 'cost', 'returns'],
+    'profit-by-month': ['net_sales', 'received', 'profit', 'cost'],
+    'all-time-purchases-stock': ['purchased', 'sold', 'on_hold', 'available'],
 };
 
 function formatCell(value: string | number | null, format?: Column['format'], final = false): string {
@@ -346,23 +195,61 @@ function NegativeValueInfo({ explanation }: { explanation: string }) {
     );
 }
 
-function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData & { title?: string | null }) {
+function RankedBars({ data, metric }: { data: { label: string; value: number }[]; metric: MetricConfig }) {
+    const min = Math.min(0, ...data.map(({ value }) => value));
+    const max = Math.max(0, ...data.map(({ value }) => value));
+    const span = max - min || 1;
+    const zero = (-min / span) * 100;
     return (
-        <section className="min-w-0 space-y-2" aria-label={title ?? undefined}>
-            {title && <h2 className="text-xl font-semibold">{title}</h2>}
-            <div className="max-h-[70vh] overflow-hidden rounded-xl border shadow-sm [&>div]:max-h-[70vh]">
-                <Table className="min-w-max">
-                    <TableHeader className="bg-background sticky top-0 z-20 shadow-sm">
+        <figure aria-label={metric.label}>
+            <figcaption className="report-chart-caption">
+                {metric.label} · {data.length} {data.length === 1 ? 'result' : 'results'} from the current report
+                {min < 0 && ' · Red bars show negative values'}
+            </figcaption>
+            <ol className="report-ranked">
+                {data.map(({ label, value }) => (
+                    <li key={label}>
+                        <span className="report-bar-label">{label}</span>
+                        <div className="report-bar-track" aria-hidden="true">
+                            {min < 0 && max > 0 && <span className="report-bar-zero" style={{ left: `${zero}%` }} />}
+                            <span
+                                className={cn('report-bar-fill', value < 0 && 'negative')}
+                                style={{
+                                    left: `${((Math.min(0, value) - min) / span) * 100}%`,
+                                    width: `${(Math.abs(value) / span) * 100}%`,
+                                }}
+                            />
+                        </div>
+                        <strong className={cn('report-bar-value num', value < 0 && 'neg')}>
+                            {metric.format === 'money' && 'Rs '}
+                            {formatCell(value, metric.format)}
+                        </strong>
+                    </li>
+                ))}
+            </ol>
+        </figure>
+    );
+}
+
+function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData & { title: string }) {
+    return (
+        <RegisterList
+            title={title}
+            controls={
+                <div className="report-list-heading">
+                    <h2>{title}</h2>
+                    <span>
+                        {rows.length.toLocaleString()} {rows.length === 1 ? 'row' : 'rows'}
+                    </span>
+                </div>
+            }
+        >
+            {(dense) => (
+                <Table className={cn('report-table', dense && 'dense', columns.length < 4 && 'register-short-table')}>
+                    <TableHeader>
                         <TableRow>
                             {columns.map((column, index) => (
-                                <TableHead
-                                    key={column.key}
-                                    className={cn(
-                                        'h-10 px-3 whitespace-nowrap',
-                                        column.align === 'right' && 'text-right',
-                                        index === 0 && 'bg-background sticky left-0 z-30',
-                                    )}
-                                >
+                                <TableHead key={column.key} className={cn(column.align === 'right' && 'r', index === 0 && 'report-frozen')}>
                                     {column.label}
                                 </TableHead>
                             ))}
@@ -383,11 +270,8 @@ function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData 
                             return (
                                 <Fragment key={index}>
                                     {groupBy && (index === 0 || group !== previousGroup) && (
-                                        <TableRow className="bg-muted/60">
-                                            <TableCell
-                                                colSpan={columns.length}
-                                                className="text-muted-foreground py-2 text-xs font-semibold tracking-wider uppercase"
-                                            >
+                                        <TableRow className="report-group">
+                                            <TableCell colSpan={columns.length} className="font-semibold">
                                                 {String(group ?? 'Other')}
                                             </TableCell>
                                         </TableRow>
@@ -402,9 +286,8 @@ function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData 
                                                 <TableCell
                                                     key={column.key}
                                                     className={cn(
-                                                        'px-3 py-2.5 whitespace-nowrap',
-                                                        column.align === 'right' && 'text-right tabular-nums',
-                                                        columnIndex === 0 && 'bg-background group-hover:bg-muted/50 sticky left-0',
+                                                        column.align === 'right' && 'r num',
+                                                        columnIndex === 0 && 'report-frozen font-semibold',
                                                         profit && Number(value) < 0 && 'text-red-600 dark:text-red-500',
                                                         profit && Number(value) > 0 && 'text-emerald-600 dark:text-emerald-500',
                                                         negative && 'text-red-600 dark:text-red-500',
@@ -416,7 +299,7 @@ function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData 
                                                             <NegativeValueInfo explanation={explanation} />
                                                         </span>
                                                     ) : column.wrap ? (
-                                                        <div className="max-w-72 whitespace-pre-wrap [overflow-wrap:anywhere]">{value}</div>
+                                                        <div className="max-w-72 [overflow-wrap:anywhere] whitespace-pre-wrap">{value}</div>
                                                     ) : (
                                                         formatCell(value, column.format, column.final)
                                                     )}
@@ -427,8 +310,10 @@ function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData 
                                 </Fragment>
                             );
                         })}
-                        {rows.length > 0 && Object.keys(totals).length > 0 && (
-                            <TableRow className="bg-muted hover:bg-muted sticky bottom-0 z-20 font-semibold shadow-[0_-1px_0_var(--border)]">
+                    </TableBody>
+                    {rows.length > 0 && Object.keys(totals).length > 0 && (
+                        <tfoot>
+                            <TableRow>
                                 {columns.map((column, index) => {
                                     const value = totals[column.key];
                                     const negative = column.key in totals && Number(value) < 0;
@@ -438,9 +323,8 @@ function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData 
                                         <TableCell
                                             key={column.key}
                                             className={cn(
-                                                'px-3 py-2.5 whitespace-nowrap',
-                                                column.align === 'right' && 'text-right tabular-nums',
-                                                index === 0 && 'bg-muted sticky left-0 z-30',
+                                                column.align === 'right' && 'r num',
+                                                index === 0 && 'report-frozen',
                                                 negative && 'text-red-600 dark:text-red-500',
                                             )}
                                         >
@@ -462,39 +346,66 @@ function ReportTable({ columns, rows, totals, groupBy, title }: ReportTableData 
                                     );
                                 })}
                             </TableRow>
-                        )}
-                    </TableBody>
+                        </tfoot>
+                    )}
                 </Table>
-            </div>
-            <p className="text-muted-foreground text-xs">{rows.length} rows</p>
-        </section>
+            )}
+        </RegisterList>
     );
 }
 
-export default function ReportShow({ report, columns, rows, totals, chart, visualization, groupBy, sections = [], sectionTitle, context, notes = [], filterValues, defaultDates, options }: Props) {
+export default function ReportShow({
+    report,
+    columns,
+    rows,
+    totals,
+    chart,
+    chartViews,
+    chartColors,
+    visualization,
+    groupBy,
+    sections = [],
+    sectionTitle,
+    context,
+    notes = [],
+    filterValues,
+    defaultDates,
+    options,
+}: Props) {
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Reports', href: '/reports' },
         { title: report.title, href: '#' },
     ];
 
-    const rankedConfig = visualization ?? RANKED_CHARTS[report.key];
+    const rankedConfig = visualization;
     const [metricKey, setMetricKey] = useState(rankedConfig?.metrics[0]?.key ?? '');
     const [chartLimit, setChartLimit] = useState('10');
     const [chartOrder, setChartOrder] = useState<'desc' | 'asc'>('desc');
     const [isLoading, setIsLoading] = useState(false);
     const [filterOpen, setFilterOpen] = useState(false);
+    const [showVisuals, setShowVisuals] = useState(true);
+    const [viewId, setViewId] = useState('');
     const [draftFilters, setDraftFilters] = useState<Record<string, string | undefined>>({ ...filterValues });
 
     useEffect(() => {
-        setMetricKey((visualization ?? RANKED_CHARTS[report.key])?.metrics[0]?.key ?? '');
         setDraftFilters({ ...filterValues });
-    }, [report.key, visualization, filterValues]);
+    }, [filterValues]);
+
+    useEffect(() => {
+        setFilterOpen(false);
+        setMetricKey('');
+        setChartLimit('10');
+        setChartOrder('desc');
+        setShowVisuals(true);
+        setViewId('');
+    }, [report.key]);
 
     const navigate = (values: Record<string, string | undefined>, closeFilters = false) => {
         router.get(route('reports.show', report.key), values, {
             preserveState: true,
             preserveScroll: true,
             replace: true,
+            only: ['columns', 'rows', 'totals', 'chart', 'chartViews', 'groupBy', 'sections', 'sectionTitle', 'context', 'notes', 'filterValues'],
             onStart: () => setIsLoading(true),
             onSuccess: () => {
                 if (closeFilters) setFilterOpen(false);
@@ -509,13 +420,7 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
         setDraftFilters((current) => ({ ...current, [key]: value }));
     };
 
-    const clearDraftFilters = () => {
-        setDraftFilters((current) => ({
-            ...(has('date_range') ? defaultDates : {}),
-            expiry_window: has('expiry_window') ? '90' : undefined,
-            order: current.order,
-        }));
-    };
+    const clearDraftFilters = () => setDraftFilters(has('date_range') ? { ...defaultDates } : {});
 
     const closeFilterPanel = () => {
         setDraftFilters({ ...filterValues });
@@ -537,19 +442,9 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
         navigate(values, true);
     };
 
-    const inputDate = (date: Date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-    };
-
     const applyDatePreset = (preset: 'today' | 'month' | '90') => {
-        const to = new Date();
-        const from = new Date(to);
-        if (preset === 'month') from.setDate(1);
-        if (preset === '90') from.setDate(from.getDate() - 89);
-        const range = { from: inputDate(from), to: inputDate(to) };
+        const to = defaultDates.to;
+        const range = { from: preset === 'month' ? defaultDates.from : preset === '90' ? shiftDate(to, -89) : to, to };
         setDraftFilters((current) => ({ ...current, ...range }));
     };
 
@@ -557,33 +452,45 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
         const params = new URLSearchParams();
         Object.entries(filterValues).forEach(([key, value]) => value && params.set(key, value));
         params.set('format', format);
+        if (format === 'pdf') {
+            if (activeChart) params.set('chart_view', activeChart.id);
+            if (activeView === 'ranking' && metric) {
+                params.set('chart_metric', metric.key);
+                params.set('chart_order', chartOrder);
+                params.set('chart_limit', chartLimit === '5' ? '5' : '10');
+            }
+        }
         return `${route('reports.show', report.key)}?${params}`;
     };
 
     const invalidDates = has('date_range') && !!draftFilters.from && !!draftFilters.to && draftFilters.from > draftFilters.to;
     const activeFilterCount = [
-        has('date_range') && ((filterValues.from || defaultDates.from) !== defaultDates.from || (filterValues.to || defaultDates.to) !== defaultDates.to),
+        has('date_range') &&
+            ((filterValues.from || defaultDates.from) !== defaultDates.from || (filterValues.to || defaultDates.to) !== defaultDates.to),
         has('customer') && filterValues.customer_id,
         has('supplier') && filterValues.company_id,
         has('product') && filterValues.product_id,
         has('direction') && filterValues.direction,
         has('expiry_window') && (filterValues.expiry_window || '90') !== '90',
+        has('order') && (filterValues.order || 'slow') !== 'slow',
     ].filter(Boolean).length;
 
     const metric = rankedConfig?.metrics.find((item) => item.key === metricKey) ?? rankedConfig?.metrics[0];
-    const rankedData = useMemo<BarDatum[]>(() => {
+    const rankedData = useMemo(() => {
         if (!rankedConfig || !metric) return [];
 
         const grouped = new Map<string, number>();
         rows.forEach((row) => {
-            const label = String(row[rankedConfig.labelKey] ?? 'Other');
-            const value = Number(row[metric.key] ?? 0);
+            const raw = row[metric.valueKey ?? metric.key];
+            if (raw === null || raw === undefined || raw === '') return;
+            const label = String(row[metric.labelKey ?? rankedConfig.labelKey] ?? 'Other').trim() || 'Other';
+            const value = Number(raw);
             if (Number.isFinite(value)) grouped.set(label, (grouped.get(label) ?? 0) + value);
         });
 
         const direction = chartOrder === 'desc' ? -1 : 1;
         return [...grouped.entries()]
-            .map(([label, value]) => ({ label, value }))
+            .map(([label, value]) => ({ label, value: (Math.sign(value) * Math.round((Math.abs(value) + Number.EPSILON) * 100)) / 100 }))
             .sort((a, b) => direction * (a.value - b.value))
             .slice(0, Number(chartLimit));
     }, [chartLimit, chartOrder, metric, rankedConfig, rows]);
@@ -598,355 +505,477 @@ export default function ReportShow({ report, columns, rows, totals, chart, visua
             .filter((column): column is Column => !!column && column.key in totals)
             .slice(0, 4);
     }, [columns, report.key, totals]);
+    const viewChoices = [
+        ...(chart?.length ? [{ id: 'trend', title: 'Sales & profit trend', icon: ChartLine }] : []),
+        ...chartViews.map((view) => ({
+            id: view.id,
+            title: view.title,
+            icon: view.kind === 'donut' ? ChartPie : view.kind === 'line' ? ChartLine : BarChart3,
+        })),
+        ...(rankedData.length ? [{ id: 'ranking', title: 'Ranked bars', icon: ChartBar }] : []),
+    ];
+    const activeView = viewChoices.some(({ id }) => id === viewId) ? viewId : viewChoices[0]?.id;
+    const activeChart = chartViews.find(({ id }) => id === activeView);
+    const hasVisuals = viewChoices.length > 0;
+    const filterLabel = (list: Option[], id?: string) => list.find((option) => String(option.id) === String(id))?.name;
+    const scope = [
+        context,
+        has('date_range') && `${shortDate(filterValues.from ?? defaultDates.from)} – ${shortDate(filterValues.to ?? defaultDates.to)}`,
+        !context && filterLabel(options.suppliers, filterValues.company_id),
+        filterLabel(options.customers, filterValues.customer_id),
+        filterLabel(options.products, filterValues.product_id),
+        has('expiry_window') && (filterValues.expiry_window === 'expired' ? 'Expired batches' : `Within ${filterValues.expiry_window || '90'} days`),
+        has('direction') && filterValues.direction && (filterValues.direction === 'in' ? 'Loan stock in' : 'Loan stock out'),
+        has('order') && (filterValues.order === 'fast' ? 'Fastest moving first' : 'Slowest moving first'),
+    ].filter(Boolean);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title={report.title} />
-            <div className="flex h-full flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4">
-                    <div>
-                        <h1 className="text-4xl font-bold">{report.title}</h1>
-                        <p className="text-muted-foreground text-sm">{report.description}</p>
-                        {context && <p className="mt-1 text-sm font-semibold">{context}</p>}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                        {report.filters.length > 0 && (
-                            <Button
-                                variant={filterOpen ? 'secondary' : 'outline'}
-                                size="sm"
-                                aria-expanded={filterOpen}
-                                onClick={() => setFilterOpen((open) => !open)}
+            <div className="reports-page" aria-busy={isLoading}>
+                <RegisterLayout
+                    title={report.title}
+                    description={report.description}
+                    actions={
+                        <div className="register-hero-actions">
+                            {report.filters.length > 0 && (
+                                <button
+                                    type="button"
+                                    className="hbtn"
+                                    aria-expanded={filterOpen}
+                                    aria-controls="report-filter-panel"
+                                    onClick={() => setFilterOpen((open) => !open)}
+                                >
+                                    <SlidersHorizontal className="i" /> Filters
+                                    {activeFilterCount > 0 && <span className="report-filter-count">{activeFilterCount}</span>}
+                                    <ChevronDown className={cn('ml-1 size-3.5 transition-transform', filterOpen && 'rotate-180')} />
+                                </button>
+                            )}
+                            <a className="hbtn" href={exportUrl('xlsx')}>
+                                <FileSpreadsheet className="i" /> Excel
+                            </a>
+                            <a
+                                className="hbtn pri"
+                                href={exportUrl('pdf')}
+                                target="_blank"
+                                rel="noreferrer"
+                                title={
+                                    activeView === 'ranking' && chartLimit === '20'
+                                        ? 'PDF includes up to 10 chart results and all data rows'
+                                        : 'Export current chart view and report tables'
+                                }
                             >
-                                <SlidersHorizontal className="mr-1 size-4" /> Filters
-                                {activeFilterCount > 0 && (
-                                    <span className="bg-primary text-primary-foreground ml-1 rounded-full px-1.5 py-0.5 text-[10px] leading-none">
-                                        {activeFilterCount}
-                                    </span>
-                                )}
-                                <ChevronDown className={cn('ml-1 size-3.5 transition-transform', filterOpen && 'rotate-180')} />
-                            </Button>
-                        )}
-                        <Button variant="outline" size="sm" asChild>
-                            <a href={exportUrl('xlsx')}>
-                                <FileSpreadsheet className="mr-1 size-4" /> Excel
+                                <FileDown className="i" /> PDF
                             </a>
-                        </Button>
-                        <Button variant="outline" size="sm" asChild>
-                            <a href={exportUrl('pdf')} target="_blank" rel="noreferrer">
-                                <FileDown className="mr-1 size-4" /> PDF
+                        </div>
+                    }
+                >
+                    <div className="report-scope-bar">
+                        <div className="report-scope-labels">
+                            {scope.map((label, index) => (
+                                <span key={index} className={index === 0 && context ? 'report-scope-context' : undefined}>
+                                    {label}
+                                </span>
+                            ))}
+                        </div>
+                        <div className="report-view-actions">
+                            {hasVisuals && (
+                                <button
+                                    className="register-filter-action"
+                                    type="button"
+                                    aria-expanded={showVisuals}
+                                    aria-controls="report-visuals"
+                                    onClick={() => setShowVisuals((open) => !open)}
+                                >
+                                    <BarChart3 className="i" /> {showVisuals ? 'Hide charts' : 'Show charts'}
+                                </button>
+                            )}
+                            <a className="register-filter-action" href="#report-data">
+                                <ArrowDownToLine className="i" /> View data
                             </a>
-                        </Button>
+                        </div>
                     </div>
-                </div>
 
-                {filterOpen && (
-                    <div className="animate-in slide-in-from-top-2 bg-muted/20 rounded-xl border p-3 duration-200">
-                        <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                            <CalendarRange className="text-muted-foreground size-4" /> Report Filters
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {filterOpen && (
+                        <div id="report-filter-panel" className="card report-filter-panel">
+                            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                                <CalendarRange className="text-muted-foreground size-4" /> Report Filters
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                {has('date_range') && (
+                                    <>
+                                        <div>
+                                            <Label htmlFor="report-from">From</Label>
+                                            <Input
+                                                id="report-from"
+                                                type="date"
+                                                value={draftFilters.from ?? ''}
+                                                onChange={(e) => setDraftFilter('from', e.target.value)}
+                                            />
+                                        </div>
+                                        <div>
+                                            <Label htmlFor="report-to">To</Label>
+                                            <Input
+                                                id="report-to"
+                                                type="date"
+                                                value={draftFilters.to ?? ''}
+                                                onChange={(e) => setDraftFilter('to', e.target.value)}
+                                            />
+                                        </div>
+                                    </>
+                                )}
+                                {has('customer') && (
+                                    <div>
+                                        <Label className="text-xs">Customer</Label>
+                                        <Select
+                                            value={draftFilters.customer_id ?? 'all'}
+                                            onValueChange={(v) => setDraftFilter('customer_id', v === 'all' ? undefined : v)}
+                                        >
+                                            <SelectTrigger className="w-full" aria-label="Customer">
+                                                <SelectValue placeholder="Customer" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All customers</SelectItem>
+                                                {options.customers.map((option) => (
+                                                    <SelectItem key={option.id} value={String(option.id)}>
+                                                        {option.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                )}
+                                {has('supplier') && (
+                                    <div>
+                                        <Label className="text-xs">Supplier</Label>
+                                        <Select
+                                            value={draftFilters.company_id ?? 'all'}
+                                            onValueChange={(v) => setDraftFilter('company_id', v === 'all' ? undefined : v)}
+                                        >
+                                            <SelectTrigger className="w-full" aria-label="Supplier">
+                                                <SelectValue placeholder="Supplier" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All suppliers</SelectItem>
+                                                {options.suppliers.map((option) => (
+                                                    <SelectItem key={option.id} value={String(option.id)}>
+                                                        {option.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                )}
+                                {has('product') && (
+                                    <div>
+                                        <Label htmlFor="report-product-filter" className="text-xs">
+                                            Product
+                                        </Label>
+                                        <SearchableSelect
+                                            id="report-product-filter"
+                                            value={draftFilters.product_id ?? 'all'}
+                                            onValueChange={(v) => setDraftFilter('product_id', v === 'all' ? undefined : v)}
+                                            options={[
+                                                { value: 'all', label: 'All products' },
+                                                ...options.products.map((option) => ({
+                                                    value: String(option.id),
+                                                    label: option.name,
+                                                })),
+                                            ]}
+                                            placeholder="Product"
+                                            searchPlaceholder="Search products…"
+                                            className="min-h-11 text-base"
+                                            touch
+                                        />
+                                    </div>
+                                )}
+                                {has('direction') && (
+                                    <div>
+                                        <Label className="text-xs">Loan Direction</Label>
+                                        <Select
+                                            value={draftFilters.direction ?? 'all'}
+                                            onValueChange={(v) => setDraftFilter('direction', v === 'all' ? undefined : v)}
+                                        >
+                                            <SelectTrigger className="w-full" aria-label="Loan Direction">
+                                                <SelectValue placeholder="Loan direction" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">Both directions</SelectItem>
+                                                <SelectItem value="out">Loan stock out</SelectItem>
+                                                <SelectItem value="in">Loan stock in</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                )}
+                                {has('expiry_window') && (
+                                    <div>
+                                        <Label className="text-xs">Expiry Window</Label>
+                                        <Select value={draftFilters.expiry_window ?? '90'} onValueChange={(v) => setDraftFilter('expiry_window', v)}>
+                                            <SelectTrigger className="w-full" aria-label="Expiry Window">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="expired">Already expired</SelectItem>
+                                                <SelectItem value="30">Within 30 days</SelectItem>
+                                                <SelectItem value="90">Within 90 days</SelectItem>
+                                                <SelectItem value="180">Within 180 days</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                )}
+                                {has('order') && (
+                                    <div>
+                                        <Label className="text-xs">Sort Order</Label>
+                                        <Select value={draftFilters.order ?? 'slow'} onValueChange={(v) => setDraftFilter('order', v)}>
+                                            <SelectTrigger className="w-full" aria-label="Sort Order">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="slow">Slowest moving first</SelectItem>
+                                                <SelectItem value="fast">Fastest moving first</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                )}
+                            </div>
                             {has('date_range') && (
-                                <>
-                                    <div>
-                                        <Label className="text-xs">From</Label>
-                                        <Input type="date" value={draftFilters.from ?? ''} onChange={(e) => setDraftFilter('from', e.target.value)} />
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs">To</Label>
-                                        <Input type="date" value={draftFilters.to ?? ''} onChange={(e) => setDraftFilter('to', e.target.value)} />
-                                    </div>
-                                </>
-                            )}
-                            {has('customer') && (
-                                <div>
-                                    <Label className="text-xs">Customer</Label>
-                                    <Select
-                                        value={draftFilters.customer_id ?? 'all'}
-                                        onValueChange={(v) => setDraftFilter('customer_id', v === 'all' ? undefined : v)}
-                                    >
-                                        <SelectTrigger className="w-full">
-                                            <SelectValue placeholder="Customer" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all">All customers</SelectItem>
-                                            {options.customers.map((option) => (
-                                                <SelectItem key={option.id} value={String(option.id)}>
-                                                    {option.name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
+                                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                                    <span className="text-muted-foreground mr-1 text-xs">Quick range:</span>
+                                    <Button variant="outline" size="sm" disabled={isLoading} onClick={() => applyDatePreset('today')}>
+                                        Today
+                                    </Button>
+                                    <Button variant="outline" size="sm" disabled={isLoading} onClick={() => applyDatePreset('month')}>
+                                        This month
+                                    </Button>
+                                    <Button variant="outline" size="sm" disabled={isLoading} onClick={() => applyDatePreset('90')}>
+                                        Last 90 days
+                                    </Button>
                                 </div>
                             )}
-                            {has('supplier') && (
-                                <div>
-                                    <Label className="text-xs">Supplier</Label>
-                                    <Select
-                                        value={draftFilters.company_id ?? 'all'}
-                                        onValueChange={(v) => setDraftFilter('company_id', v === 'all' ? undefined : v)}
-                                    >
-                                        <SelectTrigger className="w-full">
-                                            <SelectValue placeholder="Supplier" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all">All suppliers</SelectItem>
-                                            {options.suppliers.map((option) => (
-                                                <SelectItem key={option.id} value={String(option.id)}>
-                                                    {option.name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            )}
-                            {has('product') && (
-                                <div>
-                                    <Label htmlFor="report-product-filter" className="text-xs">Product</Label>
-                                    <SearchableSelect
-                                        id="report-product-filter"
-                                        value={draftFilters.product_id ?? 'all'}
-                                        onValueChange={(v) => setDraftFilter('product_id', v === 'all' ? undefined : v)}
-                                        options={[
-                                            { value: 'all', label: 'All products' },
-                                            ...options.products.map((option) => ({
-                                                value: String(option.id),
-                                                label: option.name,
-                                            })),
-                                        ]}
-                                        placeholder="Product"
-                                        searchPlaceholder="Search products…"
-                                        className="min-h-11 text-base"
-                                        touch
-                                    />
-                                </div>
-                            )}
-                            {has('direction') && (
-                                <div>
-                                    <Label className="text-xs">Loan Direction</Label>
-                                    <Select
-                                        value={draftFilters.direction ?? 'all'}
-                                        onValueChange={(v) => setDraftFilter('direction', v === 'all' ? undefined : v)}
-                                    >
-                                        <SelectTrigger className="w-full">
-                                            <SelectValue placeholder="Loan direction" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all">Both directions</SelectItem>
-                                            <SelectItem value="out">Loan stock out</SelectItem>
-                                            <SelectItem value="in">Loan stock in</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            )}
-                            {has('expiry_window') && (
-                                <div>
-                                    <Label className="text-xs">Expiry Window</Label>
-                                    <Select value={draftFilters.expiry_window ?? '90'} onValueChange={(v) => setDraftFilter('expiry_window', v)}>
-                                        <SelectTrigger className="w-full">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="expired">Already expired</SelectItem>
-                                            <SelectItem value="30">Within 30 days</SelectItem>
-                                            <SelectItem value="90">Within 90 days</SelectItem>
-                                            <SelectItem value="180">Within 180 days</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            )}
-                            {has('order') && (
-                                <div>
-                                    <Label className="text-xs">Sort Order</Label>
-                                    <Select value={draftFilters.order ?? 'slow'} onValueChange={(v) => setDraftFilter('order', v)}>
-                                        <SelectTrigger className="w-full">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="slow">Slowest moving first</SelectItem>
-                                            <SelectItem value="fast">Fastest moving first</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            )}
-                        </div>
-                        {has('date_range') && (
-                            <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                                <span className="text-muted-foreground mr-1 text-xs">Quick range:</span>
-                                <Button variant="outline" size="sm" disabled={isLoading} onClick={() => applyDatePreset('today')}>
-                                    Today
+                            {invalidDates && <p className="text-destructive mt-2 text-xs">The From date must be on or before the To date.</p>}
+                            <div className="mt-3 flex flex-wrap justify-end gap-2 border-t pt-3">
+                                {activeFilterCount > 0 && (
+                                    <Button variant="ghost" size="sm" disabled={isLoading} onClick={clearDraftFilters}>
+                                        <RotateCcw className="mr-1 size-3.5" /> Clear filters
+                                    </Button>
+                                )}
+                                <Button variant="outline" size="sm" disabled={isLoading} onClick={closeFilterPanel}>
+                                    Cancel
                                 </Button>
-                                <Button variant="outline" size="sm" disabled={isLoading} onClick={() => applyDatePreset('month')}>
-                                    This month
-                                </Button>
-                                <Button variant="outline" size="sm" disabled={isLoading} onClick={() => applyDatePreset('90')}>
-                                    Last 90 days
+                                <Button size="sm" disabled={invalidDates || isLoading} onClick={applyDraftFilters}>
+                                    {isLoading ? 'Applying…' : 'Apply Filters'}
                                 </Button>
                             </div>
-                        )}
-                        {invalidDates && <p className="text-destructive mt-2 text-xs">The From date must be on or before the To date.</p>}
-                        <div className="mt-3 flex flex-wrap justify-end gap-2 border-t pt-3">
-                            {activeFilterCount > 0 && (
-                                <Button variant="ghost" size="sm" disabled={isLoading} onClick={clearDraftFilters}>
-                                    <RotateCcw className="mr-1 size-3.5" /> Clear filters
-                                </Button>
-                            )}
-                            <Button variant="outline" size="sm" disabled={isLoading} onClick={closeFilterPanel}>
-                                Cancel
-                            </Button>
-                            <Button size="sm" disabled={invalidDates || isLoading} onClick={applyDraftFilters}>
-                                {isLoading ? 'Applying…' : 'Apply Filters'}
-                            </Button>
                         </div>
-                    </div>
-                )}
+                    )}
 
-                {sections.length === 0 && totalColumns.length > 0 && (
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        {totalColumns.map((column) => {
-                            const value = Number(totals[column.key] ?? 0);
-                            const isProfit = column.key.includes('profit');
-                            const explanation = value < 0 ? negativeExplanation(column.key, column.label, totals) : null;
-                            return (
-                                <Card key={column.key} className="border-border/60 overflow-hidden shadow-sm">
-                                    <CardContent className="relative py-4">
-                                        <div className="bg-primary/60 absolute inset-x-0 top-0 h-0.5" />
-                                        <p className="text-muted-foreground text-xs font-medium">{column.label}</p>
-                                        <div
-                                            className={cn(
-                                                'mt-1 flex items-center gap-1.5 text-xl font-semibold tabular-nums',
-                                                isProfit && value < 0 && 'text-red-600 dark:text-red-500',
-                                                isProfit && value > 0 && 'text-emerald-600 dark:text-emerald-500',
-                                                value < 0 && 'text-red-600 dark:text-red-500',
-                                            )}
+                    {totalColumns.length > 0 && (
+                        <section className="kpis report-kpis" aria-label="Report totals">
+                            {totalColumns.map((column) => {
+                                const value = Number(totals[column.key] ?? 0);
+                                const isProfit = column.key.includes('profit');
+                                const explanation = value < 0 ? negativeExplanation(column.key, column.label, totals) : null;
+                                return (
+                                    <RegisterMetric
+                                        key={column.key}
+                                        label={column.label}
+                                        color={value < 0 ? 'var(--red)' : column.key === 'received' ? 'var(--teal)' : 'var(--sales)'}
+                                        value={
+                                            <span
+                                                className={cn(
+                                                    'inline-flex items-center gap-1.5',
+                                                    value < 0 && 'neg',
+                                                    isProfit && value > 0 && 'text-emerald-700',
+                                                )}
+                                            >
+                                                {formatCell(value, column.format, true)}
+                                                {explanation && <NegativeValueInfo explanation={explanation} />}
+                                            </span>
+                                        }
+                                    />
+                                );
+                            })}
+                        </section>
+                    )}
+
+                    <div id="report-visuals" className="report-visuals" hidden={!showVisuals || !hasVisuals}>
+                        {showVisuals && hasVisuals && (
+                            <>
+                                {viewChoices.length > 1 && (
+                                    <div className="card insight-switcher" role="group" aria-label="Report chart view">
+                                        <strong id="report-chart-view-label">Chart views</strong>
+                                        <select
+                                            className="insight-mobile-select"
+                                            aria-labelledby="report-chart-view-label"
+                                            value={activeView}
+                                            onChange={(event) => setViewId(event.target.value)}
                                         >
-                                            <span>{formatCell(value, column.format, true)}</span>
-                                            {explanation && <NegativeValueInfo explanation={explanation} />}
+                                            {viewChoices.map(({ id, title }) => (
+                                                <option key={id} value={id}>
+                                                    {title}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <div className="insight-switcher-options">
+                                            {viewChoices.map(({ id, title, icon: ViewIcon }) => (
+                                                <button key={id} type="button" aria-pressed={id === activeView} onClick={() => setViewId(id)}>
+                                                    <ViewIcon className="i" aria-hidden="true" />
+                                                    {title}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {activeChart && (
+                                    <Card className="report-chart-card">
+                                        <CardHeader className="pb-0">
+                                            <CardTitle className="text-xl">{activeChart.title}</CardTitle>
+                                        </CardHeader>
+                                        <CardContent>
+                                            <ChartView key={activeChart.id} view={activeChart} colors={chartColors} />
+                                        </CardContent>
+                                    </Card>
+                                )}
+                                {activeView === 'trend' && chart && chart.length > 0 && (
+                                    <Card className="report-chart-card">
+                                        <CardHeader className="pb-0">
+                                            <CardTitle className="flex items-center gap-2 text-xl">
+                                                <BarChart3 className="size-4" /> Sales and Profit Trend
+                                            </CardTitle>
+                                            <p className="report-chart-caption">
+                                                {chart.some((point) => point.received !== undefined)
+                                                    ? 'Actual receipts are shown by payment date, separately from posted sales.'
+                                                    : 'Compare net sales and net profit over time.'}
+                                            </p>
+                                        </CardHeader>
+                                        <CardContent className="pt-2">
+                                            <TrendChart data={chart} />
+                                        </CardContent>
+                                    </Card>
+                                )}
+
+                                {activeView === 'ranking' && rankedConfig && metric && rankedData.length > 0 && (
+                                    <Card className="report-chart-card">
+                                        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 pb-2">
+                                            <CardTitle className="flex items-center gap-2 text-xl">
+                                                <BarChart3 className="size-4" /> Visual Analysis
+                                            </CardTitle>
+                                            <div className="flex flex-wrap gap-2">
+                                                <Select value={metric.key} onValueChange={setMetricKey}>
+                                                    <SelectTrigger className="min-h-10 w-auto" aria-label="Chart metric">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {rankedConfig.metrics.map((item) => (
+                                                            <SelectItem key={item.key} value={item.key}>
+                                                                {item.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <Select value={chartLimit} onValueChange={setChartLimit}>
+                                                    <SelectTrigger className="min-h-10 w-auto" aria-label="Chart result limit">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="5">Show 5</SelectItem>
+                                                        <SelectItem value="10">Show 10</SelectItem>
+                                                        <SelectItem value="20">Show 20</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                                <Select value={chartOrder} onValueChange={(value) => setChartOrder(value as 'desc' | 'asc')}>
+                                                    <SelectTrigger className="min-h-10 w-auto" aria-label="Chart sort direction">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="desc">Highest first</SelectItem>
+                                                        <SelectItem value="asc">Lowest first</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        </CardHeader>
+                                        <CardContent>
+                                            <RankedBars data={rankedData} metric={metric} />
+                                        </CardContent>
+                                    </Card>
+                                )}
+                            </>
+                        )}
+                    </div>
+
+                    {report.key === 'stock-on-loan' && (
+                        <div className="space-y-3">
+                            <p className="text-muted-foreground text-sm">
+                                In = received from a partner; its returns are sent back. Out = sent to a partner; its returns are received back. The
+                                period filters loan dates; return dates and balances show the complete current history of those loans.
+                            </p>
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                {(
+                                    [
+                                        ['Received on loan', 'received_on_loan'],
+                                        ['Sent on loan', 'sent_on_loan'],
+                                        ['Received back', 'received_back'],
+                                        ['Returned to partner', 'returned_to_partner'],
+                                    ] as const
+                                ).map(([label, key]) => (
+                                    <Card key={key}>
+                                        <CardContent className="py-3">
+                                            <p className="text-muted-foreground text-xs">{label}</p>
+                                            <p className="text-lg font-semibold tabular-nums">{qty(totals[key] ?? 0)}</p>
+                                        </CardContent>
+                                    </Card>
+                                ))}
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                <Card className="border-orange-200 bg-orange-50/60 dark:border-orange-950 dark:bg-orange-950/20">
+                                    <CardContent className="flex items-center gap-3 py-4">
+                                        <span className="rounded-xl bg-orange-500/10 p-2 text-orange-600">
+                                            <ArrowUpFromLine className="size-5" />
+                                        </span>
+                                        <div>
+                                            <p className="text-muted-foreground text-xs">Outstanding loaned out</p>
+                                            <p className="text-xl font-semibold tabular-nums">{qty(totals.outstanding_out ?? 0)}</p>
                                         </div>
                                     </CardContent>
                                 </Card>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {chart && chart.length > 0 && (
-                    <Card>
-                        <CardHeader className="pb-0">
-                            <CardTitle className="flex items-center gap-2 text-xl">
-                                <BarChart3 className="text-muted-foreground size-4" /> Trend
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="pt-2">
-                            <TrendChart data={chart} />
-                        </CardContent>
-                    </Card>
-                )}
-
-                {rankedConfig && metric && (
-                    <Card>
-                        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 pb-2">
-                            <CardTitle className="flex items-center gap-2 text-xl">
-                                <BarChart3 className="text-muted-foreground size-4" /> Visual Analysis
-                            </CardTitle>
-                            <div className="flex flex-wrap gap-2">
-                                <Select value={metric.key} onValueChange={setMetricKey}>
-                                    <SelectTrigger className="h-9 w-44">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {rankedConfig.metrics.map((item) => (
-                                            <SelectItem key={item.key} value={item.key}>
-                                                {item.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <Select value={chartLimit} onValueChange={setChartLimit}>
-                                    <SelectTrigger className="h-9 w-24">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="5">Show 5</SelectItem>
-                                        <SelectItem value="10">Show 10</SelectItem>
-                                        <SelectItem value="20">Show 20</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <Select value={chartOrder} onValueChange={(value) => setChartOrder(value as 'desc' | 'asc')}>
-                                    <SelectTrigger className="h-9 w-32">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="desc">Highest first</SelectItem>
-                                        <SelectItem value="asc">Lowest first</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            <HBarChart data={rankedData} valueLabel={metric.label} valueFormat={metric.format} />
-                        </CardContent>
-                    </Card>
-                )}
-
-                {report.key === 'stock-on-loan' && (
-                    <div className="space-y-3">
-                        <p className="text-sm text-muted-foreground">
-                            In = received from a partner; its returns are sent back. Out = sent to a partner; its returns are received back.
-                            The period filters loan dates; return dates and balances show the complete current history of those loans.
-                        </p>
-                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                            {([
-                                ['Received on loan', 'received_on_loan'],
-                                ['Sent on loan', 'sent_on_loan'],
-                                ['Received back', 'received_back'],
-                                ['Returned to partner', 'returned_to_partner'],
-                            ] as const).map(([label, key]) => (
-                                <Card key={key}>
-                                    <CardContent className="py-3">
-                                        <p className="text-xs text-muted-foreground">{label}</p>
-                                        <p className="text-lg font-semibold tabular-nums">{qty(totals[key] ?? 0)}</p>
+                                <Card className="border-sky-200 bg-sky-50/60 dark:border-sky-950 dark:bg-sky-950/20">
+                                    <CardContent className="flex items-center gap-3 py-4">
+                                        <span className="rounded-xl bg-sky-500/10 p-2 text-sky-600">
+                                            <ArrowDownToLine className="size-5" />
+                                        </span>
+                                        <div>
+                                            <p className="text-muted-foreground text-xs">Outstanding borrowed in</p>
+                                            <p className="text-xl font-semibold tabular-nums">{qty(totals.outstanding_in ?? 0)}</p>
+                                        </div>
                                     </CardContent>
                                 </Card>
-                            ))}
+                                <Card>
+                                    <CardContent className="py-4">
+                                        <p className="text-muted-foreground text-xs">Net units out</p>
+                                        <p className="text-xl font-semibold tabular-nums">{qty(totals.net_out ?? 0)}</p>
+                                    </CardContent>
+                                </Card>
+                            </div>
                         </div>
-                        <div className="grid gap-3 sm:grid-cols-3">
-                            <Card className="border-orange-200 bg-orange-50/60 dark:border-orange-950 dark:bg-orange-950/20">
-                                <CardContent className="flex items-center gap-3 py-4">
-                                    <span className="rounded-xl bg-orange-500/10 p-2 text-orange-600">
-                                        <ArrowUpFromLine className="size-5" />
-                                    </span>
-                                    <div>
-                                        <p className="text-muted-foreground text-xs">Outstanding loaned out</p>
-                                        <p className="text-xl font-semibold tabular-nums">{qty(totals.outstanding_out ?? 0)}</p>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                            <Card className="border-sky-200 bg-sky-50/60 dark:border-sky-950 dark:bg-sky-950/20">
-                                <CardContent className="flex items-center gap-3 py-4">
-                                    <span className="rounded-xl bg-sky-500/10 p-2 text-sky-600">
-                                        <ArrowDownToLine className="size-5" />
-                                    </span>
-                                    <div>
-                                        <p className="text-muted-foreground text-xs">Outstanding borrowed in</p>
-                                        <p className="text-xl font-semibold tabular-nums">{qty(totals.outstanding_in ?? 0)}</p>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                            <Card>
-                                <CardContent className="py-4">
-                                    <p className="text-muted-foreground text-xs">Net units out</p>
-                                    <p className="text-xl font-semibold tabular-nums">{qty(totals.net_out ?? 0)}</p>
-                                </CardContent>
-                            </Card>
-                        </div>
-                    </div>
-                )}
+                    )}
 
-                {notes.length > 0 && <div className="space-y-1 rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
-                    {notes.map((note) => <p key={note}>{note}</p>)}
-                </div>}
-                <ReportTable columns={columns} rows={rows} totals={totals} groupBy={groupBy} title={sectionTitle} />
-                {sections.map((section) => <ReportTable key={section.title} {...section} />)}
+                    {notes.length > 0 && (
+                        <aside className="report-notes" aria-label="How to read this report">
+                            <Info className="i" aria-hidden="true" />
+                            <div>
+                                {notes.map((note) => (
+                                    <p key={note}>{note}</p>
+                                ))}
+                            </div>
+                        </aside>
+                    )}
+                    <div id="report-data" tabIndex={-1}>
+                        <ReportTable columns={columns} rows={rows} totals={totals} groupBy={groupBy} title={sectionTitle ?? 'Report data'} />
+                        {sections.map((section) => (
+                            <ReportTable key={section.title} {...section} />
+                        ))}
+                    </div>
+                </RegisterLayout>
             </div>
         </AppLayout>
     );

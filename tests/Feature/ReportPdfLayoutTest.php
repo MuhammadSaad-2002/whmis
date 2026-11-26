@@ -64,6 +64,38 @@ class ReportPdfLayoutTest extends TestCase
         }
     }
 
+    public function test_report_exports_start_tabular_details_after_the_chart_page(): void
+    {
+        $rows = array_map(fn ($i) => [
+            'product' => sprintf('Full product description with pack size %02d', $i),
+            'net_revenue' => $i * 150,
+            'detail' => sprintf('Table only %02d', $i),
+        ], range(1, 10));
+        $charts = app(ReportVisualizationService::class)->pdfCharts('product-sales', ['rows' => $rows]);
+        $renderer = app(ReportPdfRenderer::class);
+
+        foreach (['landscape', 'portrait'] as $orientation) {
+            $data = [
+                'title' => 'Product Report', 'filters' => [],
+                'columns' => [['key' => 'detail', 'label' => 'Details']],
+                'rows' => $rows, 'totals' => [], 'charts' => $charts, 'separateChartPage' => true,
+            ];
+            $document = $renderer->render($data, $orientation);
+            $pdf = $document->output(['compress' => false]);
+            $this->assertSame(2, $document->getDomPDF()->getCanvas()->get_page_count());
+            $pageOne = strpos($pdf, mb_convert_encoding('Page 1 / 2', 'UTF-16BE', 'UTF-8'));
+            $this->assertNotFalse($pageOne);
+            $chartTitle = strpos($pdf, mb_convert_encoding($charts[0]['title'], 'UTF-16BE', 'UTF-8'));
+            $this->assertNotFalse($chartTitle);
+            $this->assertLessThan($pageOne, $chartTitle);
+            $this->assertCount(1, $this->baselines($pdf, 'Table only 01'));
+            $this->assertGreaterThan($pageOne, strpos($pdf, mb_convert_encoding('Table only 01', 'UTF-16BE', 'UTF-8')));
+
+            $withoutCharts = $renderer->render(array_replace($data, ['charts' => []]), $orientation);
+            $this->assertSame(1, $withoutCharts->getDomPDF()->getCanvas()->get_page_count());
+        }
+    }
+
     public function test_item_rows_are_compact_in_document_and_readable_report_pdfs(): void
     {
         $styles = view('pdf.partials.document-style')->render();

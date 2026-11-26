@@ -22,6 +22,7 @@
         .negative-guide { margin: 8px 0; padding: 6px 8px; border-left: 3px solid #dc2626; background: #fff7f7; color: #7f1d1d; font-size: 8.5px; line-height: 1.45; }
         .negative-value { color: #b91c1c; font-weight: bold; }
         .section-title { margin-top: 14px; page-break-after: avoid; }
+        .chart-table-break { page-break-before: always; }
         .report-summary { page-break-inside: avoid; }
         .report-summary table.items th:first-child { width: 70%; }
         .report-summary table.items tbody tr:last-child td { font-weight: bold; background: #e1f4f0; }
@@ -39,6 +40,7 @@
     </style>
 </head>
 <body>
+    @php $separateCharts = !empty($separateChartPage) && !empty($charts); @endphp
     <table class="header">
         <tr>
             <td>
@@ -63,6 +65,14 @@
             </td>
         </tr>
     </table>
+
+    @if($separateCharts)
+        @include('pdf.partials.report-charts')
+        <div class="chart-table-break">
+            <h2 class="document-title">{{ $title }} — Details</h2>
+            @if(!empty($headerLabel))<p class="meta">{{ $headerLabel }}</p>@endif
+        </div>
+    @endif
 
     @if(!empty($notes))
         <div class="meta report-notes">
@@ -97,7 +107,9 @@
         </div>
     @endif
 
-    @include('pdf.partials.report-charts')
+    @unless($separateCharts)
+        @include('pdf.partials.report-charts')
+    @endunless
 
     @if(!empty($sectionTitle))
         <h2 class="section-title">{{ $sectionTitle }}</h2>

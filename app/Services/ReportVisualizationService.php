@@ -37,12 +37,25 @@ class ReportVisualizationService
             ['key' => 'net_sales', 'label' => 'Net Sales', 'format' => 'money'],
             ['key' => 'collections', 'label' => 'Actual Allocated Receipts', 'format' => 'money'],
         ]],
+        'hr-attendance' => ['labelKey' => 'name', 'metrics' => [
+            ['key' => 'overtime', 'label' => 'Overtime Hours', 'format' => 'qty'],
+        ]],
+        'hr-leave' => ['labelKey' => 'type', 'metrics' => [
+            ['key' => 'used', 'label' => 'Approved Days by Leave Type', 'format' => 'qty'],
+            ['key' => 'remaining', 'label' => 'Remaining Days by Leave Type', 'format' => 'qty'],
+        ]],
+        'hr-ledger' => ['labelKey' => 'kind', 'metrics' => [
+            ['key' => 'expense', 'label' => 'Expense by Transaction Type', 'format' => 'money'],
+            ['key' => 'cash_out', 'label' => 'Net Cash Out by Transaction Type', 'format' => 'money'],
+        ]],
         CustomerReceiptReport::KEY => ['labelKey' => 'customer', 'metrics' => [
-            ['key' => 'received', 'label' => 'Actual Received', 'format' => 'money'],
+            ['key' => 'received', 'label' => 'Actual Received by Customer', 'format' => 'money'],
+            ['key' => 'by_method', 'valueKey' => 'received', 'labelKey' => 'method', 'label' => 'Actual Received by Method', 'format' => 'money'],
         ]],
         'sales-register' => ['labelKey' => 'customer', 'metrics' => [
             ['key' => 'net_amount', 'label' => 'Net Sales', 'format' => 'money'],
             ['key' => 'received', 'label' => 'Actual Received', 'format' => 'money'],
+            ['key' => 'outstanding', 'label' => 'Outstanding Now', 'format' => 'money'],
             ['key' => 'net_profit', 'label' => 'Net Profit', 'format' => 'money'],
             ['key' => 'returns', 'label' => 'Returns', 'format' => 'money'],
         ]],
@@ -56,6 +69,17 @@ class ReportVisualizationService
             ['key' => 'net_qty_sold', 'label' => 'Net Quantity Sold', 'format' => 'qty'],
             ['key' => 'net_cogs', 'label' => 'Net COGS', 'format' => 'money'],
             ['key' => 'gross_cogs', 'label' => 'Gross COGS', 'format' => 'money'],
+        ]],
+        SupplierPurchaseValueReport::KEY => ['labelKey' => 'product', 'metrics' => [
+            ['key' => 'purchase_value', 'label' => 'Purchase Value', 'format' => 'money'],
+            ['key' => 'net_units', 'label' => 'Net Units Incl. Bonus', 'format' => 'qty'],
+        ]],
+        'all-time-purchases-stock' => ['labelKey' => 'product', 'metrics' => [
+            ['key' => 'available', 'label' => 'Available Now', 'format' => 'qty'],
+            ['key' => 'purchased', 'label' => 'Net Purchased', 'format' => 'qty'],
+            ['key' => 'sold', 'label' => 'Net Sold', 'format' => 'qty'],
+            ['key' => 'on_hold', 'label' => 'On Hold (Drafts)', 'format' => 'qty'],
+            ['key' => 'on_hand', 'label' => 'Stock on Hand', 'format' => 'qty'],
         ]],
         'product-sales-daily' => ['labelKey' => 'product', 'metrics' => [
             ['key' => 'revenue', 'label' => 'Net Revenue', 'format' => 'money'],
@@ -149,8 +173,7 @@ class ReportVisualizationService
         return self::RANKED[$key] ?? null;
     }
 
-    /** @return array<int, array{title: string, subtitle: string, image: string, height_per_width: float, labels: array}> */
-    public function pdfCharts(string $key, array $report): array
+    public function pdfCharts(string $key, array $report, ?string $metricKey = null, string $order = 'desc', int $limit = 10): array
     {
         $charts = [];
 
@@ -165,23 +188,28 @@ class ReportVisualizationService
 
         $definition = $this->definition($key);
         if ($definition && ! empty($report['rows'])) {
-            $metric = $definition['metrics'][0];
+            $metric = collect($definition['metrics'])->firstWhere('key', $metricKey) ?? $definition['metrics'][0];
+            $valueKey = $metric['valueKey'] ?? $metric['key'];
+            $labelKey = $metric['labelKey'] ?? $definition['labelKey'];
+            $limit = $limit === 5 ? 5 : 10;
+            $ascending = $order === 'asc';
             $ranked = collect($report['rows'])
-                ->groupBy(fn (array $row) => (string) ($row[$definition['labelKey']] ?? 'Other'))
-                ->map(fn (Collection $group, string $label) => [
-                    'label' => $label,
-                    'value' => (float) $group->sum($metric['key']),
+                ->filter(fn (array $row) => is_numeric($row[$valueKey] ?? null))
+                ->groupBy(fn (array $row) => trim((string) ($row[$labelKey] ?? '')) ?: 'Other')
+                ->map(fn (Collection $group, string|int $label) => [
+                    'label' => (string) $label,
+                    'value' => round($group->sum($valueKey), 2),
                 ])
-                ->sortByDesc('value')
-                ->take(10)
+                ->sortBy('value', descending: ! $ascending)
+                ->take($limit)
                 ->values()
                 ->all();
 
             if ($ranked !== []) {
                 $charts[] = [
-                    'title' => 'Top 10 by '.$metric['label'],
+                    'title' => ($ascending ? 'Bottom ' : 'Top ').$limit.' by '.$metric['label'],
                     'subtitle' => 'Ranked from the filtered report rows',
-                    ...$this->rankedPlot($ranked, $metric['format']),
+                    'bars' => $this->rankedBars($ranked, $metric['format']),
                 ];
             }
         }
@@ -189,31 +217,132 @@ class ReportVisualizationService
         return $charts;
     }
 
-    private function rankedPlot(array $rows, string $format): array
+    public function printView(array $view): array
     {
-        $width = 760;
-        $rowHeight = 32;
-        $height = 30 + count($rows) * $rowHeight;
-        $barStart = 262;
-        $barMax = 335;
-        $max = max(1.0, ...array_map(fn (array $row) => abs((float) $row['value']), $rows));
-        $parts = [$this->svgOpen($width, $height)];
-        $labels = [];
+        $colors = ReportChartData::COLORS;
+        $chart = ['title' => $view['title'], 'subtitle' => $view['description']];
+        if ($view['kind'] === 'donut') {
+            $sum = array_sum(array_column(array_column($view['points'], 'values'), 0));
+            $parts = [$this->svgOpen(240, 240)];
+            $angle = -M_PI / 2;
+            $legend = [];
+            foreach ($view['points'] as $index => $point) {
+                $value = $point['values'][0];
+                $share = $value / $sum;
+                $color = $colors[$index];
+                $legend[] = ['label' => $point['label'], 'color' => $color, 'value' => $this->formatValue($value, $view['unit']), 'share' => number_format($share * 100, 1).'%'];
+                if ($share >= 1) {
+                    $parts[] = "<circle cx=\"120\" cy=\"120\" r=\"91\" fill=\"none\" stroke=\"{$color}\" stroke-width=\"36\"/>";
 
-        foreach ($rows as $index => $row) {
-            $value = (float) $row['value'];
-            $y = 12 + $index * $rowHeight;
-            $barWidth = max(1, (int) round(abs($value) / $max * $barMax));
-            $color = $value < 0 ? self::NEGATIVE_COLOR : self::SALES_COLOR;
-            $labels[] = $this->plotLabel($this->truncate((string) $row['label'], 28), 0, $y + 1, $width);
-            $labels[] = $this->plotLabel($this->formatValue($value, $format), 610, $y + 1, $width, color: $color, bold: true);
-            $parts[] = "<rect x=\"{$barStart}\" y=\"{$y}\" width=\"{$barMax}\" height=\"18\" rx=\"3\" fill=\"".self::GRID_COLOR.'"/>';
-            $parts[] = "<rect x=\"{$barStart}\" y=\"{$y}\" width=\"{$barWidth}\" height=\"18\" rx=\"3\" fill=\"{$color}\"/>";
+                    continue;
+                }
+                $end = $angle + $share * 2 * M_PI;
+                [$x1, $y1, $x2, $y2] = array_map(fn ($coordinate) => round($coordinate, 5), [
+                    120 + cos($angle) * 91, 120 + sin($angle) * 91, 120 + cos($end) * 91, 120 + sin($end) * 91,
+                ]);
+                $large = $share > 0.5 ? 1 : 0;
+                $parts[] = "<path d=\"M {$x1} {$y1} A 91 91 0 {$large} 1 {$x2} {$y2}\" fill=\"none\" stroke=\"{$color}\" stroke-width=\"36\"/>";
+                $angle = $end;
+            }
+            $parts[] = '</svg>';
+
+            return $chart + ['ring' => $this->svgDataUri(implode('', $parts)), 'legend' => $legend, 'total' => $this->formatValue($sum, $view['unit'])];
         }
 
+        $width = 760;
+        $left = 64;
+        $plotWidth = 678;
+        $top = 16;
+        $plotHeight = 142;
+        $stacked = $view['kind'] === 'stacked';
+        $line = $view['kind'] === 'line';
+        $points = $view['points'];
+        $count = count($points);
+        $values = array_merge(...array_column($points, 'values'));
+        $min = min(0, ...$values);
+        $max = $stacked ? max(array_map(fn ($point) => array_sum($point['values']), $points)) : max(0, ...$values);
+        $step = 10 ** floor(log10(($max - $min) / 4));
+        $step *= min(array_filter([1, 2, 5, 10], fn ($multiple) => $multiple * $step >= ($max - $min) / 4));
+        $min = floor($min / $step) * $step;
+        $max = ceil($max / $step) * $step;
+        $y = fn ($value) => round($top + ($max - $value) / ($max - $min) * $plotHeight, 3);
+        $slot = $plotWidth / $count;
+        $x = fn ($index) => round($left + ($index + 0.5) * $slot, 3);
+        $parts = [$this->svgOpen($width, 196)];
+        $labels = [];
+        $ticks = (int) round(($max - $min) / $step);
+        for ($tick = 0; $tick <= $ticks; $tick++) {
+            $value = round($min + $tick * $step, 8);
+            $sy = $y($value);
+            $color = $value == 0 ? self::LABEL_COLOR : self::GRID_COLOR;
+            $parts[] = "<line x1=\"{$left}\" x2=\"742\" y1=\"{$sy}\" y2=\"{$sy}\" stroke=\"{$color}\"/>";
+            $labels[] = $this->plotLabel($this->compactValue($value), 0, $sy - 7, $width);
+        }
+        $keyLabels = [];
+        $numericAxis = $count <= 6 && collect($points)->contains(fn ($point) => mb_strlen($point['label']) > 13);
+        $labelStep = max(1, (int) ceil($count / 8));
+        $seriesCount = count($view['labels']);
+        foreach ($points as $index => $point) {
+            if ($numericAxis) {
+                $keyLabels[] = ($index + 1).'. '.$point['label'];
+            }
+            if ($index === $count - 1 || ($index % $labelStep === 0 && $count - 1 - $index >= $labelStep)) {
+                $labels[] = $this->plotLabel($numericAxis ? (string) ($index + 1) : $point['label'], $x($index), 166, $width, center: true);
+            }
+            if ($line) {
+                continue;
+            }
+            $barWidth = min(26, $slot * 0.72 / ($stacked ? 1 : $seriesCount));
+            $running = 0;
+            foreach ($point['values'] as $i => $value) {
+                $start = $stacked ? $running : 0;
+                $end = $start + $value;
+                $running = $end;
+                $bx = round($x($index) + ($stacked ? -$barWidth / 2 : ($i - $seriesCount / 2) * $barWidth), 3);
+                $by = min($y($start), $y($end));
+                $barHeight = abs($y($start) - $y($end));
+                $fill = $colors[$i];
+                $parts[] = "<rect x=\"{$bx}\" y=\"{$by}\" width=\"{$barWidth}\" height=\"{$barHeight}\" fill=\"{$fill}\"/>";
+            }
+        }
+        if ($line) {
+            foreach ($view['labels'] as $i => $label) {
+                $color = $colors[$i];
+                $coordinates = [];
+                foreach ($points as $index => $point) {
+                    $cx = $x($index);
+                    $cy = $y($point['values'][$i]);
+                    $coordinates[] = "{$cx},{$cy}";
+                    $parts[] = "<circle cx=\"{$cx}\" cy=\"{$cy}\" r=\"3\" fill=\"{$color}\"/>";
+                }
+                $parts[] = '<polyline points="'.implode(' ', $coordinates).'" fill="none" stroke="'.$color.'" stroke-width="2.5"/>';
+            }
+        }
         $parts[] = '</svg>';
 
-        return ['image' => $this->svgDataUri(implode('', $parts)), 'height_per_width' => $height / $width, 'labels' => $labels];
+        return $chart + [
+            'image' => $this->svgDataUri(implode('', $parts)), 'height_per_width' => 196 / $width, 'labels' => $labels,
+            'seriesLegend' => array_map(fn ($i, $label) => ['label' => $label, 'color' => $colors[$i]], array_keys($view['labels']), $view['labels']),
+            'units' => $view['unit'] === 'money' ? 'PKR' : null,
+            'keyLabels' => $keyLabels,
+        ];
+    }
+
+    private function rankedBars(array $rows, string $format): array
+    {
+        $values = array_column($rows, 'value');
+        $min = min(0, ...$values);
+        $max = max(0, ...$values);
+        $span = ($max - $min) ?: 1;
+
+        return array_map(fn (array $row) => [
+            'label' => $row['label'],
+            'value' => $this->formatValue($row['value'], $format),
+            'start' => round((min(0, $row['value']) - $min) / $span * 100, 3),
+            'width' => round(abs($row['value']) / $span * 100, 3),
+            'zero' => $min < 0 && $max > 0 ? round(-$min / $span * 100, 3) : null,
+            'color' => $row['value'] < 0 ? self::NEGATIVE_COLOR : self::SALES_COLOR,
+        ], $rows);
     }
 
     private function trendPlot(array $points, bool $hasReceipts): array
@@ -268,7 +397,9 @@ class ReportVisualizationService
         // Leave room for the larger labels without dropping any plotted data.
         $labelStep = max(1, (int) ceil($count / 10));
         foreach ($points as $index => $point) {
-            if ($index !== $count - 1 && ($index % $labelStep !== 0 || $count - 1 - $index < $labelStep)) continue;
+            if ($index !== $count - 1 && ($index % $labelStep !== 0 || $count - 1 - $index < $labelStep)) {
+                continue;
+            }
             $labels[] = $this->plotLabel($this->truncate((string) ($point['label'] ?? ''), 9), $x($index), 151, $width, center: true);
         }
 
@@ -327,7 +458,7 @@ class ReportVisualizationService
             return number_format($value / 1_000, 1).'k';
         }
 
-        return number_format($value, 0);
+        return rtrim(rtrim(number_format($value, 2, '.', ','), '0'), '.');
     }
 
     private function truncate(string $value, int $length): string

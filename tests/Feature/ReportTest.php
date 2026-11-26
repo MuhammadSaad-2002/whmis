@@ -11,8 +11,8 @@ use App\Models\PurchaseInvoice;
 use App\Models\SalesInvoice;
 use App\Models\User;
 use App\Services\CustomerReceiptReport;
-use App\Services\InvoicePostingService;
 use App\Services\InventoryService;
+use App\Services\InvoicePostingService;
 use App\Services\NumberSeriesService;
 use App\Services\PaymentService;
 use App\Services\ReportService;
@@ -21,6 +21,7 @@ use App\Services\ReturnService;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -101,7 +102,7 @@ class ReportTest extends TestCase
 
     public function test_actual_receipts_follow_payment_date_without_changing_sales_or_profit(): void
     {
-        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-24 12:00', 'Asia/Karachi'));
+        $this->travelTo(Carbon::parse('2026-11-24 12:00', 'Asia/Karachi'));
         $sale = SalesInvoice::firstOrFail();
         $sale->update(['invoice_date' => '2026-10-31']);
         $payment = app(PaymentService::class);
@@ -121,7 +122,7 @@ class ReportTest extends TestCase
         $reports = app(ReportService::class);
         $this->get(route('reports.show', ['key' => CustomerReceiptReport::KEY, 'customer_id' => $this->customer->id] + $november))
             ->assertOk()->assertInertia(fn (Assert $page) => $page->has('rows', 1)->where('rows.0.payment_number', $receipt->payment_number)
-                ->where('rows.0.received', 750)->where('totals.received', 750));
+            ->where('rows.0.received', 750)->where('totals.received', 750));
         $this->get(route('reports.show', ['key' => CustomerReceiptReport::KEY, 'format' => 'pdf'] + $november))
             ->assertOk()->assertHeader('content-type', 'application/pdf');
         $this->get(route('reports.show', ['key' => CustomerReceiptReport::KEY, 'format' => 'xlsx'] + $november))
@@ -301,11 +302,9 @@ class ReportTest extends TestCase
         ]));
         $this->assertCount(1, $ranked);
         $this->assertSame('Top 10 by Net Revenue', $ranked[0]['title']);
-        $this->assertStringStartsWith('data:image/svg+xml;base64,', $ranked[0]['image']);
-        $rankedSvg = base64_decode(substr($ranked[0]['image'], 26));
-        $this->assertStringContainsString('fill="#234968"', $rankedSvg);
-        $this->assertStringNotContainsString('<text ', $rankedSvg);
-        $this->assertSame('#263b4d', $ranked[0]['labels'][0]['color']);
+        $this->assertNotEmpty($ranked[0]['bars'][0]['label']);
+        $this->assertSame('#234968', $ranked[0]['bars'][0]['color']);
+        $this->assertEquals(100, $ranked[0]['bars'][0]['width']);
 
         $trend = $visualizations->pdfCharts('profit-by-month', $reports->build('profit-by-month', []));
         $this->assertCount(1, $trend);
@@ -322,13 +321,35 @@ class ReportTest extends TestCase
     public function test_negative_ranked_values_keep_the_alert_color_in_pdf_charts(): void
     {
         $charts = app(ReportVisualizationService::class)->pdfCharts('product-sales', [
-            'rows' => [['product' => 'Returned item', 'net_revenue' => -10]],
+            'rows' => [
+                ['product' => 'Returned item', 'net_revenue' => -10],
+                ['product' => 'Sold item', 'net_revenue' => 30],
+                ['product' => 'No change', 'net_revenue' => 0],
+            ],
         ]);
 
-        $svg = base64_decode(substr($charts[0]['image'], 26));
-        $this->assertStringContainsString('fill="#b4232a"', $svg);
-        $this->assertSame('Rs -10.00', $charts[0]['labels'][1]['text']);
-        $this->assertSame('#b4232a', $charts[0]['labels'][1]['color']);
+        [$sold, $unchanged, $returned] = $charts[0]['bars'];
+        $this->assertEquals(25, $sold['start']);
+        $this->assertEquals(0, $unchanged['width']);
+        $this->assertEquals(25, $returned['zero']);
+        $this->assertEquals(0, $returned['start']);
+        $this->assertSame('Rs -10.00', $returned['value']);
+        $this->assertSame('#b4232a', $returned['color']);
+    }
+
+    public function test_receipt_chart_groups_actual_tender_by_method_and_ignores_shortages(): void
+    {
+        $charts = app(ReportVisualizationService::class)->pdfCharts('customer-receipts', [
+            'rows' => [
+                ['customer' => 'One', 'method' => 'Cash', 'received' => 50, 'shortage' => 100, 'settled' => 150],
+                ['customer' => 'Two', 'method' => 'Cash', 'received' => 25, 'shortage' => 0, 'settled' => 25],
+                ['customer' => 'Two', 'method' => 'Bank Transfer', 'received' => 80, 'shortage' => 0, 'settled' => 80],
+            ],
+        ], 'by_method', 'asc', 5);
+
+        $this->assertSame('Bottom 5 by Actual Received by Method', $charts[0]['title']);
+        $this->assertSame(['Cash', 'Bank Transfer'], array_column($charts[0]['bars'], 'label'));
+        $this->assertSame(['Rs 75.00', 'Rs 80.00'], array_column($charts[0]['bars'], 'value'));
     }
 
     public function test_pdf_chart_images_preserve_their_intrinsic_aspect_ratio(): void

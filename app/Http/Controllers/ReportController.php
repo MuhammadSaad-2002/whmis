@@ -7,6 +7,7 @@ use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Services\CustomerReceiptReport;
+use App\Services\ReportChartData;
 use App\Services\ReportPdfRenderer;
 use App\Services\ReportService;
 use App\Services\ReportVisualizationService;
@@ -22,6 +23,7 @@ class ReportController extends Controller
     public function __construct(
         private readonly ReportService $reports,
         private readonly ReportVisualizationService $visualizations,
+        private readonly ReportChartData $chartData,
     ) {}
 
     public function index()
@@ -69,25 +71,61 @@ class ReportController extends Controller
             );
         }
 
+        $today = now('Asia/Karachi');
+        $defaultDates = ['from' => $today->copy()->startOfMonth()->toDateString(), 'to' => $today->toDateString()];
+        $hasDates = in_array('date_range', $meta['filters'], true);
+        $appliedFilters = Arr::except($filters, ['from', 'to']);
+        if ($hasDates) {
+            foreach ($defaultDates as $field => $default) {
+                $appliedFilters[$field] = ($filters[$field] ?? null) ?: $default;
+            }
+        }
+
         if ($request->format === 'pdf') {
+            $chartPreferences = $request->validate([
+                'chart_metric' => 'nullable|string|max:40',
+                'chart_order' => 'nullable|in:asc,desc',
+                'chart_limit' => 'nullable|in:5,10',
+                'chart_view' => 'nullable|string|max:48',
+            ]);
+            $chartView = $chartPreferences['chart_view'] ?? null;
+            $charts = $this->visualizations->pdfCharts(
+                $key, $data, $chartPreferences['chart_metric'] ?? null,
+                $chartPreferences['chart_order'] ?? 'desc', (int) ($chartPreferences['chart_limit'] ?? 10),
+            );
+            if ($chartView !== null || $charts === []) {
+                $views = $this->chartData->build($key, $data);
+                $selected = collect($views)->firstWhere('id', $chartView) ?? ($charts === [] ? ($views[0] ?? null) : null);
+                if ($selected !== null) {
+                    $charts = [$this->visualizations->printView($selected)];
+                }
+            }
+            $scopes = array_filter([
+                isset($filters['company_id']) && ! $supplierPurchaseValue && in_array('supplier', $meta['filters'], true)
+                    ? Company::withTrashed()->find($filters['company_id'])?->name : null,
+                isset($filters['customer_id']) && in_array('customer', $meta['filters'], true)
+                    ? Customer::withTrashed()->find($filters['customer_id'])?->name : null,
+                isset($filters['product_id']) && in_array('product', $meta['filters'], true)
+                    ? Product::find($filters['product_id'])?->name : null,
+            ]);
+
             return app(ReportPdfRenderer::class)->render([
                 'title' => $meta['title'],
-                'filters' => in_array('date_range', $meta['filters'], true) ? $filters : Arr::except($filters, ['from', 'to']),
+                'filters' => $appliedFilters,
                 'columns' => $data['columns'],
                 'rows' => $data['rows'],
                 'totals' => $data['totals'] ?? [],
                 'groupBy' => $data['group_by'] ?? null,
-                'charts' => $this->visualizations->pdfCharts($key, $data),
+                'charts' => $charts,
+                'separateChartPage' => true,
+                'readable' => true,
                 'sections' => $data['sections'] ?? [],
                 'sectionTitle' => $data['section_title'] ?? null,
                 'context' => isset($data['supplier_name']) ? $data['period_label'] : ($data['context'] ?? null),
-                'headerLabel' => $data['supplier_name'] ?? null,
+                'headerLabel' => $data['supplier_name'] ?? implode(' · ', $scopes),
                 'notes' => $data['notes'] ?? [],
             ], $supplierPurchaseValue ? 'landscape' : null)->stream("{$key}.pdf");
         }
-
-        $today = now('Asia/Karachi');
-        $defaultDates = ['from' => $today->copy()->startOfMonth()->toDateString(), 'to' => $today->toDateString()];
 
         return Inertia::render('reports/show', [
             'report' => [
@@ -100,15 +138,17 @@ class ReportController extends Controller
             'rows' => $data['rows'],
             'totals' => $data['totals'] ?? [],
             'chart' => $data['chart'] ?? null,
+            'chartViews' => fn () => $this->chartData->build($key, $data),
+            'chartColors' => ReportChartData::COLORS,
             'visualization' => $this->visualizations->definition($key),
             'groupBy' => $data['group_by'] ?? null,
             'sections' => $data['sections'] ?? [],
             'sectionTitle' => $data['section_title'] ?? null,
             'context' => $data['context'] ?? null,
             'notes' => $data['notes'] ?? [],
-            'filterValues' => $filters + $defaultDates,
+            'filterValues' => $appliedFilters,
             'defaultDates' => $defaultDates,
-            'options' => [
+            'options' => fn () => [
                 'customers' => in_array('customer', $meta['filters'])
                     ? ($key === CustomerReceiptReport::KEY ? Customer::withTrashed() : Customer::active())->orderBy('name')->get(['id', 'name']) : [],
                 'suppliers' => in_array('supplier', $meta['filters'])
